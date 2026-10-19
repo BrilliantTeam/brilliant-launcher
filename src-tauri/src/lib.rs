@@ -122,6 +122,7 @@ pub fn run() {
             skins::refresh_sessions,
             commands::prefetch,
             commands::repair_instance,
+            commands::send_report,
             skins::share_screenshot,
             boost::system_info,
             boost::notify_user,

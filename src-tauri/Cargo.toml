@@ -1,6 +1,6 @@
 [package]
 name = "brilliant-launcher"
-version = "1.0.9"
+version = "1.0.10"
 description = "輝煌伺服器 Minecraft 啟動器"
 authors = ["RiceChen_"]
 license = "AGPL-3.0-only"

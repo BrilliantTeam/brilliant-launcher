@@ -414,6 +414,12 @@ pub async fn ping_server(host: String) -> R<ping::ServerStatus> {
 }
 
 #[tauri::command]
+pub async fn send_report(body: serde_json::Value) -> R<()> {
+    let _: serde_json::Value = crate::net::post_json(&format!("{SITE}/api/launcher/report"), &body).await?;
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn site_json(path: String) -> R<serde_json::Value> {
     if !(path.starts_with("/api/") || path.starts_with("/mcstats/api/")) || path.contains("..") || path.contains("://") {
         bail!("不允許的官網路徑：{path}");

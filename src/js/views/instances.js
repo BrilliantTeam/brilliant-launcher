@@ -1,4 +1,4 @@
-import { api, fileSrc, pickFiles } from '../api.js';
+import { api, fileSrc, openUrl, pickFiles } from '../api.js';
 import { $, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard } from '../ui.js';
 import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, INSTANCE_ICONS, instanceIconName } from '../icons.js';
@@ -647,7 +647,12 @@ async function shareScreenshot(instance, shot) {
     });
     if (go === true) {
         toast('正在上傳截圖⋯');
-        await api.share_screenshot({ id: instance.id, file: shot.name, description: input.value }).then((message) => toast(message), fail);
+        await api.share_screenshot({ id: instance.id, file: shot.name, description: input.value }).then((message) => toast(message), async (error) => {
+            fail(error);
+            if (/discord link/.test(String(error?.message ?? error)) && await confirm('你的帳號還沒綁定 Discord，要打開官網的綁定教學嗎？', '打開教學')) {
+                openUrl(`https://www.brilliantw.net/${encodeURIComponent('連結帳號')}/`);
+            }
+        });
     }
     showScreenshots(instance);
 }

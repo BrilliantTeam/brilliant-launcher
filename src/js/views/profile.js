@@ -3,6 +3,9 @@ import { $, clear, h, guard } from '../ui.js';
 import { icon } from '../icons.js';
 import { avatarUrl, on, selectedAccount } from '../store.js';
 
+const LINK_GUIDE = `https://www.brilliantw.net/${encodeURIComponent('連結帳號')}/`;
+const linkState = new Map();
+
 const loaded = new Map();
 
 function formatValue(value, format) {
@@ -60,6 +63,19 @@ function renderProfile(account, data) {
     );
 }
 
+async function showLinkHint(account) {
+    if (!linkState.has(account.uuid)) {
+        linkState.set(account.uuid, await api.site_json({ path: `/api/launcher/linked?uuid=${account.uuid.replace(/-/g, '')}` }).then((d) => d.linked, () => null));
+    }
+    if (linkState.get(account.uuid) !== false || selectedAccount()?.id !== account.id || $('#profile-body .link-hint')) return;
+    $('#profile-body').prepend(h('div', { class: 'link-hint' },
+        icon('discord'),
+        h('div', { class: 'grow' },
+            h('b', {}, '你的 Minecraft 帳號還沒綁定 Discord'),
+            h('div', {}, '綁定後才能投稿「玩家足跡」，也能在官網查詢自己的資料。在遊戲內輸入 /discord link 就能開始。')),
+        h('button', { type: 'button', class: 'mc primary', onclick: () => openUrl(LINK_GUIDE) }, '查看綁定教學')));
+}
+
 async function render() {
     const account = selectedAccount();
     const box = clear($('#profile-body'));
@@ -83,11 +99,9 @@ async function render() {
         clear(box).append(h('div', { class: 'empty-state' }, '暫時連不上官網，請稍後再試。'));
         return;
     }
-    if (!data.servers.length) {
-        clear(box).append(h('div', { class: 'empty-state' }, '還沒有你在輝煌的遊玩紀錄，進伺服器玩一陣子再回來看看吧！'));
-        return;
-    }
-    renderProfile(account, data);
+    if (!data.servers.length) clear(box).append(h('div', { class: 'empty-state' }, '還沒有你在輝煌的遊玩紀錄，進伺服器玩一陣子再回來看看吧！'));
+    else renderProfile(account, data);
+    showLinkHint(account);
 }
 
 export function initProfile() {
@@ -95,6 +109,7 @@ export function initProfile() {
     on('settings', () => { if (document.body.dataset.view === 'profile') render(); });
     $('#btn-profile-refresh').addEventListener('click', guard(() => {
         loaded.clear();
+        linkState.clear();
         render();
     }));
     render();

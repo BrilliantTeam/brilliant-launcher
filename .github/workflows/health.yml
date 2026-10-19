@@ -1,0 +1,89 @@
+name: 外部服務健康檢查
+on:
+  schedule:
+    - cron: "0 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 簽出儲存庫
+        uses: actions/checkout@v4
+
+      - name: 檢查啟動器依賴的服務
+        env:
+          WEBHOOK: ${{ secrets.HEALTH_WEBHOOK }}
+        run: |
+          UA="BrilliantLauncher-HealthCheck"
+          failures=()
+          warnings=()
+          get() { curl -sfL --max-time 30 -A "$UA" "$1"; }
+          ok_json() {
+            local name="$1" url="$2" expr="$3" body
+            if body=$(get "$url") && [ -n "$(jq -r "$expr // empty" <<<"$body" 2>/dev/null)" ]; then
+              echo "✅ $name"
+            else
+              echo "❌ $name（$url）"; failures+=("$name")
+            fi
+          }
+          ok_head() {
+            local name="$1" url="$2"
+            if curl -sfIL --max-time 30 -A "$UA" "$url" >/dev/null; then echo "✅ $name"; else echo "❌ $name（$url）"; failures+=("$name"); fi
+          }
+          reachable() {
+            local name="$1" url="$2" method="${3:-GET}" code
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -A "$UA" -X "$method" -H 'Content-Type: application/json' ${4:+-d "$4"} "$url")
+            if [ "$code" != "000" ] && [ "$code" -lt 500 ]; then echo "✅ $name（$code）"; else echo "❌ $name（$code）"; failures+=("$name"); fi
+          }
+
+          manifest=$(get https://piston-meta.mojang.com/mc/game/version_manifest_v2.json || true)
+          release=$(jq -r '.latest.release // empty' <<<"$manifest" 2>/dev/null)
+          if [ -n "$release" ]; then
+            echo "✅ Mojang 版本清單（最新正式版 $release）"
+            version=$(get "$(jq -r --arg v "$release" '.versions[] | select(.id == $v) | .url' <<<"$manifest")" || true)
+            ok_head "遊戲主程式下載" "$(jq -r '.downloads.client.url' <<<"$version")"
+            ok_head "函式庫下載" "$(jq -r '[.libraries[] | .downloads.artifact.url // empty][0]' <<<"$version")"
+            hash=$(get "$(jq -r '.assetIndex.url' <<<"$version")" | jq -r '[.objects[]][0].hash')
+            ok_head "資源檔下載" "https://resources.download.minecraft.net/${hash:0:2}/$hash"
+          else
+            echo "❌ Mojang 版本清單"; failures+=("Mojang 版本清單")
+          fi
+
+          java_url=$(grep -oE 'https://launchermeta\.mojang\.com/v1/products/java-runtime/[^"]+/all\.json' src-tauri/src/mc/java.rs)
+          runtime=$(get "$java_url" | jq -r '."windows-x64"."java-runtime-epsilon"[0].manifest.url // empty' 2>/dev/null)
+          if [ -n "$runtime" ]; then ok_head "Java 執行環境清單" "$runtime"; else echo "❌ Java 執行環境清單（$java_url）"; failures+=("Java 執行環境清單"); fi
+          ok_json "Adoptium Java 備援" https://api.adoptium.net/v3/info/available_releases '.most_recent_lts'
+
+          ok_json "微軟登入" https://login.microsoftonline.com/consumers/v2.0/.well-known/openid-configuration '.authorization_endpoint'
+          reachable "Xbox Live 驗證" https://user.auth.xboxlive.com/user/authenticate POST '{}'
+          reachable "Xbox XSTS" https://xsts.auth.xboxlive.com/xsts/authorize POST '{}'
+          reachable "Minecraft 帳號服務" https://api.minecraftservices.com/minecraft/profile
+          reachable "Mojang 工作階段服務" https://sessionserver.mojang.com/session/minecraft/join POST '{}'
+
+          ok_json "Fabric 版本資訊" https://meta.fabricmc.net/v2/versions/loader '.[0].version'
+          ok_head "Fabric 下載" https://maven.fabricmc.net/net/fabricmc/fabric-loader/maven-metadata.xml
+          ok_json "Modrinth" https://api.modrinth.com/v2/project/P7dR8mSH '.id'
+
+          ok_json "官網：啟動器與模組版本" https://www.brilliantw.net/api/launcher/info '.recommended'
+          ok_json "官網：伺服器資源包" https://www.brilliantw.net/resourcepack/latest.json '.'
+          ok_json "官網：合作伺服器" https://www.brilliantw.net/api/launcher/servers '.servers'
+          ok_json "官網：每日重啟時間" https://www.brilliantw.net/api/launcher/restarts '.schedule'
+          ok_json "官網：分流人數" https://www.brilliantw.net/api/online '.'
+
+          if get https://bmclapi2.bangbang93.com/mc/game/version_manifest_v2.json >/dev/null; then echo "✅ BMCLAPI 鏡像"; else echo "⚠️ BMCLAPI 鏡像（只警告，海外主機可能本來就連不上）"; warnings+=("BMCLAPI 鏡像"); fi
+
+          if [ ${#failures[@]} -gt 0 ]; then
+            list=$(printf '・%s\n' "${failures[@]}")
+            echo "::error::有 ${#failures[@]} 項服務異常"
+            if [ -n "$WEBHOOK" ]; then
+              jq -n --arg c "⚠️ 輝煌啟動器健康檢查失敗：
+          $list
+          詳情：$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" '{content: $c}' | curl -s -H 'Content-Type: application/json' -d @- "$WEBHOOK" >/dev/null
+            fi
+            exit 1
+          fi
+          echo "全部正常"

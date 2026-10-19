@@ -1119,3 +1119,17 @@ button[data-pending] { opacity: 0.6; }
 .srv-actions .mc { display: inline-flex; align-items: center; gap: 6px; }
 .srv-actions .mc .ico { width: 16px; height: 16px; }
 
+
+.shard .restart-soon { margin-top: 3px; font-size: 11px; color: var(--warning, #f0ad4e); }
+.event-card { display: grid; gap: 4px; padding: 10px 12px; }
+.event-head { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--accent); }
+.event-head .ico { width: 14px; height: 14px; }
+.event-name { padding: 0; font: inherit; font-size: 15px; font-weight: 700; text-align: left; color: var(--glass-ink); cursor: pointer; background: none; border: 0; }
+.event-name:hover { color: var(--accent); }
+.event-time { font-size: 12px; color: var(--glass-dim); }
+.event-actions { display: flex; gap: 6px; margin-top: 4px; }
+.event-actions .mc { padding: 4px 12px; min-height: 0; font-size: 13px; }
+.event-detail img { width: 100%; max-height: 240px; object-fit: cover; margin-bottom: 8px; }
+.link-hint { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding: 12px 14px; font-size: 13px; background: var(--content-bg-sunken); border-left: 4px solid #5865f2; }
+.link-hint > .ico { width: 28px; height: 28px; flex: 0 0 auto; color: #5865f2; }
+.link-hint .grow { flex: 1 1 auto; display: grid; gap: 2px; }

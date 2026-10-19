@@ -1,11 +1,11 @@
-import { api, listen } from '../api.js';
-import { $, clear, dialog, fail, fmtBytes, h, toast } from '../ui.js';
+import { api, listen, openUrl } from '../api.js';
+import { $, clear, confirm, dialog, fail, fmtBytes, h, toast } from '../ui.js';
 import { avatarUrl, emit, isRunning, loadInstances, on, selectedAccount, selectedInstance, store, saveSettings } from '../store.js';
 import { initNews } from './news.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
 import { addOffline, loginMicrosoft } from './accounts.js';
 import { createGeneralInstance, quickCreate, upgradeFlow, versionData } from './instances.js';
-import { ready, upgradeTarget } from '../services.js';
+import { notifyOnce, ready, upgradeTarget } from '../services.js';
 import { clearRecentLog, recentLog } from './logview.js';
 import { diagnose } from '../crash.js';
 
@@ -21,6 +21,143 @@ let busy = false;
 let statuses = [];
 
 const shardOf = (host) => SHARDS.find((shard) => shard.host === host) ?? null;
+const REMIND_KEY = 'eventReminders';
+let restarts = {};
+let events = [];
+
+function taipeiNow() {
+    const [hh, mm] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()).split(':').map(Number);
+    return hh * 60 + mm;
+}
+
+export function restartOf(label, now = taipeiNow(), schedule = restarts) {
+    let next = null;
+    let recent = false;
+    for (const time of schedule[label] || []) {
+        const [hh, mm] = time.split(':').map(Number);
+        const at = hh * 60 + mm;
+        const until = (at - now + 1440) % 1440;
+        if (!next || until < next.mins) next = { time, mins: until };
+        if ((now - at + 1440) % 1440 <= 3) recent = true;
+    }
+    return { next, recent };
+}
+
+export function scrub(text, accounts = store.accounts || []) {
+    let out = String(text ?? '');
+    for (const account of accounts) {
+        for (const secret of [account.name, account.uuid, account.uuid?.replace(/-/g, '')].filter((v) => v && v.length > 2)) out = out.split(secret).join('<player>');
+    }
+    return out
+        .replace(/([A-Za-z]:[\\/]+Users[\\/]+)[^\\/\s"']+/gi, '$1<user>')
+        .replace(/\/home\/[^/\s"']+/g, '/home/<user>')
+        .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '<token>')
+        .replace(/(--accessToken\s+)\S+/g, '$1<token>');
+}
+
+async function sendReport(kind, instance, extra) {
+    const body = {
+        kind,
+        mc: instance?.mcVersion || '',
+        loader: instance ? `${instance.loader} ${instance.loaderVersion || ''}`.trim() : '',
+        general: !!instance?.general,
+        code: extra.code ?? null,
+        message: scrub(extra.message),
+        findings: (extra.findings || []).map((f) => scrub(f)),
+        exception: scrub(extra.exception),
+        log: recentLog().slice(-80).map((line) => scrub(line))
+    };
+    try {
+        await api.send_report({ body });
+        toast('已回報給管理員，謝謝你！');
+    } catch (error) {
+        fail(error);
+    }
+}
+
+async function showLaunchError(instance, error) {
+    const message = String(error?.message ?? error);
+    const value = await dialog({
+        title: '無法啟動遊戲',
+        content: h('p', { style: 'white-space:pre-wrap' }, message),
+        buttons: [{ label: '回報給管理員', value: 'report' }, { label: '關閉', value: null }]
+    });
+    if (value === 'report') sendReport('launch', instance, { message });
+}
+
+const reminders = () => {
+    try {
+        return JSON.parse(localStorage.getItem(REMIND_KEY) || '[]');
+    } catch {
+        return [];
+    }
+};
+const setReminders = (ids) => {
+    try {
+        localStorage.setItem(REMIND_KEY, JSON.stringify(ids.slice(-20)));
+    } catch {}
+};
+const EVENT_SHARDS = [...SHARDS, { host: 's0.brilliantw.net', label: '時隙奉廳' }];
+const shardIn = (text) => EVENT_SHARDS.find((shard) => String(text).includes(shard.label.slice(0, 2)));
+
+function eventTime(e) {
+    if (e.active) return '進行中';
+    const mins = Math.round((e.start - Date.now()) / 60000);
+    const rel = mins < 60 ? `${Math.max(mins, 0)} 分鐘後` : mins < 1440 ? `${Math.round(mins / 60)} 小時後` : `${Math.round(mins / 1440)} 天後`;
+    return `${new Date(e.start).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}（${rel}）`;
+}
+
+async function showEvent(e) {
+    const value = await dialog({
+        title: e.name,
+        content: h('div', { class: 'event-detail' },
+            e.image ? h('img', { src: e.image, alt: '' }) : null,
+            h('p', { class: 'hint' }, `${eventTime(e)}${e.location ? `｜${e.location}` : ''}`),
+            e.description ? h('p', { style: 'white-space:pre-wrap' }, e.description) : null),
+        buttons: [{ label: '在 Discord 查看', value: 'web' }, { label: '關閉', value: null }]
+    });
+    if (value === 'web') openUrl(e.url);
+}
+
+function renderEvent() {
+    const box = $('#event-card');
+    const e = events.find((ev) => ev.active || ev.start > Date.now());
+    box.hidden = !e;
+    if (!e) return;
+    const on = reminders().includes(e.id);
+    const shard = shardIn(`${e.location} ${e.name}`);
+    clear(box).append(
+        h('div', { class: 'event-head' }, icon('gift'), e.active ? '活動進行中' : '即將舉行的活動'),
+        h('button', { type: 'button', class: 'event-name', title: '查看活動詳情', onclick: () => showEvent(e) }, e.name),
+        h('div', { class: 'event-time' }, `${eventTime(e)}${e.location ? `｜${e.location}` : ''}`),
+        h('div', { class: 'event-actions' },
+            e.active ? null : h('button', {
+                type: 'button',
+                class: `mc ${on ? '' : 'primary'}`,
+                onclick: () => {
+                    setReminders(on ? reminders().filter((id) => id !== e.id) : [...reminders(), e.id]);
+                    toast(on ? '已取消提醒' : '活動開始前 10 分鐘會通知你（啟動器要開著或縮在系統匣）');
+                    renderEvent();
+                }
+            }, on ? '已設定提醒' : '提醒我'),
+            shard ? h('button', { type: 'button', class: 'mc', onclick: () => joinServer(shard.host, shard.label) }, `前往${shard.label}`) : null));
+}
+
+async function refreshEvents() {
+    const data = await api.site_json({ path: '/api/launcher/events' }).catch(() => null);
+    if (Array.isArray(data?.events)) events = data.events;
+    renderEvent();
+}
+
+function remindEvents() {
+    const ids = reminders();
+    for (const e of events) {
+        const left = e.start - Date.now();
+        if (ids.includes(e.id) && left <= 10 * 60000 && left > -30 * 60000) {
+            notifyOnce(`event:${e.id}`, `活動即將開始：${e.name}`, e.location ? `地點：${e.location}` : '打開輝煌啟動器看看詳情');
+        }
+    }
+}
 
 function renderAccountChip() {
     const account = selectedAccount();
@@ -137,6 +274,11 @@ async function play(relogged = false, join = null) {
         return;
     }
 
+    const goingTo = !join && !instance.general ? shardOf(store.settings?.quickJoin) : SHARDS.find((s) => s.host === join?.host);
+    const soon = goingTo && restartOf(goingTo.label).next;
+    if (soon && soon.mins <= 5 && !(await confirm(`${goingTo.label}將在 ${soon.time} 每日重啟（約 ${soon.mins} 分鐘後），現在進去很快就會斷線。
+仍要開始遊戲嗎？`, '仍要開始'))) return;
+
     busy = true;
     clearRecentLog();
     renderPlayBar();
@@ -159,7 +301,7 @@ async function play(relogged = false, join = null) {
             if (await loginMicrosoft()) return play(true, join);
             return;
         }
-        fail(error);
+        showLaunchError(instance, error);
     } finally {
         busy = false;
         $('#progress').hidden = true;
@@ -206,6 +348,7 @@ function showCrash(code) {
         title: `遊戲異常結束（代碼 ${code}）`,
         content,
         buttons: [
+            { label: '回報給管理員', value: 'report' },
             { label: '修復遊戲檔案', value: 'repair' },
             { label: '複製日誌', value: 'copy' },
             { label: '查看日誌', value: 'log' },
@@ -218,6 +361,8 @@ function showCrash(code) {
             location.hash = '#log';
         } else if (value === 'repair') {
             repairInstance(selectedInstance());
+        } else if (value === 'report') {
+            sendReport('crash', selectedInstance(), { code, findings: findings.map((f) => f.title), exception });
         }
     });
 }
@@ -225,6 +370,7 @@ function showCrash(code) {
 function shardTile(shard, status) {
     const selected = store.settings?.quickJoin === shard.host;
     const state = status === undefined ? 'pending' : status ? 'up' : 'down';
+    const restart = restartOf(shard.label);
     const busiest = Math.max(1, ...statuses.map((item) => item?.online ?? 0));
     const ratio = status?.online != null ? Math.min(1, status.online / busiest) : 0;
     return h(
@@ -252,8 +398,9 @@ function shardTile(shard, status) {
                     ? status.online != null
                         ? h('span', {}, h('b', {}, String(status.online)), ` 人　${status.latencyMs}ms`)
                         : h('span', {}, `可連線　${status.latencyMs}ms`)
-                    : '目前連不上'
+                    : restart.recent ? '每日重啟中，稍後恢復' : '目前連不上'
         ),
+        restart.next && restart.next.mins <= 30 ? h('div', { class: 'restart-soon' }, `${restart.next.time} 每日重啟`) : null,
         h('div', { class: 'bar' }, h('i', { style: `width:${(ratio * 100).toFixed(1)}%` }))
     );
 }
@@ -404,4 +551,11 @@ export function initHome() {
     refreshShards().catch(() => {});
     setInterval(() => refreshShards().catch(() => {}), PING_INTERVAL_MS);
     initNews();
+    api.site_json({ path: '/api/launcher/restarts' }).then((data) => { restarts = data?.schedule || {}; renderShards(); }, () => {});
+    refreshEvents();
+    setInterval(refreshEvents, 10 * 60 * 1000);
+    setInterval(() => {
+        remindEvents();
+        renderEvent();
+    }, 60 * 1000);
 }
