@@ -275,8 +275,17 @@ async function play(relogged = false, join = null) {
     }
 
     const goingTo = !join && !instance.general ? shardOf(store.settings?.quickJoin) : SHARDS.find((s) => s.host === join?.host);
-    const soon = goingTo && restartOf(goingTo.label).next;
-    if (soon && soon.mins <= 5 && !(await confirm(`${goingTo.label}將在 ${soon.time} 每日重啟（約 ${soon.mins} 分鐘後），現在進去很快就會斷線。
+    const restart = goingTo ? restartOf(goingTo.label) : {};
+    if (restart.recent && !(await api.ping_server({ host: goingTo.host }).catch(() => null))) {
+        await dialog({
+            title: `${goingTo.label}正在每日重啟`,
+            content: h('p', {}, `${goingTo.label}剛進行每日重啟，通常 1～3 分鐘內就會恢復，請稍後再開始遊戲。`),
+            buttons: [{ label: '知道了', value: null }]
+        });
+        return;
+    }
+    const soon = restart.next;
+    if (soon && soon.mins <= 5 && !(await confirm(`${goingTo.label}將在 ${soon.time} 每日重啟（${soon.mins ? `約 ${soon.mins} 分鐘後` : '就是現在'}），現在進去很快就會斷線。
 仍要開始遊戲嗎？`, '仍要開始'))) return;
 
     busy = true;
