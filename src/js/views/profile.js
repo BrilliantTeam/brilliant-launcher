@@ -33,7 +33,7 @@ function renderProfile(account, data) {
 
     box.append(
         h('div', { class: 'profile-head' },
-            h('img', { class: 'profile-avatar', src: avatarUrl(account), alt: '' }),
+            h('img', { class: 'profile-avatar', src: avatarUrl(account), alt: '', 'data-avatar': account.id }),
             h('div', { class: 'grow' },
                 h('div', { class: 'profile-name' }, data.name || account.name,
                     data.rank ? h('span', { class: 'profile-rank', style: `--rank:${data.rank.color || 'var(--accent)'}` }, data.rank.label) : null,

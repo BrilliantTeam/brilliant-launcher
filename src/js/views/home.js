@@ -161,6 +161,7 @@ function remindEvents() {
 
 function renderAccountChip() {
     const account = selectedAccount();
+    $('#chip-avatar').dataset.avatar = account?.id ?? '';
     $('#chip-avatar').src = avatarUrl(account);
     $('#chip-name').textContent = account ? account.name : '登入帳號';
 }

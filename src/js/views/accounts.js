@@ -1,7 +1,7 @@
 import { api, fileSrc, pickFiles } from '../api.js';
 import { $, clear, confirm, dialog, fail, h, toast, guard } from '../ui.js';
 import { icon } from '../icons.js';
-import { avatarUrl, emit, loadAccounts, on, selectedAccount, store } from '../store.js';
+import { avatarUrl, emit, loadAccounts, on, refreshAvatar, selectedAccount, store } from '../store.js';
 
 const profiles = new Map();
 
@@ -225,6 +225,7 @@ async function applySkin(account, entry) {
     try {
         await api.skin_apply({ id: account.id, file: entry.file });
         profiles.delete(account.id);
+        refreshAvatar(account);
         toast(`已換上「${entry.name}」，下次進入伺服器時其他人就會看到`);
     } catch (error) {
         fail(error);
@@ -438,6 +439,7 @@ async function renderPanel() {
                             if (await confirm('要換回預設皮膚嗎？目前的皮膚可以先「存到衣櫃」。', '換回預設')) {
                                 await api.skin_reset({ id: account.id }).catch(fail);
                                 profiles.delete(account.id);
+                                refreshAvatar(account);
                             }
                             renderPanel();
                         }
@@ -455,6 +457,7 @@ function card(account) {
         h('img', {
             class: 'avatar',
             src: avatarUrl(account),
+            'data-avatar': account.id,
             alt: '',
             style: 'width:48px;height:48px',
             onerror: (e) => { e.target.src = 'assets/icon.png'; }
