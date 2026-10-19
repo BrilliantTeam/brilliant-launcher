@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "輝煌啟動器",
+  "version": "1.0.0",
+  "identifier": "net.brilliantw.launcher",
+  "build": {
+    "frontendDist": "../src"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "輝煌啟動器",
+        "width": 1280,
+        "height": 760,
+        "minWidth": 1100,
+        "minHeight": 680,
+        "resizable": true,
+        "center": true,
+        "theme": null,
+        "decorations": false
+      }
+    ],
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$DATA/BrilliantLauncher/**"]
+      },
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https://api.mineatar.io https://textures.minecraft.net https://mc-heads.net https://www.brilliantw.net https://cdn.modrinth.com data:; style-src 'self' 'unsafe-inline'; font-src 'self'; media-src 'self' asset: http://asset.localhost; connect-src 'self' ipc: http://ipc.localhost"
+    },
+    "withGlobalTauri": true
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "copyright": "輝煌 Brilliant",
+    "licenseFile": "installer/notice.txt",
+    "category": "Game",
+    "shortDescription": "輝煌伺服器 Minecraft 啟動器",
+    "windows": {
+      "nsis": {
+        "languages": [
+          "TradChinese"
+        ],
+        "installMode": "currentUser",
+        "template": "installer/installer.nsi",
+        "installerIcon": "icons/icon.ico",
+        "sidebarImage": "installer/sidebar.bmp",
+        "headerImage": "installer/header.bmp",
+        "uninstallerIcon": "icons/icon.ico",
+        "uninstallerHeaderImage": "installer/header.bmp"
+      }
+    }
+  },
+  "mainBinaryName": "BrilliantLauncher"
+}

@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-Hant" data-font="pixel">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>輝煌啟動器</title>
+    <link rel="icon" href="assets/icon.png">
+    <link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/app.css">
+</head>
+<body data-view="home">
+<div class="bg" aria-hidden="true">
+    <div class="bg-img" id="bg-a"></div>
+    <div class="bg-img" id="bg-b"></div>
+    <video class="bg-img bg-video" id="bg-video" muted loop playsinline preload="auto"></video>
+    <div class="bg-shade"></div>
+</div>
+
+<header class="titlebar" data-tauri-drag-region>
+    <div class="titlebar-brand" data-tauri-drag-region>
+        <img src="assets/icon.png" alt="">
+        <span data-tauri-drag-region>輝煌啟動器</span>
+    </div>
+    <div class="titlebar-tools">
+        <button type="button" class="update-chip" id="update-chip" hidden><i data-icon="download"></i><span id="update-label">有新版本</span></button>
+        <a class="account-chip" id="account-chip" href="#accounts" title="切換帳號">
+            <img id="chip-avatar" src="assets/icon.png" alt="">
+            <span id="chip-name">登入帳號</span>
+        </a>
+        <button type="button" class="tool" id="font-toggle" title="切換點陣／系統字型" aria-label="切換點陣／系統字型"><i data-icon="art-text"></i></button>
+        <button type="button" class="tool" id="theme-toggle" title="主題" aria-label="主題"></button>
+        <span class="win-sep"></span>
+        <button type="button" class="win" id="win-min" title="最小化" aria-label="最小化"><i data-icon="minus"></i></button>
+        <button type="button" class="win" id="win-max" title="最大化" aria-label="最大化"><i data-icon="checkbox"></i></button>
+        <button type="button" class="win close" id="win-close" title="關閉" aria-label="關閉"><i data-icon="close"></i></button>
+    </div>
+</header>
+
+<nav class="rail">
+        <a href="#home" data-view="home" title="首頁"><i data-icon="home"></i><span>首頁</span></a>
+        <a href="#profile" data-view="profile" title="我的輝煌"><i data-icon="trophy"></i><span>我的</span></a>
+        <a href="#instances" data-view="instances" title="實例"><i data-icon="gamepad"></i><span>實例</span></a>
+        <a href="#mods" data-view="mods" title="模組與資源"><i data-icon="zap"></i><span>模組</span></a>
+        <a href="#accounts" data-view="accounts" title="帳號"><i data-icon="user"></i><span>帳號</span></a>
+        <a href="#settings" data-view="settings" title="設定"><i data-icon="sliders"></i><span>設定</span></a>
+        <a href="#log" data-view="log" title="日誌"><i data-icon="script-text"></i><span>日誌</span></a>
+        <span class="rail-spacer"></span>
+        <a href="#about" data-view="about" title="關於"><i data-icon="info-box"></i><span>關於</span></a>
+</nav>
+
+<main class="stage">
+    <section class="view home active" id="view-home">
+        <div class="home-brand">
+            <div class="logo-text">輝煌<small>Brilliant</small></div>
+            <div class="tagline">台灣 Minecraft 麥塊生存伺服器｜願所有麥塊玩家都能在此締造輝煌</div>
+        </div>
+
+        <div class="news">
+            <div class="news-tabs" id="news-tabs"></div>
+            <ul class="news-list" id="news-list"></ul>
+            <a class="news-more" href="#" data-url="https://www.brilliantw.net/">前往官網看更多公告 <i data-icon="arrow-right"></i></a>
+        </div>
+
+        <div class="credit" id="bg-credit"></div>
+
+        <aside class="dock">
+            <div class="dock-head">
+                <button type="button" class="fold" id="fold-dock" title="收合分流面板" aria-expanded="true"><i data-icon="chevron-down"></i></button>
+                <span class="grow">選擇分流</span>
+                <span class="dock-total" id="shard-total"></span>
+            </div>
+            <div class="shards" id="shards"></div>
+            <div class="shard-hint" id="shard-hint"></div>
+            <div class="upgrade-banner glass" id="upgrade-banner" hidden></div>
+            <div class="setup glass" id="setup" hidden></div>
+            <div class="launch">
+                <button type="button" class="instance-pick" id="instance-pick" aria-haspopup="true" title="切換遊戲實例">
+                    <span class="pick-name" id="home-instance">尚未建立實例</span>
+                    <span class="pick-meta" id="home-meta">先到「實例」建立一個遊戲實例</span>
+                    <i data-icon="chevron-down" class="pick-arrow"></i>
+                </button>
+                <button type="button" class="mc play" id="btn-play">開始遊戲</button>
+            </div>
+            <div class="instance-menu" id="instance-menu" hidden></div>
+        </aside>
+
+        <div class="social">
+            <button type="button" class="scenic-toggle" id="scenic-toggle" title="賞景模式：收起所有面板（Esc 還原）" aria-pressed="false"><i data-icon="eye"></i></button>
+            <a href="#" data-url="https://www.brilliantw.net/" title="輝煌官網"><i data-icon="external-link"></i></a>
+            <a href="#" data-url="https://discord.brilliantw.net/" title="Discord 社群"><i data-icon="discord"></i></a>
+            <a href="#" data-url="https://www.brilliantw.net/%E8%B4%8A%E5%8A%A9%E8%B3%87%E8%A8%8A/" title="贊助輝煌"><i data-icon="heart"></i></a>
+            <a href="#" data-url="https://www.brilliantw.net/mod/" title="Brilliant-Server-Mod 下載"><i data-icon="download"></i></a>
+        </div>
+
+        <div class="progress" id="progress" hidden>
+            <div class="track"><div class="fill" id="progress-fill"></div></div>
+            <div class="caption">
+                <span id="progress-label">準備中⋯⋯</span>
+                <span id="progress-count"></span>
+            </div>
+        </div>
+    </section>
+
+    <div class="page-wrap">
+        <div class="container">
+            <section class="view" id="view-profile">
+                <div class="settings-head">
+                    <h1>我的輝煌</h1>
+                    <button type="button" class="mc" id="btn-profile-refresh"><i data-icon="reload"></i>重新整理</button>
+                </div>
+                <div id="profile-body"></div>
+            </section>
+
+            <section class="view" id="view-instances">
+                <div class="store-head">
+                    <h1>實例管理</h1>
+                    <div class="store-instance">每個實例都有獨立的遊戲版本、模組與存檔，點選卡片即可切換使用中的實例。</div>
+                </div>
+                <div class="toolbar">
+                    <button type="button" class="mc primary" id="btn-new-instance"><i data-icon="plus"></i>建立實例</button>
+                    <button type="button" class="mc" id="btn-quick-instance"><i data-icon="zap"></i>一鍵建立輝煌實例</button>
+                    <button type="button" class="mc" id="btn-import"><i data-icon="download"></i>從其他啟動器匯入</button>
+                    <span class="spacer"></span>
+                    <button type="button" class="mc" id="btn-refresh-instances"><i data-icon="reload"></i>重新整理</button>
+                </div>
+                <div class="inst-grid" id="instance-list"></div>
+            </section>
+
+            <section class="view" id="view-mods">
+                <h1>模組與資源</h1>
+                <div class="install-target" id="store-instance"></div>
+                <div class="segmented" id="kind-tabs" role="tablist">
+                    <button type="button" data-kind="mod" aria-selected="true">模組</button>
+                    <button type="button" data-kind="resourcepack" aria-selected="false">資源包</button>
+                    <button type="button" data-kind="shader" aria-selected="false">光影</button>
+                </div>
+                <div class="store-tabs" role="tablist">
+                    <button type="button" data-tab="explore" aria-selected="true">探索</button>
+                    <button type="button" data-tab="installed" aria-selected="false">已安裝 <span class="count" id="installed-count"></span></button>
+                </div>
+
+                <div id="store-explore">
+                    <div class="presets" id="presets"></div>
+                    <div class="store-search">
+                        <input type="search" id="mod-search" placeholder="搜尋 Modrinth⋯⋯" spellcheck="false">
+                        <select id="store-sort" aria-label="排序">
+                            <option value="relevance">最相關</option>
+                            <option value="downloads">最多下載</option>
+                            <option value="follows">最多人關注</option>
+                            <option value="updated">最近更新</option>
+                            <option value="newest">最新上架</option>
+                        </select>
+                    </div>
+                    <div class="chips" id="store-cats"></div>
+                    <div class="mod-results" id="mod-results"></div>
+                    <div class="toolbar" style="justify-content:center">
+                        <button type="button" class="mc" id="btn-more-mods" hidden>載入更多</button>
+                    </div>
+                </div>
+
+                <div id="store-installed" hidden>
+                    <div class="toolbar">
+                        <button type="button" class="mc primary" id="btn-update-all" hidden>全部更新</button>
+                        <button type="button" class="mc" id="btn-add-mod">安裝本機檔案⋯</button>
+                        <button type="button" class="mc" id="btn-open-mods">開啟資料夾</button>
+                        <span class="spacer"></span>
+                        <button type="button" class="mc" id="btn-refresh-mods">重新整理</button>
+                    </div>
+                    <div class="rows" id="mod-list"></div>
+                    <div class="toolbar folder-links">
+                        <span class="toolbar-label">其他資料夾</span>
+                        <button type="button" class="mc" data-folder="screenshots">截圖</button>
+                        <button type="button" class="mc" data-folder="saves">存檔</button>
+                        <button type="button" class="mc" data-folder="config">模組設定檔</button>
+                    </div>
+                </div>
+            </section>
+
+            <section class="view" id="view-accounts">
+                <div class="store-head">
+                    <h1>帳號</h1>
+                    <div class="store-instance">點選帳號切換；正版帳號可以在下方換皮膚、披風與名稱，登入狀態會自動續期。</div>
+                </div>
+                <div class="toolbar">
+                    <button type="button" class="mc primary" id="btn-login-msa"><i data-icon="user"></i>微軟正版登入</button>
+                    <button type="button" class="mc" id="btn-login-offline"><i data-icon="plus"></i>新增離線帳號</button>
+                </div>
+                <div class="cards" id="account-list"></div>
+                <div class="account-panel" id="account-panel"></div>
+            </section>
+
+            <section class="view" id="view-settings">
+                <div class="settings-head">
+                    <h1>設定</h1>
+                    <span class="save-state" id="save-state">變更會自動儲存</span>
+                </div>
+                <nav class="settings-nav" id="settings-nav">
+                    <a href="#" data-jump="set-game">遊戲</a>
+                    <a href="#" data-jump="set-flow">啟動流程</a>
+                    <a href="#" data-jump="set-look">外觀</a>
+                    <a href="#" data-jump="set-system">系統與下載</a>
+                    <a href="#" data-jump="set-data">資料</a>
+                    <a href="#" data-jump="set-keys">快捷鍵</a>
+                </nav>
+
+                <h2 id="set-game">遊戲</h2>
+                <div class="hardware" id="hardware"></div>
+                <div class="field">
+                    <label for="set-memory">記憶體上限：<b id="set-memory-value">4096</b> MB</label>
+                    <input type="range" id="set-memory" min="1024" max="32768" step="512">
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-width">視窗寬度</label>
+                        <input type="number" id="set-width" min="320" max="7680">
+                    </div>
+                    <div class="field">
+                        <label for="set-height">視窗高度</label>
+                        <input type="number" id="set-height" min="240" max="4320">
+                    </div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-fullscreen">全螢幕啟動</label>
+                </div>
+                <div class="field">
+                    <label for="set-java">Java 執行檔</label>
+                    <select id="set-java"></select>
+                    <div class="hint">選「自動」時，啟動器會依版本需求下載 Mojang 官方 JRE，或沿用系統上版本相符的 Java。</div>
+                </div>
+                <div class="field">
+                    <label for="set-jvm">JVM 參數</label>
+                    <textarea id="set-jvm" spellcheck="false"></textarea>
+                    <div class="hint">留空會套用 Mojang 官方啟動器的 G1 GC 預設值。每個實例也可以在「實例 → 設定 → 進階」個別覆寫。</div>
+                </div>
+                <div class="field">
+                    <label for="set-quick-join">啟動後自動連線</label>
+                    <input type="text" id="set-quick-join" placeholder="例如 s1.brilliantw.net，留空則進主畫面">
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-rpc">自動安裝 Brilliant-Server-Mod</label>
+                    <div class="hint">僅對 Fabric 實例生效。每次啟動時從官網下載最新版本與對應的 Fabric API，並清掉舊版的 jar。</div>
+                </div>
+
+                <h2 id="set-flow">啟動流程</h2>
+                <div class="field">
+                    <label for="set-after">遊戲啟動後</label>
+                    <select id="set-after">
+                        <option value="hide">隱藏啟動器（遊戲結束後自動回來）</option>
+                        <option value="keep">保持開啟</option>
+                        <option value="exit">關閉啟動器</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-backup">每次啟動前自動備份存檔</label>
+                    <div class="field-inline">
+                        <label for="set-backup-keep">保留最近</label>
+                        <input type="number" id="set-backup-keep" min="1" max="50">
+                        <span>份自動備份</span>
+                    </div>
+                    <div class="hint">備份存在實例資料夾的 backups，可在「實例 → 更多 → 存檔備份」還原。</div>
+                </div>
+                <div class="field">
+                    <label for="set-pre">啟動前執行指令</label>
+                    <input type="text" id="set-pre" spellcheck="false" placeholder="例如 start obs64.exe">
+                </div>
+                <div class="field">
+                    <label for="set-post">遊戲結束後執行指令</label>
+                    <input type="text" id="set-post" spellcheck="false" placeholder="例如 taskkill /im obs64.exe">
+                    <div class="hint">可使用環境變數 %INST_NAME%、%INST_DIR%、%INST_MC_VER%；結束指令另有 %EXIT_CODE%。啟動前指令失敗時會取消啟動。</div>
+                </div>
+
+                <h2 id="set-look">外觀</h2>
+                <div class="field">
+                    <label>主題色</label>
+                    <div class="swatches" id="set-accent"></div>
+                </div>
+                <div class="field">
+                    <label>主頁背景</label>
+                    <div class="toolbar">
+                        <button type="button" class="mc" id="btn-bg-pick"><i data-icon="image"></i>選擇圖片或影片</button>
+                        <button type="button" class="mc" id="btn-bg-reset">使用官網輪播</button>
+                        <span class="toolbar-label" id="bg-state"></span>
+                    </div>
+                </div>
+                <div class="hint">支援 PNG、JPG、WebP、GIF 圖片與 MP4、WebM 影片（影片會靜音循環播放）。</div>
+                <div class="field">
+                    <label>背景音樂</label>
+                    <div class="toolbar">
+                        <button type="button" class="mc" id="btn-music-pick"><i data-icon="music"></i>選擇音樂</button>
+                        <button type="button" class="mc" id="btn-music-clear">移除音樂</button>
+                        <span class="toolbar-label" id="music-state"></span>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="set-volume">音樂音量：<b id="set-volume-value"></b></label>
+                    <input type="range" id="set-volume" min="0" max="100" step="5">
+                    <div class="hint">支援 MP3、OGG、WAV、M4A、FLAC、Opus。遊戲執行中或啟動器縮到背景時會自動暫停。</div>
+                </div>
+                <div class="field">
+                    <label for="set-slide">背景輪播間隔：<b id="set-slide-value"></b></label>
+                    <input type="range" id="set-slide" min="0" max="60" step="5">
+                </div>
+                <div class="field">
+                    <label for="set-scale">介面縮放：<b id="set-scale-value"></b></label>
+                    <input type="range" id="set-scale" min="80" max="125" step="5">
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-motion">減少動畫效果</label>
+                </div>
+
+                <h2 id="set-system">系統與下載</h2>
+                <div class="field">
+                    <label><input type="checkbox" id="set-notify">系統通知（新公告、伺服器升版、遊戲異常結束）</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-inherit">新實例沿用最近一個實例的按鍵、遊戲設定與輝煌模組設定</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-tray">按關閉時縮到系統匣（右下角圖示可再叫出或直接開始遊戲）</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-autostart">開機時自動啟動輝煌啟動器</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-mirror">使用 BMCLAPI 鏡像（台灣連線建議開啟）</label>
+                </div>
+                <div class="field">
+                    <label for="set-threads">同時下載數：<b id="set-threads-value"></b></label>
+                    <input type="range" id="set-threads" min="1" max="64" step="1">
+                    <div class="hint">網路不穩或下載常失敗時調低；頻寬充足時調高可加快首次安裝。</div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-snapshots">在版本清單顯示快照版</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-old">在版本清單顯示遠古版本</label>
+                </div>
+
+                <h2 id="set-data">資料</h2>
+                <div class="toolbar">
+                    <button type="button" class="mc" id="btn-open-root"><i data-icon="folder"></i>開啟啟動器資料夾</button>
+                    <button type="button" class="mc" id="btn-clean-cache"><i data-icon="trash"></i>清理快取</button>
+                </div>
+                <div class="hint">清理快取會刪除可自動重建的 natives 與 7 天前的日誌，不會動到存檔、模組與設定。</div>
+
+                <h2 id="set-keys">快捷鍵</h2>
+                <div class="keys">
+                    <div><kbd>Ctrl</kbd> + <kbd>Enter</kbd><span>開始遊戲</span></div>
+                    <div><kbd>Ctrl</kbd> + <kbd>1</kbd>～<kbd>8</kbd><span>切換左側分頁</span></div>
+                    <div><kbd>Ctrl</kbd> + <kbd>,</kbd><span>開啟設定</span></div>
+                    <div><kbd>Ctrl</kbd> + <kbd>F</kbd><span>在模組頁搜尋</span></div>
+                </div>
+            </section>
+
+            <section class="view" id="view-log">
+                <h1>遊戲日誌</h1>
+                <div class="toolbar">
+                    <button type="button" class="mc" id="btn-clear-log">清空</button>
+                    <button type="button" class="mc" id="btn-open-logs">開啟日誌資料夾</button>
+                    <span class="spacer"></span>
+                    <label style="margin:0"><input type="checkbox" id="log-follow" checked>自動捲到底</label>
+                </div>
+                <div class="console" id="console"></div>
+            </section>
+
+            <section class="view" id="view-about">
+                <h1>關於啟動器</h1>
+                <p>
+                    輝煌啟動器是 <a href="#" data-url="https://www.brilliantw.net">輝煌 Brilliant</a>
+                    伺服器的 Minecraft 啟動器。
+                </p>
+                <h2>內建模組</h2>
+                <p>
+                    Brilliant-Server-Mod — 輝煌伺服器專屬的客戶端模組，提供 Discord 遊玩狀態、聊天選單、
+                    私訊視窗、自動腳本等功能。詳細說明與網路使用方式請見
+                    <a href="#" data-url="https://www.brilliantw.net/mod/">官網模組頁</a>。
+                </p>
+                <h2>開放原始碼</h2>
+                <p>
+                    輝煌啟動器以 <a href="#" data-url="https://www.gnu.org/licenses/agpl-3.0.html">GNU AGPL-3.0</a>
+                    授權開放原始碼，原始碼在 <a href="#" data-url="https://github.com/BrilliantTeam/brilliant-launcher">GitHub</a>。
+                    修改或散布本程式時，必須以相同授權公開完整原始碼。
+                </p>
+                <p class="hint">
+                    字型：Minecraft-Font、GNU Unifont、內海字體（SIL OFL 1.1）；3D 皮膚預覽：skinview3d（MIT）；圖示：Pixelarticons（MIT）。
+                    資料處理方式請見 <a href="#" data-url="https://www.brilliantw.net/%E9%9A%B1%E7%A7%81%E6%94%BF%E7%AD%96/">隱私政策第七節</a>。
+                </p>
+                <h2>資料夾</h2>
+                <div class="rows" id="about-paths"></div>
+            </section>
+        </div>
+    </div>
+</main>
+
+<div class="toasts" id="toasts"></div>
+
+<dialog id="dlg">
+    <div class="dlg-body" id="dlg-body"></div>
+    <div class="dlg-foot" id="dlg-foot"></div>
+</dialog>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

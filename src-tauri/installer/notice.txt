@@ -1,0 +1,30 @@
+Brilliant Launcher｜輝煌啟動器 隱私權說明
+
+完整條款：https://www.brilliantw.net/%E9%9A%B1%E7%A7%81%E6%94%BF%E7%AD%96/ （第七節「輝煌啟動器」）
+
+【存放在你電腦上的資料】
+帳號資訊（遊戲名稱、UUID、Microsoft／Minecraft 登入憑證）、設定、遊戲實例、存檔備份與皮膚衣櫃，都存放在 %APPDATA%\BrilliantLauncher。
+登入憑證只用來向 Microsoft／Mojang 驗證身分，不會傳送給輝煌。
+啟動器不含任何分析、追蹤或廣告程式，不會回傳使用紀錄、硬體資訊、遊戲日誌或當機報告。
+
+【會連線的服務】
+・Microsoft、Xbox Live、Mojang：正版登入、自動續期、皮膚／披風／名稱變更
+・Minecraft 官方下載：遊戲本體、函式庫、資源檔與 Java
+・BMCLAPI 鏡像（bmclapi2.bangbang93.com）：加速下載，可在設定中關閉
+・Fabric：模組載入器
+・Modrinth：搜尋與下載模組、資源包、光影；檢查更新時會送出已安裝檔案的 SHA-1 雜湊值
+・輝煌官網 www.brilliantw.net：公告、分流人數、更新、伺服器資源包；開啟「我的輝煌」時以 UUID 查詢公開的遊戲統計
+・輝煌伺服器分流：查詢線上人數與延遲
+・api.mineatar.io、mc-heads.net、textures.minecraft.net：頭像與皮膚圖片
+
+上述第三方服務會依各自的隱私政策處理你的連線資訊（例如 IP 位址）。
+
+【你可以控制的項目】
+・在「設定」中關閉 BMCLAPI 鏡像、系統通知與開機自動啟動
+・不開啟「我的輝煌」就不會查詢遊戲統計
+・解除安裝後刪除 %APPDATA%\BrilliantLauncher 即可移除所有本機資料（包含存檔，請先自行備份）
+
+聯絡我們：ricechen@brilliantw.net
+
+【開放原始碼】
+輝煌啟動器以 GNU AGPL-3.0 授權開放原始碼：https://github.com/BrilliantTeam/brilliant-launcher

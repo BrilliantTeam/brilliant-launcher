@@ -1,0 +1,64 @@
+name: 打包並發佈啟動器
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: 簽出儲存庫
+        uses: actions/checkout@v4
+
+      - name: 設置 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 快取 Rust 編譯
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 設置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 確認版本號與標籤一致
+        id: version
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "::error::標籤 ${GITHUB_REF_NAME} 與 tauri.conf.json 的版本 $version 不一致"
+            exit 1
+          fi
+
+      - name: 打包安裝檔
+        working-directory: src-tauri
+        run: npx --yes @tauri-apps/cli@2 build
+
+      - name: 整理安裝檔名稱
+        run: |
+          mkdir -p release
+          setup=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
+          cp "$setup" "release/BrilliantLauncher_${{ steps.version.outputs.version }}_x64-setup.exe"
+          ls -la release
+
+      - name: 發佈 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: 輝煌啟動器 v${{ steps.version.outputs.version }}
+          generate_release_notes: false
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: release/*.exe
