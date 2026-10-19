@@ -1,5 +1,5 @@
 import { api, pickFiles } from '../api.js';
-import { $, clear, confirm, fail, fmtBytes, h, rangeFill, toast } from '../ui.js';
+import { $, clear, confirm, fail, fmtBytes, h, rangeFill, toast, guard } from '../ui.js';
 import { on, saveSettings, store } from '../store.js';
 import { gpuName, isIntegratedGpu } from '../services.js';
 
@@ -174,7 +174,7 @@ export function initSettings() {
         $(`#${link.dataset.jump}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
-    $('#btn-bg-pick').addEventListener('click', async () => {
+    $('#btn-bg-pick').addEventListener('click', guard(async () => {
         const path = await pickFiles({ multiple: false, filters: [{ name: '圖片或影片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm'] }] }).catch(fail);
         if (!path) return;
         try {
@@ -182,8 +182,8 @@ export function initSettings() {
         } catch (error) {
             fail(error);
         }
-    });
-    $('#btn-music-pick').addEventListener('click', async () => {
+    }));
+    $('#btn-music-pick').addEventListener('click', guard(async () => {
         const path = await pickFiles({ multiple: false, filters: [{ name: '音樂', extensions: ['mp3', 'ogg', 'wav', 'm4a', 'flac', 'opus'] }] }).catch(fail);
         if (!path) return;
         try {
@@ -191,22 +191,22 @@ export function initSettings() {
         } catch (error) {
             fail(error);
         }
-    });
-    $('#btn-music-clear').addEventListener('click', () => persist({ music: '' }));
-    $('#btn-bg-reset').addEventListener('click', () => persist({ background: '' }));
+    }));
+    $('#btn-music-clear').addEventListener('click', guard(() => persist({ music: '' })));
+    $('#btn-bg-reset').addEventListener('click', guard(() => persist({ background: '' })));
 
-    $('#btn-open-root').addEventListener('click', async () => {
+    $('#btn-open-root').addEventListener('click', guard(async () => {
         const paths = await api.launcher_paths();
         await api.open_path({ path: paths[0][1] }).catch(fail);
-    });
-    $('#btn-clean-cache').addEventListener('click', async () => {
+    }));
+    $('#btn-clean-cache').addEventListener('click', guard(async () => {
         if (!(await confirm('要清理快取嗎？存檔、模組與設定都不會受影響。', '清理'))) return;
         try {
             toast(`已清理 ${fmtBytes(await api.clean_cache())}`);
         } catch (error) {
             fail(error);
         }
-    });
+    }));
 
     api.system_info().then((info) => {
         const gpu = gpuName();

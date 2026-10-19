@@ -7,11 +7,27 @@ export function rangeFill(el) {
     el.style.setProperty('--fill', `${((Number(el.value) - min) / Math.max(1, max - min)) * 100}%`);
 }
 
+export function guard(fn) {
+    return function (event) {
+        const el = event.currentTarget;
+        if (el.hasAttribute('data-pending')) return;
+        const result = fn.call(this, event);
+        if (!result || typeof result.then !== 'function') return result;
+        el.setAttribute('data-pending', '');
+        el.setAttribute('aria-busy', 'true');
+        return Promise.resolve(result).finally(() => {
+            el.removeAttribute('data-pending');
+            el.removeAttribute('aria-busy');
+        });
+    };
+}
+
 export function h(tag, props = {}, ...children) {
     const el = document.createElement(tag);
     for (const [key, value] of Object.entries(props || {})) {
         if (value === null || value === undefined || value === false) continue;
-        if (key.startsWith('on') && typeof value === 'function') el.addEventListener(key.slice(2), value);
+        if (key === 'onclick' && typeof value === 'function') el.addEventListener('click', guard(value));
+        else if (key.startsWith('on') && typeof value === 'function') el.addEventListener(key.slice(2), value);
         else if (key === 'html') el.innerHTML = value;
         else if (key in el && key !== 'list' && typeof value !== 'string') el[key] = value;
         else el.setAttribute(key, value === true ? '' : value);
@@ -44,6 +60,8 @@ export function fail(error) {
     toast(typeof error === 'string' ? error : (error?.message ?? String(error)), 'error');
 }
 
+let closeOpenDialog = null;
+
 export function dialog({ title, content, wide = false, buttons = [{ label: '關閉', value: null }] }) {
     const dlg = $('#dlg');
     dlg.classList.toggle('wide', wide);
@@ -52,12 +70,15 @@ export function dialog({ title, content, wide = false, buttons = [{ label: '關�
     if (title) body.append(h('h2', {}, title));
     body.append(content);
 
+    if (closeOpenDialog) closeOpenDialog(null);
     return new Promise((resolve) => {
         const close = (value) => {
+            if (closeOpenDialog === close) closeOpenDialog = null;
             dlg.close();
             dlg.removeEventListener('cancel', onCancel);
             resolve(value);
         };
+        closeOpenDialog = close;
         const onCancel = () => close(null);
         dlg.addEventListener('cancel', onCancel, { once: true });
 

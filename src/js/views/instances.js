@@ -1,9 +1,9 @@
 import { api, fileSrc, pickFiles } from '../api.js';
-import { $, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast } from '../ui.js';
+import { $, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard } from '../ui.js';
 import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, INSTANCE_ICONS, instanceIconName } from '../icons.js';
 import { importPack } from './mods.js';
-import { repairInstance } from './home.js';
+import { isPreparing, repairInstance } from './home.js';
 
 export async function versionData() {
     if (!store.versions) store.versions = await api.list_versions();
@@ -690,6 +690,7 @@ function closeMenus() {
 }
 
 async function playInstance(instance) {
+    if (isPreparing()) return toast('正在準備遊戲，請等這次完成後再啟動', 'warn');
     await selectInstance(instance).catch(fail);
     location.hash = '#home';
     emit('launch');
@@ -765,16 +766,16 @@ function render() {
 }
 
 export function initInstances() {
-    $('#btn-new-instance').addEventListener('click', createInstance);
-    $('#btn-quick-instance').addEventListener('click', () => quickCreate().catch(fail));
-    $('#btn-import').addEventListener('click', () => importFlow().catch(fail));
-    $('#btn-refresh-instances').addEventListener('click', async () => {
+    $('#btn-new-instance').addEventListener('click', guard(createInstance));
+    $('#btn-quick-instance').addEventListener('click', guard(() => quickCreate().catch(fail)));
+    $('#btn-import').addEventListener('click', guard(() => importFlow().catch(fail)));
+    $('#btn-refresh-instances').addEventListener('click', guard(async () => {
         store.versions = null;
         await loadInstances().catch(fail);
         await versionData().catch(() => {});
         render();
         toast('已重新整理');
-    });
+    }));
     on('instances', render);
     document.addEventListener('click', closeMenus);
     on('settings', render);

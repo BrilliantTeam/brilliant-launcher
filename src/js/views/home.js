@@ -166,6 +166,8 @@ async function play(relogged = false) {
     }
 }
 
+export const isPreparing = () => busy;
+
 export async function repairInstance(instance) {
     if (busy || !instance) return;
     if (isRunning(instance.id)) return toast('請先關閉遊戲再修復', 'warn');
@@ -354,7 +356,7 @@ function initFold() {
 export function initHome() {
     initFold();
     $('#btn-play').addEventListener('click', () => play());
-    on('launch', () => { if (!busy) play(); });
+    on('launch', () => (busy ? toast('正在準備遊戲，請等這次完成後再啟動', 'warn') : play()));
     $('#instance-pick').classList.add('glass');
     $('#instance-pick').addEventListener('click', (e) => {
         e.stopPropagation();

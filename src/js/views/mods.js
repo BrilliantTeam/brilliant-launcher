@@ -1,5 +1,5 @@
 import { api, listen, openUrl, pickFiles } from '../api.js';
-import { $, $$, clear, confirm, dialog, fail, fmtBytes, h, toast } from '../ui.js';
+import { $, $$, clear, confirm, dialog, fail, fmtBytes, h, toast, guard } from '../ui.js';
 import { emit, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
 import { selectInstance } from './instances.js';
@@ -884,13 +884,13 @@ export function initMods() {
         timer = setTimeout(() => search(), 400);
     });
     $('#store-sort').addEventListener('change', () => search());
-    $('#btn-more-mods').addEventListener('click', () => search(false));
-    $('#btn-refresh-mods').addEventListener('click', () => reloadInstalled());
-    $('#btn-update-all').addEventListener('click', () => update(state.kind, (installed[state.kind] || []).filter((entry) => entry.update && !entry.pinned)));
-    $('#btn-add-mod').addEventListener('click', async () => {
+    $('#btn-more-mods').addEventListener('click', guard(() => search(false)));
+    $('#btn-refresh-mods').addEventListener('click', guard(() => reloadInstalled()));
+    $('#btn-update-all').addEventListener('click', guard(() => update(state.kind, (installed[state.kind] || []).filter((entry) => entry.update && !entry.pinned))));
+    $('#btn-add-mod').addEventListener('click', guard(async () => {
         const picked = await pickFiles({ multiple: true, filters: [{ name: 'Minecraft 模組', extensions: ['jar'] }] });
         if (picked) await installLocal(Array.isArray(picked) ? picked : [picked]);
-    });
+    }));
     $('#btn-open-mods').addEventListener('click', () => openFolder({ mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks' }[state.kind]));
     for (const button of $$('[data-folder]')) button.addEventListener('click', () => openFolder(button.dataset.folder));
 

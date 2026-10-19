@@ -1060,3 +1060,6 @@ button.mc.icon-btn .ico { width: 16px; height: 16px; }
 .look-stage { width: 310px; }
 .stage-anims { flex-wrap: nowrap; }
 .stage-anims .chip { padding: 4px 9px; }
+
+[data-pending] { pointer-events: none; }
+button[data-pending] { opacity: 0.6; }

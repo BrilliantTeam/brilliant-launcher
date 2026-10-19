@@ -1,5 +1,5 @@
 import { api, fileSrc, pickFiles } from '../api.js';
-import { $, clear, confirm, dialog, fail, h, toast } from '../ui.js';
+import { $, clear, confirm, dialog, fail, h, toast, guard } from '../ui.js';
 import { icon } from '../icons.js';
 import { avatarUrl, emit, loadAccounts, on, selectedAccount, store } from '../store.js';
 
@@ -493,8 +493,8 @@ export async function refreshSessions() {
 }
 
 export function initAccounts() {
-    $('#btn-login-msa').addEventListener('click', loginMicrosoft);
-    $('#btn-login-offline').addEventListener('click', addOffline);
+    $('#btn-login-msa').addEventListener('click', guard(loginMicrosoft));
+    $('#btn-login-offline').addEventListener('click', guard(addOffline));
     on('accounts', render);
     addEventListener('hashchange', () => {
         if (viewer) viewer.renderPaused = location.hash !== '#accounts';

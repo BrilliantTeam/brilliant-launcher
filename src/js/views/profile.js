@@ -1,5 +1,5 @@
 import { api, openUrl } from '../api.js';
-import { $, clear, h } from '../ui.js';
+import { $, clear, h, guard } from '../ui.js';
 import { icon } from '../icons.js';
 import { avatarUrl, on, selectedAccount } from '../store.js';
 
@@ -93,9 +93,9 @@ async function render() {
 export function initProfile() {
     on('accounts', render);
     on('settings', () => { if (document.body.dataset.view === 'profile') render(); });
-    $('#btn-profile-refresh').addEventListener('click', () => {
+    $('#btn-profile-refresh').addEventListener('click', guard(() => {
         loaded.clear();
         render();
-    });
+    }));
     render();
 }

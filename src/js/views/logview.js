@@ -1,5 +1,5 @@
 import { api, listen } from '../api.js';
-import { $, fail, h } from '../ui.js';
+import { $, fail, h, guard } from '../ui.js';
 
 const MAX_LINES = 4000;
 const RECENT_LINES = 1500;
@@ -21,9 +21,9 @@ export function initLog() {
     });
 
     $('#btn-clear-log').addEventListener('click', () => box.replaceChildren());
-    $('#btn-open-logs').addEventListener('click', async () => {
+    $('#btn-open-logs').addEventListener('click', guard(async () => {
         const paths = await api.launcher_paths();
         const logs = paths.find(([label]) => label === '日誌');
         if (logs) await api.open_path({ path: logs[1] }).catch(fail);
-    });
+    }));
 }

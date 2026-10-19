@@ -1,6 +1,6 @@
 import { api, appVersion, appWindow, openUrl, setZoom } from './api.js';
 import { icon } from './icons.js';
-import { $, $$, dialog, fail, h, rangeFill, toast } from './ui.js';
+import { $, $$, dialog, fail, h, rangeFill, toast, guard } from './ui.js';
 import { emit, loadAccounts, loadInstances, loadSettings, on, store } from './store.js';
 import { initHome } from './views/home.js';
 import { initInstances } from './views/instances.js';
@@ -169,7 +169,7 @@ async function checkUpdate() {
     const first = !pendingUpdate;
     pendingUpdate = { latest, current };
     if (!first) return;
-    chip.addEventListener('click', async () => {
+    chip.addEventListener('click', guard(async () => {
         const { latest, current } = pendingUpdate;
         const go = await dialog({
             title: `輝煌啟動器 v${latest.version}`,
@@ -185,7 +185,7 @@ async function checkUpdate() {
             fail(error);
             openUrl(latest.page);
         });
-    });
+    }));
 }
 
 async function boot() {
