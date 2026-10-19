@@ -16,11 +16,9 @@
 - 從官方啟動器、Prism、MultiMC、CurseForge、Modrinth App、X Minecraft Launcher 匯入
 - 伺服器升版時一鍵升級實例、自動安裝 Brilliant-Server-Mod
 
-## 授權
+## 著作權
 
-[GNU AGPL-3.0](LICENSE)。修改或散布本程式時，必須以相同授權公開完整原始碼。
-
-本儲存庫的所有檔案（包含圖示）都依 AGPL-3.0 授權。「輝煌」「Brilliant」名稱與標誌另受商標保護，發布修改版請使用不同的名稱與標誌，避免被誤認為官方版本。
+輝煌啟動器為輝煌伺服器專用的閉源軟體，著作權所有（All Rights Reserved），詳見 [LICENSE](LICENSE)。
 
 | 第三方元件 | 授權 |
 |---|---|

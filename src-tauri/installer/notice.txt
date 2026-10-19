@@ -30,5 +30,6 @@ Brilliant Launcher｜輝煌啟動器 隱私權說明
 
 聯絡我們：ricechen@brilliantw.net
 
-【開放原始碼】
-輝煌啟動器以 GNU AGPL-3.0 授權開放原始碼：https://github.com/BrilliantTeam/brilliant-launcher
+【著作權】
+輝煌啟動器為輝煌伺服器專用的閉源軟體，著作權所有（All Rights Reserved）。未經授權請勿重新散布、修改或用於其他用途。
+內含第三方元件：Minecraft-Font、GNU Unifont、內海字體（SIL OFL 1.1）、skinview3d、Pixelarticons（MIT）。

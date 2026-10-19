@@ -2,7 +2,7 @@
 <component type="desktop-application">
   <id>net.brilliantw.launcher</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>AGPL-3.0-only</project_license>
+  <project_license>LicenseRef-proprietary</project_license>
   <name>Brilliant Launcher</name>
   <name xml:lang="zh-TW">輝煌啟動器</name>
   <summary>Minecraft launcher for the Brilliant server</summary>
@@ -16,10 +16,8 @@
   </description>
   <launchable type="desktop-id">net.brilliantw.launcher.desktop</launchable>
   <url type="homepage">https://www.brilliantw.net/launcher/</url>
-  <url type="vcs-browser">https://github.com/BrilliantTeam/brilliant-launcher</url>
-  <url type="bugtracker">https://github.com/BrilliantTeam/brilliant-launcher/issues</url>
   <content_rating type="oars-1.1"/>
   <releases>
-    <release version="1.0.11" date="2026-10-19"/>
+    <release version="1.0.12" date="2026-10-19"/>
   </releases>
 </component>
