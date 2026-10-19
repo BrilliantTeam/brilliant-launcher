@@ -79,6 +79,14 @@ pub struct Hit {
     pub author: String,
     #[serde(default)]
     pub display_categories: Vec<String>,
+    #[serde(default)]
+    pub follows: u64,
+    #[serde(default)]
+    pub date_modified: String,
+    #[serde(default)]
+    pub client_side: String,
+    #[serde(default)]
+    pub server_side: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -110,6 +118,76 @@ pub struct Detail {
     #[serde(default)]
     pub gallery: Vec<GalleryImage>,
     pub project_type: String,
+    #[serde(default)]
+    pub followers: u64,
+    #[serde(default)]
+    pub published: String,
+    #[serde(default)]
+    pub updated: String,
+    #[serde(default)]
+    pub license: Option<License>,
+    #[serde(default)]
+    pub client_side: String,
+    #[serde(default)]
+    pub server_side: String,
+    #[serde(default)]
+    pub source_url: Option<String>,
+    #[serde(default)]
+    pub issues_url: Option<String>,
+    #[serde(default)]
+    pub wiki_url: Option<String>,
+    #[serde(default)]
+    pub discord_url: Option<String>,
+    #[serde(default)]
+    pub donation_urls: Vec<Donation>,
+    #[serde(default)]
+    pub authors: Vec<String>,
+    #[serde(default)]
+    pub compat: Option<Compat>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct License {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub name: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Donation {
+    #[serde(default)]
+    pub platform: String,
+    pub url: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Compat {
+    pub mc: String,
+    pub version_number: String,
+    pub version_type: String,
+    pub date_published: String,
+    pub changelog: String,
+    pub deps: Vec<DepInfo>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct DepInfo {
+    pub project_id: String,
+    pub title: String,
+    pub kind: String,
+}
+
+#[derive(Deserialize)]
+struct Member {
+    user: MemberUser,
+    #[serde(default)]
+    role: String,
+}
+
+#[derive(Deserialize)]
+struct MemberUser {
+    username: String,
 }
 
 #[derive(Deserialize, Clone)]
@@ -127,6 +205,8 @@ struct Version {
     loaders: Vec<String>,
     #[serde(default)]
     date_published: String,
+    #[serde(default)]
+    changelog: Option<String>,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -256,15 +336,61 @@ pub async fn search(kind: Kind, query: &str, mc: &str, category: &str, sort: &st
     net::get_json(&url, false).await
 }
 
-pub async fn detail(project: &str) -> R<Detail> {
-    if !valid_id(project) {
+fn clip(text: &str, max: usize) -> String {
+    if text.chars().count() > max {
+        text.chars().take(max).collect::<String>() + "\n⋯"
+    } else {
+        text.to_string()
+    }
+}
+
+pub async fn detail(project: &str, kind: Option<Kind>, mc: Option<&str>) -> R<Detail> {
+    if !valid_id(project) || mc.is_some_and(|m| !valid_mc(m)) {
         bail!("模組代號不正確");
     }
-    let mut detail: Detail = net::get_json(&format!("{API}/project/{project}"), false).await?;
-    if detail.body.chars().count() > 6000 {
-        detail.body = detail.body.chars().take(6000).collect::<String>() + "\n⋯";
+    let compat_version = async {
+        match (kind, mc) {
+            (Some(kind), Some(mc)) => version_for(kind, project, mc).await.ok(),
+            _ => None,
+        }
+    };
+    let (project_url, members_url) = (format!("{API}/project/{project}"), format!("{API}/project/{project}/members"));
+    let (detail, members, version) = tokio::join!(
+        net::get_json::<Detail>(&project_url, false),
+        net::get_json::<Vec<Member>>(&members_url, false),
+        compat_version
+    );
+    let mut detail = detail?;
+    detail.body = clip(&detail.body, 20000);
+    detail.gallery.truncate(12);
+    let mut members = members.unwrap_or_default();
+    members.sort_by_key(|m| !(m.role.to_lowercase().contains("owner") || m.role.to_lowercase().contains("lead")));
+    detail.authors = members.into_iter().take(4).map(|m| m.user.username).collect();
+    if let (Some(version), Some(mc)) = (version, mc) {
+        let ids: Vec<String> = version.dependencies.iter().filter_map(|d| d.project_id.clone()).filter(|id| valid_id(id)).collect();
+        let titles: Vec<ProjectInfo> = if ids.is_empty() {
+            Vec::new()
+        } else {
+            net::get_json(&format!("{API}/projects?ids={}", encode(&serde_json::to_string(&ids)?)), false).await.unwrap_or_default()
+        };
+        let deps = version
+            .dependencies
+            .iter()
+            .filter_map(|d| {
+                let id = d.project_id.clone()?;
+                let title = titles.iter().find(|p| p.id == id).map(|p| p.title.clone()).unwrap_or_else(|| id.clone());
+                Some(DepInfo { project_id: id, title, kind: d.dependency_type.clone() })
+            })
+            .collect();
+        detail.compat = Some(Compat {
+            mc: mc.to_string(),
+            version_number: version.version_number,
+            version_type: version.version_type,
+            date_published: version.date_published,
+            changelog: clip(version.changelog.as_deref().unwrap_or_default().trim(), 6000),
+            deps,
+        });
     }
-    detail.gallery.truncate(6);
     Ok(detail)
 }
 
@@ -559,6 +685,18 @@ pub async fn remove(instance_id: &str, kind: Kind, file: &str) -> R<()> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    #[ignore]
+    async fn real_detail_has_compat_and_authors() {
+        let d = detail("AANobbMI", Some(Kind::Mod), Some("1.21.1")).await.unwrap();
+        assert!(!d.authors.is_empty() || d.license.is_some());
+        let c = d.compat.expect("Sodium 要有 1.21.1 版本");
+        assert_eq!(c.mc, "1.21.1");
+        assert!(!c.version_number.is_empty());
+        let d = detail("mOgUt4GM", Some(Kind::Mod), Some("1.21.1")).await.unwrap();
+        println!("{:?} {:?} {:?}", d.authors, d.license, d.compat.as_ref().map(|c| &c.deps));
+    }
+
     use super::*;
 
     #[test]

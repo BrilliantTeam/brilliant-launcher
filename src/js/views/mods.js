@@ -3,6 +3,7 @@ import { $, $$, clear, confirm, dialog, fail, fmtBytes, h, toast, guard } from '
 import { emit, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
 import { selectInstance } from './instances.js';
+import { renderMarkdown } from '../markdown.js';
 
 const FABRIC_API = 'P7dR8mSH';
 const KIND_LABEL = { mod: '模組', resourcepack: '資源包', shader: '光影' };
@@ -151,39 +152,116 @@ function actionButton(kind, projectId, title) {
     return h('button', { type: 'button', class: 'mc primary', onclick: (e) => { e.stopPropagation(); install(kind, projectId, title); } }, '安裝');
 }
 
-function plainBody(markdown) {
-    return String(markdown || '')
-        .replace(/<[^>]+>/g, '')
-        .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
-        .replace(/\[\s*\]\([^)]*\)/g, '')
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-        .replace(/^\s*(-{3,}|\*{3,}|_{3,})\s*$/gm, '')
-        .replace(/^[ \t]+$/gm, '')
-        .replace(/^#+\s*/gm, '')
-        .replace(/[*_`]{1,3}/g, '')
-        .replace(/\n{3,}/g, '\n\n')
-        .trim();
+const CATEGORY_LABEL = {
+    ...Object.fromEntries(Object.values(CATEGORIES).flat().filter(([value]) => value)),
+    technology: '科技', magic: '魔法', 'game-mechanics': '遊戲機制', worldgen: '世界生成', equipment: '裝備', food: '食物',
+    mobs: '生物', social: '社交', transportation: '交通', management: '管理', minigame: '小遊戲', cursed: '惡搞', economy: '經濟',
+    combat: '戰鬥', audio: '音效', blocks: '方塊', entities: '實體', environment: '環境', fonts: '字型', items: '物品', locale: '語言',
+    models: '模型', atmosphere: '大氣', bloom: '泛光', 'colored-lighting': '彩色光源', foliage: '植被', 'path-tracing': '路徑追蹤',
+    pbr: 'PBR', reflections: '反射', shadows: '陰影', high: '高配', medium: '中配', low: '低配', screenshot: '截圖用', themed: '主題',
+    'core-shaders': '核心光影', '8x-': '8x 以下', '48x': '48x', '64x': '64x', '128x': '128x', '256x': '256x', '512x+': '512x 以上'
+};
+const LOADER_TAGS = new Set(['fabric', 'quilt', 'forge', 'neoforge', 'iris', 'optifine', 'canvas', 'vanilla', 'minecraft', 'bukkit', 'spigot', 'paper', 'purpur', 'folia', 'sponge', 'datapack', 'velocity', 'waterfall', 'bungeecord']);
+const catName = (c) => CATEGORY_LABEL[c] || c;
+const dateText = (iso) => (iso ? new Date(iso).toLocaleDateString('zh-TW') : '');
+
+function ago(iso) {
+    const days = (Date.now() - Date.parse(iso)) / 86_400_000;
+    if (!Number.isFinite(days)) return '';
+    if (days < 1) return '今天';
+    if (days < 30) return `${Math.floor(days)} 天前`;
+    if (days < 365) return `${Math.floor(days / 30)} 個月前`;
+    return `${Math.floor(days / 365)} 年前`;
+}
+
+function sideLabel(kind, client, server) {
+    if (kind !== 'mod' || !client) return '';
+    if (client === 'unsupported') return '伺服器專用';
+    if (server === 'unsupported') return '僅用戶端';
+    if (client === 'required' && server === 'required') return '雙端都要裝';
+    return client === 'optional' ? '用戶端可選' : '用戶端';
+}
+
+function compatBox(kind, detail) {
+    const instance = selectedInstance();
+    if (!instance) return null;
+    const c = detail.compat;
+    if (!c) return h('div', { class: 'compat warn' }, icon('warning-box'), `目前沒有支援 Minecraft ${instance.mcVersion} 的版本，安裝不了。`);
+    const names = (type) => c.deps.filter((d) => d.kind === type);
+    const required = names('required');
+    const optional = names('optional');
+    const incompatible = names('incompatible');
+    return h('div', { class: 'compat' },
+        h('div', {}, icon('check'), `支援 Minecraft ${c.mc}：最新版本 ${c.version_number}${c.version_type !== 'release' ? `（${VERSION_TYPE[c.version_type]?.[0] ?? c.version_type}）` : ''}，${dateText(c.date_published)} 發佈`),
+        kind === 'mod' && required.length ? h('div', {}, icon('download'), `需要前置：${required.map((d) => d.title).join('、')}（安裝時會自動一起裝好）`) : null,
+        optional.length ? h('div', {}, icon('plus'), `可搭配：${optional.map((d) => d.title).join('、')}`) : null,
+        incompatible.length ? h('div', { class: 'bad' }, icon('warning-box'), `不相容：${incompatible.map((d) => `${d.title}${installedEntry(kind, d.project_id) ? '（這個實例已安裝，請擇一使用）' : ''}`).join('、')}`) : null);
 }
 
 async function showDetail(kind, hit) {
     let detail;
     try {
-        detail = await api.content_detail({ project: hit.project_id });
+        detail = await api.content_detail({ project: hit.project_id, kind, id: selectedInstance()?.id ?? null });
     } catch (error) {
         return fail(error);
     }
     const holder = h('div', { class: 'detail-action' });
     const refreshButton = () => clear(holder).append(actionButton(kind, detail.id, detail.title));
     refreshButton();
+    const authors = detail.authors?.length ? detail.authors : hit.author ? [hit.author] : [];
+    const license = detail.license?.name || detail.license?.id || '';
+    const side = sideLabel(kind, detail.client_side, detail.server_side);
+    const stat = (name, text) => (text ? h('span', { class: 'dstat' }, icon(name), text) : null);
+    const links = [
+        ['script-text', '原始碼', detail.source_url],
+        ['bug', '問題回報', detail.issues_url],
+        ['book', 'Wiki', detail.wiki_url],
+        ['discord', 'Discord', detail.discord_url],
+        ...(detail.donation_urls || []).map((d) => ['gift', `贊助 ${d.platform}`.trim(), d.url])
+    ].filter(([, , url]) => /^https?:\/\//.test(url || ''));
+    const panes = {
+        about: () => renderMarkdown(detail.body || detail.description, openUrl),
+        changelog: () => (detail.compat?.changelog ? renderMarkdown(detail.compat.changelog, openUrl) : h('p', { class: 'hint' }, detail.compat ? '這個版本沒有附上更新日誌。' : '沒有適用目前實例的版本。')),
+        gallery: () => h('div', { class: 'detail-gallery' }, ...detail.gallery.map((img) => h('figure', {},
+            h('img', { src: img.url, alt: img.title || '', loading: 'lazy', onclick: (e) => e.currentTarget.parentElement.classList.toggle('zoom') }),
+            img.title ? h('figcaption', {}, img.title) : null)))
+    };
+    const pane = h('div', { class: 'detail-body' });
+    const tabs = h('div', { class: 'store-tabs detail-tabs', role: 'tablist' }, ...[
+        ['about', '介紹'],
+        ['changelog', '更新日誌'],
+        detail.gallery.length ? ['gallery', `圖片（${detail.gallery.length}）`] : null
+    ].filter(Boolean).map(([key, label]) => h('button', {
+        type: 'button',
+        'data-tab': key,
+        'aria-selected': key === 'about' ? 'true' : 'false',
+        onclick: () => showPane(key)
+    }, label)));
+    const showPane = (key) => {
+        for (const b of tabs.children) b.setAttribute('aria-selected', b.dataset.tab === key ? 'true' : 'false');
+        clear(pane).append(panes[key]());
+        pane.scrollTop = 0;
+    };
+    showPane('about');
     const content = h('div', { class: 'detail' },
         h('div', { class: 'detail-head' },
             detail.icon_url ? h('img', { src: detail.icon_url, alt: '' }) : h('div', { class: 'mod-icon' }, icon(KIND_ICON[kind])),
             h('div', { class: 'grow' },
                 h('div', { class: 'detail-desc' }, detail.description),
-                h('div', { class: 'meta' }, `${fmtCount(detail.downloads)} 次下載｜${detail.categories.join('、')}`)),
+                authors.length ? h('div', { class: 'meta' }, `作者：${authors.join('、')}`) : null),
             holder),
-        detail.gallery.length ? h('div', { class: 'gallery' }, ...detail.gallery.map((img) => h('img', { src: img.url, alt: img.title || '', loading: 'lazy' }))) : '',
-        h('pre', { class: 'detail-body' }, plainBody(detail.body)));
+        h('div', { class: 'detail-stats' },
+            stat('download', `${fmtCount(detail.downloads)} 次下載`),
+            stat('heart', `${fmtCount(detail.followers)} 人關注`),
+            stat('clock', detail.updated ? `${ago(detail.updated)}更新` : ''),
+            stat('archive', detail.published ? `${dateText(detail.published)} 上架` : ''),
+            stat('book', license ? `授權 ${license}` : ''),
+            stat('user', side)),
+        detail.categories.length ? h('div', { class: 'mod-tags' }, ...detail.categories.filter((c) => !LOADER_TAGS.has(c)).map((c) => h('span', { class: 'mtag' }, catName(c)))) : null,
+        compatBox(kind, detail),
+        tabs,
+        pane,
+        links.length ? h('div', { class: 'detail-links' }, ...links.map(([name, label, url]) => h('button', { type: 'button', class: 'mc', onclick: () => openUrl(url) }, icon(name), label))) : null);
     const value = await dialog({
         title: detail.title,
         wide: true,
@@ -195,12 +273,15 @@ async function showDetail(kind, hit) {
 
 function resultCard(hit) {
     const kind = state.kind;
+    const side = sideLabel(kind, hit.client_side, hit.server_side);
+    const cats = (hit.display_categories || []).filter((c) => !LOADER_TAGS.has(c)).slice(0, 3);
     return h('div', { class: 'mod-card', role: 'button', tabindex: '0', title: '查看詳細介紹', onclick: () => showDetail(kind, hit) },
         hit.icon_url ? h('img', { src: hit.icon_url, alt: '', loading: 'lazy' }) : h('div', { class: 'mod-icon' }, icon(KIND_ICON[kind])),
         h('div', { class: 'grow' },
             h('div', { class: 'name' }, hit.title),
-            h('div', { class: 'meta' }, `${hit.author}｜${fmtCount(hit.downloads)} 次下載`),
-            h('div', { class: 'desc' }, hit.description)),
+            h('div', { class: 'meta' }, [hit.author, `${fmtCount(hit.downloads)} 下載`, hit.date_modified ? `${ago(hit.date_modified)}更新` : ''].filter(Boolean).join('｜')),
+            h('div', { class: 'desc' }, hit.description),
+            side || cats.length ? h('div', { class: 'mod-tags' }, side ? h('span', { class: 'mtag side' }, side) : null, ...cats.map((c) => h('span', { class: 'mtag' }, catName(c)))) : null),
         actionButton(kind, hit.project_id, hit.title));
 }
 
@@ -742,7 +823,7 @@ function installedRow(entry) {
     const problems = (entry.missing?.length ? 1 : 0) + (entry.conflicts?.length ? 1 : 0);
     return h('div', { class: `row ${entry.enabled ? '' : 'off'} ${problems ? 'has-problem' : ''}` },
         entry.icon_url ? h('img', { class: 'row-icon', src: entry.icon_url, alt: '' }) : h('div', { class: 'row-icon' }, icon(KIND_ICON[kind])),
-        h('div', { class: 'grow' },
+        h('div', entry.project_id && !entry.managed ? { class: 'grow clickable', title: '查看詳細介紹', onclick: () => showDetail(kind, { project_id: entry.project_id, title: entry.name }) } : { class: 'grow' },
             h('div', { class: 'name' },
                 entry.name,
                 entry.managed ? h('span', { class: 'badge' }, '啟動器管理') : null,

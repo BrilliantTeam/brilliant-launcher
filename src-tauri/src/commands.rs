@@ -293,8 +293,13 @@ pub async fn content_search(id: String, kind: String, query: String, category: S
 }
 
 #[tauri::command]
-pub async fn content_detail(project: String) -> R<modrinth::Detail> {
-    modrinth::detail(&project).await
+pub async fn content_detail(project: String, kind: Option<String>, id: Option<String>) -> R<modrinth::Detail> {
+    let kind = kind.as_deref().map(modrinth::Kind::parse).transpose()?;
+    let mc = match id {
+        Some(id) => instance::get(&id).await.ok().map(|i| i.mc_version),
+        None => None,
+    };
+    modrinth::detail(&project, kind, mc.as_deref()).await
 }
 
 #[tauri::command]
