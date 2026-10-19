@@ -75,8 +75,10 @@ async function editorDialog(title, source) {
                 }, icon('image'), '選擇圖片'),
                 imageClear)));
     renderPreview();
-    const wanted = source.mcVersion || data.recommended || '';
-    let showAll = !modSupported.size || (wanted !== '' && !modSupported.has(wanted));
+    const wanted = source.mcVersion || (source.general ? data.latestRelease : data.recommended) || '';
+    let showAll = !!source.general || !modSupported.size || (wanted !== '' && !modSupported.has(wanted));
+    const kind = segmented([['brilliant', '輝煌實例'], ['general', '一般實例']], source.general ? 'general' : 'brilliant');
+    const kindHint = h('div', { class: 'hint' });
     const mcVersion = h('select', {});
     const renderVersions = () => {
         const current = mcVersion.value || wanted;
@@ -87,7 +89,7 @@ async function editorDialog(title, source) {
                     h(
                         'option',
                         { value: v.id, selected: v.id === current },
-                        `${v.id}${v.type === 'release' ? '' : `（${v.type}）`}${v.id === data.recommended ? '（推薦）' : showAll && modSupported.has(v.id) ? '（輝煌支援）' : ''}`
+                        `${v.id}${v.type === 'release' ? '' : `（${v.type}）`}${v.id === data.recommended ? (kind.value === 'general' ? '（輝煌推薦）' : '（推薦）') : showAll && modSupported.has(v.id) ? '（輝煌支援）' : ''}`
                     )
                 )
         );
@@ -117,8 +119,13 @@ async function editorDialog(title, source) {
 
     async function refreshLoaders() {
         const isFabric = loader.value === 'fabric';
+        const general = kind.value === 'general';
         loaderField.style.display = isFabric ? '' : 'none';
-        rpcField.style.display = isFabric ? '' : 'none';
+        rpcField.style.display = isFabric && !general ? '' : 'none';
+        showAllBox.style.display = general ? 'none' : '';
+        kindHint.textContent = general
+            ? '給合作伺服器或單人遊戲用：任何版本都能選，不會自動安裝輝煌模組、不會預載伺服器資源包，也不會跳出輝煌的升版提醒。'
+            : '玩輝煌用：自動安裝 Brilliant-Server-Mod、預載伺服器資源包，伺服器升版時會提醒你一鍵跟上。';
         if (!isFabric) return;
         const seq = ++loaderSeq;
         const keep = loaderVersion.value;
@@ -140,6 +147,12 @@ async function editorDialog(title, source) {
         }
     }
     loader.addEventListener('change', refreshLoaders);
+    kind.addEventListener('change', () => {
+        showAll = kind.value === 'general' || !modSupported.size;
+        showAllBox.querySelector('input').checked = showAll;
+        renderVersions();
+        refreshLoaders();
+    });
     mcVersion.addEventListener('change', refreshLoaders);
 
     const javaPath = h('select', {}, h('option', { value: '' }, '沿用全域設定'),
@@ -166,6 +179,7 @@ async function editorDialog(title, source) {
     const content = h(
         'div',
         { class: 'inst-editor' },
+        h('div', { class: 'field' }, h('label', {}, '類型'), kind, kindHint),
         h('div', { class: 'field' }, h('label', {}, '名稱'), name),
         h('div', { class: 'field' }, h('label', {}, '圖示'), iconPicker),
         imageField,
@@ -201,6 +215,7 @@ async function editorDialog(title, source) {
         loaderVersion: loader.value === 'fabric' ? loaderVersion.value : '',
         memoryMb: Math.max(0, Number(memory.value) || 0),
         injectRichPresence: rpc.value === '' ? null : rpc.value === 'on',
+        general: kind.value === 'general',
         javaPath: javaPath.value,
         jvmArgs: jvmArgs.value.trim(),
         width: Math.max(0, Number(width.value) || 0),
@@ -213,7 +228,7 @@ async function editorDialog(title, source) {
 const BLANK = {
     id: '', name: '', icon: 'zap', mcVersion: '', loader: 'vanilla', loaderVersion: '',
     versionId: '', memoryMb: 0, jvmArgs: '', width: 0, height: 0, fullscreen: false,
-    injectRichPresence: null, createdAt: 0, lastPlayed: 0, playSeconds: 0
+    injectRichPresence: null, general: false, join: '', createdAt: 0, lastPlayed: 0, playSeconds: 0
 };
 
 async function applyImage(id, pickedImage) {
@@ -240,11 +255,13 @@ export async function quickCreate() {
     return createFromDraft({ ...BLANK, name: `輝煌 ${version}`, icon: 'zap', mcVersion: version, loader: 'fabric' });
 }
 
-async function createInstance() {
-    const draft = await editorDialog('建立實例', { ...BLANK, loader: 'fabric' });
+async function createInstance(general = false) {
+    const draft = await editorDialog('建立實例', { ...BLANK, loader: 'fabric', general });
     if (!draft) return;
     await createFromDraft(draft).catch(fail);
 }
+
+export const createGeneralInstance = () => createInstance(true);
 
 async function editInstance(instance) {
     const result = await editorDialog('編輯實例', { ...instance });
@@ -705,9 +722,9 @@ function card(instance) {
     const active = selectedInstance()?.id === instance.id;
     const running = isRunning(instance.id);
     const fabric = instance.loader === 'fabric';
-    const inject = fabric && (instance.injectRichPresence ?? store.settings?.injectRichPresence ?? true);
+    const inject = fabric && !instance.general && (instance.injectRichPresence ?? store.settings?.injectRichPresence ?? true);
     const supported = store.versions?.modVersions;
-    const unsupported = supported?.length && !supported.includes(instance.mcVersion);
+    const unsupported = !instance.general && supported?.length && !supported.includes(instance.mcVersion);
     const tool = (name, label, handler, extra = '') =>
         h('button', {
             type: 'button',
@@ -730,6 +747,7 @@ function card(instance) {
             h('div', { class: 'inst-tags' },
                 h('span', { class: 'tag' }, `Minecraft ${instance.mcVersion}`),
                 h('span', { class: 'tag' }, fabric ? `Fabric${instance.loaderVersion ? ` ${instance.loaderVersion}` : ''}` : '原版'),
+                instance.general ? h('span', { class: 'tag' }, '一般實例') : null,
                 inject ? h('span', { class: 'tag accent' }, 'Brilliant-Server-Mod') : null),
             h('div', { class: 'inst-meta' },
                 icon('clock'),
@@ -766,7 +784,7 @@ function render() {
 }
 
 export function initInstances() {
-    $('#btn-new-instance').addEventListener('click', guard(createInstance));
+    $('#btn-new-instance').addEventListener('click', guard(() => createInstance()));
     $('#btn-quick-instance').addEventListener('click', guard(() => quickCreate().catch(fail)));
     $('#btn-import').addEventListener('click', guard(() => importFlow().catch(fail)));
     $('#btn-refresh-instances').addEventListener('click', guard(async () => {

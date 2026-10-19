@@ -34,6 +34,7 @@ pub struct Instance {
     pub mod_profiles: Vec<ModProfile>,
     pub active_profile: String,
     pub inject_rich_presence: Option<bool>,
+    pub general: bool,
     pub created_at: i64,
     pub last_played: i64,
     pub play_seconds: i64,
@@ -65,7 +66,7 @@ impl Instance {
         }
     }
     pub fn wants_rich_presence(&self, s: &Settings) -> bool {
-        self.loader == "fabric" && self.inject_rich_presence.unwrap_or(s.inject_rich_presence)
+        !self.general && self.loader == "fabric" && self.inject_rich_presence.unwrap_or(s.inject_rich_presence)
     }
 }
 
@@ -202,4 +203,23 @@ pub async fn add_mod(id: &str, source: &str) -> R<String> {
     }
     tokio::fs::copy(src, &dest).await.with_context(|| format!("複製失敗：{source}"))?;
     Ok(name)
+}
+
+#[cfg(test)]
+mod general_tests {
+    use super::*;
+
+    #[test]
+    fn general_instances_skip_brilliant_features() {
+        let settings = Settings::default();
+        let mut instance = Instance { loader: "fabric".into(), ..Default::default() };
+        assert!(instance.wants_rich_presence(&settings));
+        instance.general = true;
+        assert!(!instance.wants_rich_presence(&settings));
+        assert!(!crate::boost::wants_packs(&instance, &settings));
+        instance.inject_rich_presence = Some(true);
+        assert!(!instance.wants_rich_presence(&settings), "一般實例就算手動開啟也不安裝輝煌模組");
+        let old: Instance = serde_json::from_str(r#"{"id":"a","name":"舊","loader":"fabric"}"#).unwrap();
+        assert!(!old.general, "舊實例要視為輝煌實例");
+    }
 }

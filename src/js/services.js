@@ -52,7 +52,7 @@ async function checkNews() {
 
 export function upgradeTarget(instance) {
     const recommended = store.versions?.recommended;
-    if (!instance || !recommended || instance.loader !== 'fabric' || instance.mcVersion === recommended) return null;
+    if (!instance || instance.general || !recommended || instance.loader !== 'fabric' || instance.mcVersion === recommended) return null;
     const [a, b] = [recommended, instance.mcVersion].map((v) => v.split('.').map((n) => parseInt(n, 10) || 0));
     for (let i = 0; i < 3; i++) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0) ? recommended : null;
     return null;

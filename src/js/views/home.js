@@ -4,7 +4,7 @@ import { avatarUrl, emit, isRunning, loadInstances, on, selectedAccount, selecte
 import { initNews } from './news.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
 import { addOffline, loginMicrosoft } from './accounts.js';
-import { quickCreate, upgradeFlow, versionData } from './instances.js';
+import { createGeneralInstance, quickCreate, upgradeFlow, versionData } from './instances.js';
 import { ready, upgradeTarget } from '../services.js';
 import { clearRecentLog, recentLog } from './logview.js';
 import { diagnose } from '../crash.js';
@@ -32,7 +32,7 @@ function renderPlayBar() {
     const instance = selectedInstance();
     const account = selectedAccount();
     const running = instance && isRunning(instance.id);
-    const target = shardOf(store.settings?.quickJoin);
+    const target = instance?.general ? null : shardOf(store.settings?.quickJoin);
     const button = $('#btn-play');
 
     clear($('#home-instance')).append(...(instance ? [instanceVisual(instance), instance.name] : ['尚未建立實例']));
@@ -48,7 +48,7 @@ function renderPlayBar() {
     if (running) button.append('結束遊戲');
     else if (busy) button.append('準備中⋯');
     else if (target) button.append('開始遊戲', h('small', {}, `直連 ${target.label}`));
-    else button.append('開始遊戲', h('small', {}, store.settings?.quickJoin ? `連線 ${store.settings.quickJoin}` : '進入主畫面'));
+    else button.append('開始遊戲', h('small', {}, '進入主畫面'));
     button.classList.toggle('stop', !!running);
     button.classList.toggle('busy', busy && !running);
     button.disabled = !instance || !account || (busy && !running);
@@ -89,7 +89,7 @@ function renderSetup(account, instance) {
             h('button', { type: 'button', class: 'mc primary', onclick: loginMicrosoft }, '微軟正版登入'),
             h('button', { type: 'button', class: 'mc', onclick: addOffline }, '離線帳號'));
     } else {
-        step(2, '建立遊戲實例', '一鍵安裝輝煌推薦的 Minecraft 版本、Fabric 與 Brilliant-Server-Mod。',
+        step(2, '建立遊戲實例', '一鍵安裝輝煌推薦的 Minecraft 版本、Fabric 與 Brilliant-Server-Mod。想玩合作伺服器或單人遊戲，也可以建立一般實例。',
             h('button', {
                 type: 'button',
                 class: 'mc primary',
@@ -101,7 +101,8 @@ function renderSetup(account, instance) {
                     creating = false;
                     renderPlayBar();
                 }
-            }, creating ? '建立中⋯' : '一鍵建立輝煌實例'));
+            }, creating ? '建立中⋯' : '一鍵建立輝煌實例'),
+            h('button', { type: 'button', class: 'mc', disabled: creating, onclick: () => createGeneralInstance() }, '建立一般實例'));
     }
 }
 
@@ -141,9 +142,9 @@ async function play(relogged = false, join = null) {
     renderPlayBar();
     setProgress({ label: '準備中⋯⋯', doneFiles: 0, totalFiles: 0, doneBytes: 0, totalBytes: 0 });
     try {
-        const notes = await api.launch_game({ id: instance.id, join: join?.host ?? null });
+        const notes = await api.launch_game({ id: instance.id, join: join?.host ?? (instance.general ? '' : null) });
         for (const note of notes) toast(note, 'warn');
-        const target = shardOf(store.settings?.quickJoin);
+        const target = instance.general ? null : shardOf(store.settings?.quickJoin);
         toast(join ? `遊戲已啟動，將直接連線 ${join.name}` : target ? `遊戲已啟動，將直接連線 ${target.label}` : '遊戲已啟動');
         await loadInstances();
         const after = store.settings?.afterLaunch;
@@ -260,7 +261,9 @@ function shardTile(shard, status) {
 function renderShards() {
     clear($('#shards')).append(...SHARDS.map((shard, i) => shardTile(shard, statuses[i])));
     const target = shardOf(store.settings?.quickJoin);
-    clear($('#shard-hint')).append(...(target
+    clear($('#shard-hint')).append(...(selectedInstance()?.general
+        ? ['這是一般實例，開始遊戲後會停在主畫面；分流選擇只套用在輝煌實例。']
+        : target
         ? ['開始遊戲後直接進入 ', h('b', {}, target.label), h('button', {
             type: 'button',
             onclick: async () => {
@@ -372,7 +375,10 @@ export function initHome() {
     document.addEventListener('click', (e) => {
         if (!e.target.closest('#instance-menu')) toggleInstanceMenu(false);
     });
-    on('instances', renderPlayBar);
+    on('instances', () => {
+        renderPlayBar();
+        renderShards();
+    });
     on('accounts', renderPlayBar);
     on('ready', renderPlayBar);
     versionData().then(renderPlayBar, () => {});

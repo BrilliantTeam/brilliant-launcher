@@ -1118,3 +1118,4 @@ button[data-pending] { opacity: 0.6; }
 .srv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .srv-actions .mc { display: inline-flex; align-items: center; gap: 6px; }
 .srv-actions .mc .ico { width: 16px; height: 16px; }
+
