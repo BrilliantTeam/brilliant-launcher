@@ -127,7 +127,7 @@ const STAGE_TEXT = {
     launch: '啟動遊戲'
 };
 
-async function play(relogged = false) {
+async function play(relogged = false, join = null) {
     const instance = selectedInstance();
     if (!instance) return;
 
@@ -141,10 +141,10 @@ async function play(relogged = false) {
     renderPlayBar();
     setProgress({ label: '準備中⋯⋯', doneFiles: 0, totalFiles: 0, doneBytes: 0, totalBytes: 0 });
     try {
-        const notes = await api.launch_game({ id: instance.id });
+        const notes = await api.launch_game({ id: instance.id, join: join?.host ?? null });
         for (const note of notes) toast(note, 'warn');
         const target = shardOf(store.settings?.quickJoin);
-        toast(target ? `遊戲已啟動，將直接連線 ${target.label}` : '遊戲已啟動');
+        toast(join ? `遊戲已啟動，將直接連線 ${join.name}` : target ? `遊戲已啟動，將直接連線 ${target.label}` : '遊戲已啟動');
         await loadInstances();
         const after = store.settings?.afterLaunch;
         if (after === 'hide') await api.hide_window();
@@ -155,7 +155,7 @@ async function play(relogged = false) {
             $('#progress').hidden = true;
             renderPlayBar();
             toast('登入已過期，請在跳出的視窗重新登入，完成後會自動開始遊戲');
-            if (await loginMicrosoft()) return play(true);
+            if (await loginMicrosoft()) return play(true, join);
             return;
         }
         fail(error);
@@ -167,6 +167,12 @@ async function play(relogged = false) {
 }
 
 export const isPreparing = () => busy;
+
+export function joinServer(host, name) {
+    if (busy) return toast('正在準備遊戲，請等這次完成後再啟動', 'warn');
+    location.hash = '#home';
+    play(false, { host, name });
+}
 
 export async function repairInstance(instance) {
     if (busy || !instance) return;

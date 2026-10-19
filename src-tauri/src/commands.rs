@@ -393,8 +393,14 @@ pub async fn add_mods(id: String, files: Vec<String>) -> R<Vec<String>> {
 }
 
 #[tauri::command]
-pub async fn launch_game(app: AppHandle, id: String) -> R<Vec<String>> {
-    launch::launch(&app, &id).await
+pub async fn launch_game(app: AppHandle, id: String, join: Option<String>) -> R<Vec<String>> {
+    if let Some(host) = &join {
+        let valid = (1..=260).contains(&host.len()) && host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':');
+        if !valid {
+            bail!("伺服器位址不正確");
+        }
+    }
+    launch::launch(&app, &id, join).await
 }
 
 #[tauri::command]

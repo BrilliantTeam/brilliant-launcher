@@ -8,6 +8,7 @@ import { initMods } from './views/mods.js';
 import { initAccounts } from './views/accounts.js';
 import { initSettings } from './views/settings.js';
 import { initProfile } from './views/profile.js';
+import { initExplore } from './views/explore.js';
 import { notifyOnce, startServices } from './services.js';
 import { initLog } from './views/logview.js';
 
@@ -16,6 +17,7 @@ const TITLES = {
     home: '首頁',
     instances: '實例管理',
     mods: '模組與資源',
+    explore: '探索',
     accounts: '帳號',
     settings: '設定',
     log: '遊戲日誌',
@@ -207,6 +209,7 @@ async function boot() {
     initAccounts();
     initSettings();
     initProfile();
+    initExplore();
     initLog();
 
     emit('settings');

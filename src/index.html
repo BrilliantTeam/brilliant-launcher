@@ -41,6 +41,7 @@
         <a href="#profile" data-view="profile" title="我的輝煌"><i data-icon="trophy"></i><span>我的</span></a>
         <a href="#instances" data-view="instances" title="實例"><i data-icon="gamepad"></i><span>實例</span></a>
         <a href="#mods" data-view="mods" title="模組與資源"><i data-icon="zap"></i><span>模組</span></a>
+        <a href="#explore" data-view="explore" title="探索"><i data-icon="map"></i><span>探索</span></a>
         <a href="#accounts" data-view="accounts" title="帳號"><i data-icon="user"></i><span>帳號</span></a>
         <a href="#settings" data-view="settings" title="設定"><i data-icon="sliders"></i><span>設定</span></a>
         <a href="#log" data-view="log" title="日誌"><i data-icon="script-text"></i><span>日誌</span></a>
@@ -103,6 +104,15 @@
 
     <div class="page-wrap">
         <div class="container">
+            <section class="view" id="view-explore">
+                <div class="settings-head">
+                    <h1>探索</h1>
+                    <button type="button" class="mc" id="btn-explore-refresh"><i data-icon="reload"></i>重新整理</button>
+                </div>
+                <p class="hint">與輝煌合作的伺服器。按「用目前實例加入」會用你選中的實例直接連進去，輝煌分流的設定不會被改動。</p>
+                <div class="srv-list" id="explore-list"></div>
+            </section>
+
             <section class="view" id="view-profile">
                 <div class="settings-head">
                     <h1>我的輝煌</h1>

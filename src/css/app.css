@@ -1099,3 +1099,22 @@ button.mc.icon-btn .ico { width: 16px; height: 16px; }
 button[data-pending] { opacity: 0.6; }
 .detail-links .mc { display: inline-flex; align-items: center; gap: 6px; }
 .detail-links .mc .ico { width: 16px; height: 16px; }
+
+.srv-list { display: grid; gap: 14px; }
+.srv-card { padding: 18px 20px; background: var(--panel-face); border: 2px solid; border-color: var(--bevel-up); }
+.srv-head { display: flex; gap: 16px; align-items: center; }
+.srv-logo { width: 88px; height: 88px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center; object-fit: cover; color: var(--accent); background: var(--content-bg-sunken); border: 2px solid; border-color: var(--bevel-down); }
+.srv-logo .ico { width: 40px; height: 40px; }
+.srv-head .grow { min-width: 0; display: grid; gap: 6px; }
+.srv-head h2 { margin: 0; font-size: 22px; }
+.srv-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.srv-ip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; font: inherit; font-size: 13px; color: var(--text); cursor: pointer; background: var(--content-bg-sunken); border: 1px solid var(--border-soft); }
+.srv-ip:hover { border-color: var(--accent); color: var(--accent); }
+.srv-ip .ico { width: 14px; height: 14px; }
+.srv-state { font-size: 13px; color: var(--text-subtle); }
+.srv-state.up b { color: var(--success); }
+.srv-state.down { color: var(--danger); }
+.srv-desc { margin: 14px 0 0; padding: 12px 14px; font-size: 14px; line-height: 1.8; white-space: pre-line; background: var(--content-bg-sunken); border-left: 4px solid var(--accent); }
+.srv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.srv-actions .mc { display: inline-flex; align-items: center; gap: 6px; }
+.srv-actions .mc .ico { width: 16px; height: 16px; }

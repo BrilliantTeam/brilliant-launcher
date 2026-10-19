@@ -278,13 +278,16 @@ pub async fn repair(app: &AppHandle, instance_id: &str) -> R<()> {
     result.map(|_| ())
 }
 
-pub async fn launch(app: &AppHandle, instance_id: &str) -> R<Vec<String>> {
+pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) -> R<Vec<String>> {
     let state = app.state::<AppState>();
     if state.is_running(instance_id).await {
         bail!("這個實例已經在執行中了");
     }
 
-    let settings = crate::config::load_settings().await;
+    let mut settings = crate::config::load_settings().await;
+    if let Some(host) = join {
+        settings.quick_join = host;
+    }
     let mut instance = crate::instance::get(instance_id).await?;
     let account = crate::commands::active_account(&settings).await?;
 
