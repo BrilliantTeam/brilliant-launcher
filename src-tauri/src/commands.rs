@@ -357,6 +357,9 @@ pub async fn launcher_info() -> R<modinject::LauncherInfo> {
 
 #[tauri::command]
 pub async fn install_update(app: AppHandle, url: String, file: String, sha256: String) -> R<()> {
+    if !cfg!(target_os = "windows") {
+        bail!("請到官網下載新版");
+    }
     if !url.starts_with(&format!("{SITE}/api/launcher/download/"))
         || !modinject::safe_file_name(&file, "BrilliantLauncher_", "_x64-setup.exe")
         || sha256.len() != 64

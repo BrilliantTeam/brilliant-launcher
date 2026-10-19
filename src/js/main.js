@@ -173,7 +173,7 @@ async function checkUpdate() {
             buttons: [{ label: '稍後', value: false }, { label: '立即更新', value: true }]
         });
         if (go !== true) return;
-        if (!latest.sha256) return openUrl(latest.page);
+        if (!latest.sha256 || !navigator.userAgent.includes('Windows')) return openUrl(latest.page);
         toast('正在下載新版本，完成後會自動開啟安裝程式⋯');
         await api.install_update({ url: latest.url, file: latest.file, sha256: latest.sha256 }).catch((error) => {
             fail(error);

@@ -10,7 +10,15 @@ permissions:
 
 jobs:
   release:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ""
+          - os: ubuntu-22.04
+            args: "--bundles appimage,deb"
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
@@ -20,6 +28,12 @@ jobs:
 
       - name: 設置 Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: 安裝 Linux 依賴
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf build-essential
 
       - name: 快取 Rust 編譯
         uses: Swatinem/rust-cache@v2
@@ -43,13 +57,20 @@ jobs:
 
       - name: 打包安裝檔
         working-directory: src-tauri
-        run: npx --yes @tauri-apps/cli@2 build
+        run: npx --yes @tauri-apps/cli@2 build ${{ matrix.args }}
 
       - name: 整理安裝檔名稱
         run: |
           mkdir -p release
-          setup=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
-          cp "$setup" "release/BrilliantLauncher_${{ steps.version.outputs.version }}_x64-setup.exe"
+          v=${{ steps.version.outputs.version }}
+          b=src-tauri/target
+          case "${{ matrix.os }}" in
+            windows-latest) cp "$(ls $b/release/bundle/nsis/*-setup.exe | head -1)" "release/BrilliantLauncher_${v}_x64-setup.exe" ;;
+            *)
+              cp "$(ls $b/release/bundle/appimage/*.AppImage | head -1)" "release/BrilliantLauncher_${v}_amd64.AppImage"
+              cp "$(ls $b/release/bundle/deb/*.deb | head -1)" "release/BrilliantLauncher_${v}_amd64.deb"
+              ;;
+          esac
           ls -la release
 
       - name: 發佈 Release
@@ -61,4 +82,4 @@ jobs:
           draft: false
           prerelease: false
           fail_on_unmatched_files: true
-          files: release/*.exe
+          files: release/*

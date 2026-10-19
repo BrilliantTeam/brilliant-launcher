@@ -72,8 +72,8 @@ pub async fn sync_server_packs(app: &AppHandle, instance: &Instance) -> R<()> {
 pub fn inherit_settings(to: &str, from: Option<&str>) {
     let src = match from {
         Some(id) => paths::game_dir(id),
-        None => match dirs::data_dir() {
-            Some(d) => d.join(".minecraft"),
+        None => match official_minecraft_dir() {
+            Some(d) => d,
             None => return,
         },
     };
@@ -112,9 +112,26 @@ fn total_memory_mb() -> u64 {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn total_memory_mb() -> u64 {
+    std::fs::read_to_string("/proc/meminfo")
+        .ok()
+        .and_then(|s| s.lines().find(|l| l.starts_with("MemTotal:"))?.split_whitespace().nth(1)?.parse::<u64>().ok())
+        .map(|kb| kb / 1024)
+        .unwrap_or(0)
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 fn total_memory_mb() -> u64 {
     0
+}
+
+pub fn official_minecraft_dir() -> Option<std::path::PathBuf> {
+    if cfg!(target_os = "linux") {
+        dirs::home_dir().map(|h| h.join(".minecraft"))
+    } else {
+        dirs::data_dir().map(|d| d.join(".minecraft"))
+    }
 }
 
 pub fn recommended_memory(total_mb: u64) -> u32 {

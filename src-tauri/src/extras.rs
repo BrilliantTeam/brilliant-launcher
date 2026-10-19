@@ -247,11 +247,11 @@ pub async fn set_media(kind: String, path: String) -> R<String> {
 }
 
 pub fn set_autostart(on: bool) -> R<()> {
+    let exe = std::env::current_exe()?;
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
-        let exe = std::env::current_exe()?;
         let mut cmd = std::process::Command::new("reg");
         if on {
             cmd.args(["add", KEY, "/v", "BrilliantLauncher", "/t", "REG_SZ", "/f", "/d"])
@@ -264,7 +264,17 @@ pub fn set_autostart(on: bool) -> R<()> {
             bail!("無法設定開機自動啟動");
         }
     }
-    let _ = on;
+    #[cfg(target_os = "linux")]
+    {
+        let file = dirs::config_dir().context("找不到設定資料夾")?.join("autostart/brilliant-launcher.desktop");
+        if on {
+            std::fs::create_dir_all(file.parent().unwrap_or(&file))?;
+            let target = std::env::var_os("APPIMAGE").map(std::path::PathBuf::from).unwrap_or(exe);
+            std::fs::write(&file, format!("[Desktop Entry]\nType=Application\nName=輝煌啟動器\nExec=\"{}\"\nX-GNOME-Autostart-enabled=true\n", target.display()))?;
+        } else {
+            let _ = std::fs::remove_file(&file);
+        }
+    }
     Ok(())
 }
 
