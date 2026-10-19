@@ -127,7 +127,7 @@ const STAGE_TEXT = {
     launch: '啟動遊戲'
 };
 
-async function play() {
+async function play(relogged = false) {
     const instance = selectedInstance();
     if (!instance) return;
 
@@ -150,6 +150,14 @@ async function play() {
         if (after === 'hide') await api.hide_window();
         else if (after === 'exit') await api.exit_launcher();
     } catch (error) {
+        if (relogged !== true && /重新登入/.test(String(error?.message ?? error))) {
+            busy = false;
+            $('#progress').hidden = true;
+            renderPlayBar();
+            toast('登入已過期，請在跳出的視窗重新登入，完成後會自動開始遊戲');
+            if (await loginMicrosoft()) return play(true);
+            return;
+        }
         fail(error);
     } finally {
         busy = false;
@@ -345,7 +353,7 @@ function initFold() {
 
 export function initHome() {
     initFold();
-    $('#btn-play').addEventListener('click', play);
+    $('#btn-play').addEventListener('click', () => play());
     on('launch', () => { if (!busy) play(); });
     $('#instance-pick').classList.add('glass');
     $('#instance-pick').addEventListener('click', (e) => {

@@ -15,6 +15,7 @@ export async function loginMicrosoft() {
     await loadAccounts();
     emit('settings');
     toast(`已登入：${account.name}`);
+    return account;
 }
 
 export async function addOffline() {

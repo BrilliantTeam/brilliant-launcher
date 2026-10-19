@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
 
-const ALL_RUNTIMES: &str = "https://launchermeta.mojang.com/v1/products/java-runtime/all.json";
+const ALL_RUNTIMES: &str = "https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
 
 #[derive(Deserialize, Clone)]
 struct RuntimeEntry {
@@ -187,6 +187,41 @@ pub async fn scan() -> Vec<JavaInfo> {
     found
 }
 
+async fn install_adoptium(app: &AppHandle, component: &str, major: u32) -> R<PathBuf> {
+    let os = if cfg!(target_os = "windows") { "windows" } else { "linux" };
+    let arch = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x64" };
+    net::emit_stage(app, "java", &format!("改從 Adoptium 下載 Java {major}"));
+    let bytes = net::get_bytes(&format!("https://api.adoptium.net/v3/binary/latest/{major}/ga/{os}/{arch}/jre/hotspot/normal/eclipse"), false).await?;
+    let dir = component_dir(component);
+    let staging = dir.with_extension("download");
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging)?;
+    if cfg!(target_os = "windows") {
+        zip::ZipArchive::new(std::io::Cursor::new(bytes))
+            .and_then(|mut zip| zip.extract(&staging))
+            .context("解壓 Java 失敗")?;
+    } else {
+        let archive = staging.join("jre.tar.gz");
+        std::fs::write(&archive, bytes)?;
+        let ok = std::process::Command::new("tar").arg("-xzf").arg(&archive).arg("-C").arg(&staging).status()?.success();
+        let _ = std::fs::remove_file(&archive);
+        if !ok {
+            bail!("解壓 Java 失敗");
+        }
+    }
+    let home = std::fs::read_dir(&staging)?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.join("bin").join(exe_name()).is_file())
+        .context("下載的 Java 內容不完整")?;
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::rename(&home, &dir)?;
+    let _ = std::fs::remove_dir_all(&staging);
+    let exe = runtime_exe(&dir);
+    probe(&exe).await.context("下載的 Java 無法執行")?;
+    Ok(exe)
+}
+
 async fn install_mojang_runtime(app: &AppHandle, component: &str, mirror: bool) -> R<PathBuf> {
     net::emit_stage(app, "java", &format!("取得 {component} 執行環境資訊"));
     let all: BTreeMap<String, BTreeMap<String, Vec<RuntimeEntry>>> =
@@ -257,10 +292,10 @@ pub async fn ensure(
 ) -> R<PathBuf> {
     if !override_path.trim().is_empty() {
         let path = PathBuf::from(override_path.trim());
-        if !path.is_file() {
-            bail!("設定的 Java 路徑不存在：{}", path.display());
+        if path.is_file() {
+            return Ok(path);
         }
-        return Ok(path);
+        eprintln!("[java] 設定的 Java 路徑已不存在（{}），改用自動安裝的 Java", path.display());
     }
 
     let installed = runtime_exe(&component_dir(component));
@@ -274,18 +309,19 @@ pub async fn ensure(
         }
     }
 
-    match install_mojang_runtime(app, component, mirror).await {
-        Ok(exe) => Ok(exe),
-        Err(e) => {
-            if let Some(info) = scan().await.into_iter().find(|j| j.major >= major) {
-                eprintln!("[java] {component} 下載失敗（{:#}），改用系統 Java {}", e.0, info.version);
-                return Ok(PathBuf::from(info.path));
-            }
-            bail!(
-                "找不到 Java {major}（{component}），且自動下載失敗：{:#}\n\
-                 請自行安裝 Java {major} 後在「設定」頁指定 java 執行檔路徑。",
-                e.0
-            )
+    let mojang = match install_mojang_runtime(app, component, mirror).await {
+        Ok(exe) => return Ok(exe),
+        Err(e) => e,
+    };
+    eprintln!("[java] Mojang 的 {component} 下載失敗：{:#}", mojang.0);
+    if let Some(info) = scan().await.into_iter().find(|j| major > 0 && j.major >= major) {
+        return Ok(PathBuf::from(info.path));
+    }
+    if major > 0 {
+        match install_adoptium(app, component, major).await {
+            Ok(exe) => return Ok(exe),
+            Err(e) => eprintln!("[java] Adoptium 的 Java {major} 下載失敗：{:#}", e.0),
         }
     }
+    bail!("Java {major} 下載失敗，請確認網路連線正常後再按一次「開始遊戲」。\n（詳細原因：{:#}）", mojang.0)
 }
