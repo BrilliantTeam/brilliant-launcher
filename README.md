@@ -22,8 +22,6 @@
 
 本儲存庫的所有檔案（包含圖示）都依 AGPL-3.0 授權。「輝煌」「Brilliant」名稱與標誌另受商標保護，發布修改版請使用不同的名稱與標誌，避免被誤認為官方版本。
 
-程式碼簽章政策：<https://www.brilliantw.net/%E7%A8%8B%E5%BC%8F%E7%A2%BC%E7%B0%BD%E7%AB%A0%E6%94%BF%E7%AD%96/>
-
 | 第三方元件 | 授權 |
 |---|---|
 | [Minecraft-Font](https://github.com/IdreesInc/Minecraft-Font) | SIL OFL 1.1 |
