@@ -75,13 +75,15 @@ jobs:
 
       - name: 打包 Flatpak
         if: matrix.os == 'ubuntu-22.04'
+        continue-on-error: true
         run: |
           v=${{ steps.version.outputs.version }}
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.flatpak.Builder
           cp "release/BrilliantLauncher_${v}_amd64.deb" flatpak/brilliant.deb
           sed -i "s|<release version=\"[^\"]*\" date=\"[^\"]*\"|<release version=\"${v}\" date=\"$(date +%F)\"|" flatpak/net.brilliantw.launcher.metainfo.xml
-          flatpak-builder --user --install-deps-from=flathub --force-clean --repo=flatpak-repo flatpak-build flatpak/net.brilliantw.launcher.yml
+          flatpak run org.flatpak.Builder --user --disable-rofiles-fuse --install-deps-from=flathub --force-clean --repo=flatpak-repo flatpak-build flatpak/net.brilliantw.launcher.yml
           flatpak build-bundle flatpak-repo "release/BrilliantLauncher_${v}_x86_64.flatpak" net.brilliantw.launcher --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - name: 發佈 Release
