@@ -53,8 +53,24 @@ pub fn is_managed(file: &str) -> bool {
     file.starts_with(MOD_PREFIX) || file.starts_with(LEGACY_PREFIX) || file.starts_with(API_PREFIX)
 }
 
+async fn install_id() -> Option<String> {
+    if !crate::config::load_settings().await.usage_stats {
+        return None;
+    }
+    let file = paths::root().join("install-id");
+    let saved = tokio::fs::read_to_string(&file).await.unwrap_or_default();
+    let saved = saved.trim();
+    if saved.len() == 32 && saved.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()) {
+        return Some(saved.to_string());
+    }
+    let id = format!("{:032x}", rand::random::<u128>());
+    tokio::fs::write(&file, &id).await.ok()?;
+    Some(id)
+}
+
 pub async fn info() -> R<LauncherInfo> {
-    net::get_json(&format!("{SITE}/api/launcher/info"), false).await
+    let query = install_id().await.map(|id| format!("?id={id}")).unwrap_or_default();
+    net::get_json(&format!("{SITE}/api/launcher/info{query}"), false).await
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {

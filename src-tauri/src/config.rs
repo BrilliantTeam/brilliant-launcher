@@ -43,6 +43,7 @@ pub struct Settings {
     pub notified: Vec<String>,
     pub music: String,
     pub music_volume: u32,
+    pub usage_stats: bool,
 }
 
 impl Default for Settings {
@@ -83,6 +84,7 @@ impl Default for Settings {
             notified: Vec::new(),
             music: String::new(),
             music_volume: 40,
+            usage_stats: true,
         }
     }
 }

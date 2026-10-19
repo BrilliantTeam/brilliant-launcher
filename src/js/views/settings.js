@@ -27,6 +27,7 @@ const FIELDS = {
     autostart: '#set-autostart',
     downloadThreads: '#set-threads',
     notifications: '#set-notify',
+    usageStats: '#set-usage',
     inheritOptions: '#set-inherit',
     musicVolume: '#set-volume'
 };

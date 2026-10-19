@@ -9,7 +9,6 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use tauri::{AppHandle, Emitter};
 
-const UA: &str = concat!("BrilliantLauncher/", env!("CARGO_PKG_VERSION"));
 const RETRIES: usize = 3;
 static CONCURRENCY: AtomicUsize = AtomicUsize::new(12);
 
@@ -21,7 +20,7 @@ pub fn client() -> &'static reqwest::Client {
     static C: OnceLock<reqwest::Client> = OnceLock::new();
     C.get_or_init(|| {
         reqwest::Client::builder()
-            .user_agent(UA)
+            .user_agent(format!("BrilliantLauncher/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS))
             .connect_timeout(std::time::Duration::from_secs(15))
             .timeout(std::time::Duration::from_secs(300))
             .build()
