@@ -32,7 +32,12 @@ pub struct Roots {
 
 impl Roots {
     fn system() -> Option<Self> {
-        Some(Self { data: dirs::data_dir()?, local: dirs::data_local_dir()?, home: dirs::home_dir()? })
+        let home = dirs::home_dir()?;
+        if std::env::var_os("FLATPAK_ID").is_some() {
+            let data = home.join(".local/share");
+            return Some(Self { data: data.clone(), local: data, home });
+        }
+        Some(Self { data: dirs::data_dir()?, local: dirs::data_local_dir()?, home })
     }
 }
 
@@ -192,8 +197,12 @@ fn official(r: &Roots) -> Vec<Source> {
 
 fn prism(r: &Roots) -> Vec<Source> {
     let mut out = Vec::new();
-    for (folder, cfg) in [("PrismLauncher", "prismlauncher.cfg"), ("PolyMC", "polymc.cfg"), ("MultiMC", "multimc.cfg")] {
-        let base = r.data.join(folder);
+    for (base, cfg) in [
+        (r.data.join("PrismLauncher"), "prismlauncher.cfg"),
+        (r.home.join(".var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher"), "prismlauncher.cfg"),
+        (r.data.join("PolyMC"), "polymc.cfg"),
+        (r.data.join("MultiMC"), "multimc.cfg"),
+    ] {
         let configured = std::fs::read_to_string(base.join(cfg)).ok().and_then(|c| cfg_value(&c, "InstanceDir"));
         let dir = match configured.filter(|d| !d.is_empty()) {
             Some(d) if Path::new(&d).is_absolute() => PathBuf::from(d),
@@ -255,7 +264,7 @@ fn modrinth_root(root: &Path) -> Vec<Source> {
 }
 
 fn xmcl_roots(r: &Roots) -> Vec<PathBuf> {
-    let mut pointers = vec![r.data.join("xmcl").join("root")];
+    let mut pointers = vec![r.data.join("xmcl").join("root"), r.home.join(".config/xmcl/root")];
     pointers.extend(
         subdirs(&r.local.join("Packages"))
             .into_iter()
@@ -297,7 +306,7 @@ fn xmcl_root(root: &Path, index: Option<&Path>) -> Vec<Source> {
 
 fn xmcl(r: &Roots) -> Vec<Source> {
     let index_for = |root: &Path| -> Option<PathBuf> {
-        let pointer_dirs = std::iter::once(r.data.join("xmcl")).chain(
+        let pointer_dirs = [r.data.join("xmcl"), r.home.join(".config/xmcl")].into_iter().chain(
             subdirs(&r.local.join("Packages"))
                 .into_iter()
                 .filter(|p| p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("xmcl_")))
@@ -312,7 +321,7 @@ fn xmcl(r: &Roots) -> Vec<Source> {
 }
 
 pub fn scan(r: &Roots) -> Vec<Source> {
-    let mut all = [official(r), prism(r), curseforge(r), modrinth_root(&r.data.join("ModrinthApp")), xmcl(r)].concat();
+    let mut all = [official(r), prism(r), curseforge(r), modrinth_root(&r.data.join("ModrinthApp")), modrinth_root(&r.home.join(".var/app/com.modrinth.ModrinthApp/data/ModrinthApp")), xmcl(r)].concat();
     let mut seen = HashSet::new();
     all.retain(|s| seen.insert(s.path.to_lowercase()));
     all
@@ -516,6 +525,20 @@ mod tests {
         assert_eq!((mr.mc_version.as_str(), mr.loader.as_str(), mr.mods), ("1.21.4", "fabric", 1));
         assert_eq!(find(&all, "舊格式").loader_version, "0.14.21");
         assert_eq!(all.len(), 9, "{all:#?}");
+    }
+
+    #[test]
+    fn scans_linux_flatpak_and_config_locations() {
+        let f = Fixture::new("linux");
+        f.write("home/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/fp/instance.cfg", "name=Flatpak Prism
+IntendedVersion=1.21.1
+");
+        f.write("home/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/instances/fp/.minecraft/options.txt", "fov:90");
+        f.write("home/.config/xmcl/root", &f.0.join("xr").to_string_lossy());
+        f.write("xr/instances/x/instance.json", &json!({ "name": "XMCL Linux", "runtime": { "minecraft": "26.3" } }).to_string());
+        let all = scan(&f.roots());
+        assert_eq!(find(&all, "Flatpak Prism").mc_version, "1.21.1");
+        assert_eq!(find(&all, "XMCL Linux").launcher, "X Minecraft Launcher");
     }
 
     #[test]

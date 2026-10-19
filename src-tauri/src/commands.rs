@@ -435,6 +435,11 @@ pub async fn prefetch(app: AppHandle, id: String) -> R<()> {
 }
 
 #[tauri::command]
+pub async fn repair_instance(app: AppHandle, id: String) -> R<()> {
+    launch::repair(&app, &id).await
+}
+
+#[tauri::command]
 pub async fn hide_window(app: AppHandle) -> R<()> {
     if let Some(window) = app.get_webview_window("main") {
         window.hide()?;

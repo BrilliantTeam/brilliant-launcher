@@ -131,8 +131,15 @@ fn candidate_roots() -> Vec<PathBuf> {
         r"C:\Program Files\Zulu",
         r"C:\Program Files (x86)\Java",
         "/usr/lib/jvm",
+        "/usr/lib64/jvm",
+        "/usr/java",
+        "/opt/java",
         "/Library/Java/JavaVirtualMachines",
-    ] {
+    ]
+    .map(PathBuf::from)
+    .into_iter()
+    .chain(dirs::home_dir().into_iter().flat_map(|h| [h.join(".jdks"), h.join(".sdkman/candidates/java")]))
+    {
         let Ok(entries) = std::fs::read_dir(base) else {
             continue;
         };

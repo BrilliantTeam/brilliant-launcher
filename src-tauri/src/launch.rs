@@ -139,7 +139,7 @@ async fn prepare(
     tokio::fs::create_dir_all(&natives_dir).await?;
     for (jar, exclude) in &plan.natives {
         let stamp = natives_dir.join(format!(".{}.ok", jar.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
-        if stamp.is_file() {
+        if stamp.is_file() && !net::DEEP_VERIFY.load(std::sync::atomic::Ordering::Relaxed) {
             continue;
         }
         libs::extract_natives(jar, &natives_dir, exclude)?;
@@ -261,6 +261,21 @@ pub async fn prefetch(app: &AppHandle, instance_id: &str) -> R<()> {
     let instance = crate::instance::get(instance_id).await?;
     prepare(app, &instance, &settings, None).await?;
     Ok(())
+}
+
+pub async fn repair(app: &AppHandle, instance_id: &str) -> R<()> {
+    let state = app.state::<AppState>();
+    if state.is_running(instance_id).await {
+        bail!("請先關閉遊戲再修復");
+    }
+    let _guard = state.prep_lock.lock().await;
+    let settings = crate::config::load_settings().await;
+    let instance = crate::instance::get(instance_id).await?;
+    crate::modinject::forget_sync();
+    net::DEEP_VERIFY.store(true, std::sync::atomic::Ordering::Relaxed);
+    let result = prepare(app, &instance, &settings, None).await;
+    net::DEEP_VERIFY.store(false, std::sync::atomic::Ordering::Relaxed);
+    result.map(|_| ())
 }
 
 pub async fn launch(app: &AppHandle, instance_id: &str) -> R<Vec<String>> {

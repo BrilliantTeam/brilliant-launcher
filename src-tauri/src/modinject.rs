@@ -143,6 +143,12 @@ async fn fabric_api(mc: &str) -> R<MrFile> {
 static SYNCED: std::sync::Mutex<Vec<(String, std::time::Instant)>> = std::sync::Mutex::new(Vec::new());
 const SYNC_TTL: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
+pub fn forget_sync() {
+    if let Ok(mut synced) = SYNCED.lock() {
+        synced.clear();
+    }
+}
+
 fn has_both(mods_dir: &Path) -> bool {
     let names: Vec<String> = std::fs::read_dir(mods_dir)
         .map(|d| d.flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect())

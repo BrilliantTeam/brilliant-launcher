@@ -266,6 +266,9 @@ pub fn set_autostart(on: bool) -> R<()> {
     }
     #[cfg(target_os = "linux")]
     {
+        if std::env::var_os("FLATPAK_ID").is_some() {
+            bail!("Flatpak 版無法自行設定開機啟動，請到系統設定的「自動啟動」加入輝煌啟動器");
+        }
         let file = dirs::config_dir().context("找不到設定資料夾")?.join("autostart/brilliant-launcher.desktop");
         if on {
             std::fs::create_dir_all(file.parent().unwrap_or(&file))?;
@@ -298,6 +301,14 @@ pub fn hook_command(script: &str, instance: &crate::instance::Instance) -> tokio
     cmd
 }
 
+pub fn reveal(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+}
+
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
@@ -307,13 +318,6 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     let play = MenuItem::with_id(app, "play", "開始遊戲", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "結束輝煌啟動器", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show, &play, &quit])?;
-    let reveal = |app: &AppHandle| {
-        if let Some(window) = app.get_webview_window("main") {
-            let _ = window.show();
-            let _ = window.unminimize();
-            let _ = window.set_focus();
-        }
-    };
     let mut tray = TrayIconBuilder::with_id("main")
         .tooltip("輝煌啟動器")
         .menu(&menu)

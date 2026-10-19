@@ -156,6 +156,8 @@ export function newerVersion(latest, current) {
     return false;
 }
 
+let pendingUpdate = null;
+
 async function checkUpdate() {
     const [info, current] = await Promise.all([api.launcher_info().catch(() => null), appVersion().catch(() => '')]);
     const latest = info?.launcher;
@@ -164,7 +166,11 @@ async function checkUpdate() {
     const chip = $('#update-chip');
     $('#update-label').textContent = `更新 v${latest.version}`;
     chip.hidden = false;
+    const first = !pendingUpdate;
+    pendingUpdate = { latest, current };
+    if (!first) return;
     chip.addEventListener('click', async () => {
+        const { latest, current } = pendingUpdate;
         const go = await dialog({
             title: `輝煌啟動器 v${latest.version}`,
             content: h('div', {},
@@ -206,6 +212,7 @@ async function boot() {
     emit('settings');
     show(location.hash.slice(1) || 'home');
     checkUpdate();
+    setInterval(checkUpdate, 30 * 60 * 1000);
     startServices();
 
     if (!store.accounts.length) {

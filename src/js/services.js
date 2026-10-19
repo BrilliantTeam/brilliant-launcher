@@ -59,6 +59,12 @@ export function upgradeTarget(instance) {
 }
 
 async function checkUpgrade() {
+    const info = await api.launcher_info().catch(() => null);
+    if (info?.recommended && store.versions && store.versions.recommended !== info.recommended) {
+        store.versions.recommended = info.recommended;
+        store.versions.modVersions = info.versions;
+        emit('instances');
+    }
     const target = upgradeTarget(selectedInstance());
     if (target) await notifyOnce(`upgrade:${target}`, `輝煌已更新到 Minecraft ${target}`, '打開啟動器，一鍵把你的實例升級到新版本。');
 }
@@ -139,6 +145,7 @@ export function startServices() {
     setTimeout(() => checkNews().catch(() => {}), 20_000);
     setInterval(() => checkNews().catch(() => {}), NEWS_EVERY_MS);
     setTimeout(() => checkUpgrade().catch(() => {}), 8000);
+    setInterval(() => checkUpgrade().catch(() => {}), 30 * 60 * 1000);
 }
 
 export { notifyOnce };

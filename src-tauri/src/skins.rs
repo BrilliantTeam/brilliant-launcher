@@ -321,6 +321,58 @@ pub async fn refresh_sessions(state: State<'_, AppState>) -> R<Vec<SessionStatus
     Ok(out)
 }
 
+#[tauri::command]
+pub async fn share_screenshot(id: String, file: String, description: String) -> R<String> {
+    const SITE: &str = "https://www.brilliantw.net";
+    if !file.to_ascii_lowercase().ends_with(".png") || file.contains(['/', '\\']) || file.contains("..") {
+        bail!("截圖檔名不正確");
+    }
+    let bytes = tokio::fs::read(paths::game_dir(&id).join("screenshots").join(&file)).await.context("讀取截圖失敗")?;
+    if bytes.len() > 10 * 1024 * 1024 {
+        bail!("截圖超過 10 MB，無法投稿");
+    }
+    let settings = config::load_settings().await;
+    let account = fresh(crate::commands::active_account(&settings).await?, 300).await?;
+    if account.kind != "msa" {
+        bail!("投稿需要微軟正版帳號，離線帳號無法驗證身分");
+    }
+    #[derive(Deserialize)]
+    struct Challenge {
+        #[serde(rename = "serverId")]
+        server_id: String,
+    }
+    let challenge: Challenge = net::post_json(&format!("{SITE}/api/launcher/gallery/challenge"), &serde_json::json!({})).await?;
+    let joined = net::client()
+        .post("https://sessionserver.mojang.com/session/minecraft/join")
+        .json(&serde_json::json!({ "accessToken": account.access_token, "selectedProfile": account.uuid.replace('-', ""), "serverId": challenge.server_id }))
+        .send()
+        .await?;
+    if !joined.status().is_success() {
+        bail!("Minecraft 帳號驗證失敗，請到「帳號」頁重新登入後再試");
+    }
+    #[derive(Deserialize)]
+    struct Reply {
+        message: Option<String>,
+        error: Option<String>,
+    }
+    let reply: Reply = net::client()
+        .post(format!("{SITE}/api/launcher/gallery/submit"))
+        .header("Content-Type", "application/octet-stream")
+        .header("X-Server-Id", &challenge.server_id)
+        .header("X-Player", &account.name)
+        .header("X-Description", crate::modrinth::encode(description.trim()))
+        .body(bytes)
+        .send()
+        .await?
+        .json()
+        .await
+        .unwrap_or(Reply { message: None, error: Some("官網暫時沒有回應，請稍後再試".into()) });
+    match reply.error {
+        Some(error) => bail!("{error}"),
+        None => Ok(reply.message.unwrap_or_else(|| "投稿成功".into())),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

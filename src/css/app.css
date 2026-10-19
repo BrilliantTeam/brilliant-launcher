@@ -138,6 +138,7 @@ button.mc:active:not(:disabled) { transform: translateY(1px); }
 body:not([data-view="home"]) .bg-shade {
     background: rgba(0, 0, 0, 0.62);
     backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
 }
 
 .titlebar {
@@ -149,7 +150,9 @@ body:not([data-view="home"]) .bg-shade {
     background: var(--chrome-bg);
     border-bottom: 1px solid var(--chrome-line);
     backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     user-select: none;
+    -webkit-user-select: none;
     z-index: 5;
 }
 .titlebar-brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: 1px; }
@@ -216,6 +219,7 @@ body:not([data-view="home"]) .bg-shade {
     background: var(--chrome-bg);
     border-right: 1px solid var(--chrome-line);
     backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
     z-index: 4;
 }
 .rail a {
@@ -247,6 +251,7 @@ body[data-view="home"] .page-wrap { display: none; }
     border: 2px solid;
     border-color: var(--glass-hi) var(--glass-lo) var(--glass-lo) var(--glass-hi);
     backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
 }
 
 .home { position: absolute; inset: 0; color: #fff; }
@@ -812,10 +817,16 @@ dialog .toolbar button.mc { display: inline-flex; align-items: center; gap: 6px;
 dialog .toolbar button.mc .ico { width: 16px; height: 16px; }
 
 .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; max-height: 60vh; overflow-y: auto; }
-.shot { padding: 0; cursor: zoom-in; background: var(--content-bg-sunken); border: 2px solid; border-color: var(--bevel-down); text-align: left; font: inherit; color: var(--text-subtle); }
-.shot img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
-.shot span { display: block; padding: 4px 8px; font-size: 11px; }
+.shot { background: var(--content-bg-sunken); border: 2px solid; border-color: var(--bevel-down); color: var(--text-subtle); }
 .shot:hover { border-color: var(--accent); }
+.shot-open { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.shot img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
+.shot-foot { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 12px; }
+.shot-foot span { flex: 1; min-width: 0; }
+.shot-foot .mc { padding: 4px 10px; min-height: 0; gap: 4px; }
+.share-shot { display: grid; gap: 10px; }
+.share-shot img { width: 100%; max-height: 46vh; object-fit: contain; background: var(--content-bg-sunken); border: 2px solid; border-color: var(--bevel-down); }
+.share-shot input { width: 100%; box-sizing: border-box; }
 .shots .empty-state, .shots + .empty-state { grid-column: 1 / -1; }
 .inst-more { display: flex; }
 .inst-more > button.mc.icon-btn { height: auto; align-self: stretch; }
@@ -975,7 +986,7 @@ body.scenic .credit { font-size: 13px; color: #fff; }
 .pack-row.off { opacity: 0.6; }
 .pack-row { touch-action: none; transition: transform 0.15s ease; }
 .pack-row.dragging { position: relative; z-index: 2; cursor: grabbing; transition: none; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
-.pack-grip { color: var(--text-faint); letter-spacing: -2px; user-select: none; }
+.pack-grip { color: var(--text-faint); letter-spacing: -2px; user-select: none; -webkit-user-select: none; }
 .pack-rank { font-weight: 700; color: var(--accent); text-align: center; }
 .pack-name { display: flex; align-items: center; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .pack-row button.mc.icon-btn { width: 30px; height: 26px; padding: 0; }

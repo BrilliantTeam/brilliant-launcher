@@ -3,6 +3,7 @@ import { $, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, t
 import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, INSTANCE_ICONS, instanceIconName } from '../icons.js';
 import { importPack } from './mods.js';
+import { repairInstance } from './home.js';
 
 export async function versionData() {
     if (!store.versions) store.versions = await api.list_versions();
@@ -363,6 +364,11 @@ export async function upgradeFlow(instance, target) {
             if (action === 'update') await api.content_update({ id: targetInstance.id, kind: 'mod', file: entry.file, update: entry.update }).catch(fail);
             if (action === 'disable') await api.set_mod_enabled({ id: targetInstance.id, file: entry.file, enabled: false }).catch(fail);
         }
+        const dropped = new Set(plan.filter((p) => p.action === 'disable').map(({ entry }) => entry.project_id || entry.file.replace(/\.disabled$/, '')));
+        if (dropped.size && targetInstance.modProfiles?.length) {
+            const profiles = targetInstance.modProfiles.map((p) => ({ ...p, enabled: p.enabled.filter((key) => !dropped.has(key)) }));
+            await api.set_mod_profiles({ id: targetInstance.id, profiles, active: targetInstance.activeProfile || '' }).catch(fail);
+        }
         await api.select_instance({ id: targetInstance.id });
         store.settings.selectedInstance = targetInstance.id;
         await loadInstances();
@@ -612,16 +618,32 @@ async function manageBackups(instance) {
     await dialog({ title: `存檔備份｜${instance.name}`, content, wide: true });
 }
 
+async function shareScreenshot(instance, shot) {
+    const input = h('input', { type: 'text', maxlength: 60, placeholder: '介紹一下這張截圖（選填，最多 60 字）' });
+    const go = await dialog({
+        title: '投稿到玩家足跡',
+        content: h('div', { class: 'share-shot' },
+            h('img', { src: fileSrc(shot.path), alt: shot.name }),
+            input,
+            h('p', { class: 'hint' }, '投稿會用目前登入的正版帳號驗證身分，你的 Discord 需要先在遊戲內用 /discord link 綁定。管理員審核通過後，截圖會出現在官網的玩家足跡與首頁輪播。')),
+        buttons: [{ label: '取消', value: false }, { label: '送出投稿', value: true }]
+    });
+    if (go === true) {
+        toast('正在上傳截圖⋯');
+        await api.share_screenshot({ id: instance.id, file: shot.name, description: input.value }).then((message) => toast(message), fail);
+    }
+    showScreenshots(instance);
+}
+
 async function showScreenshots(instance) {
     const grid = h('div', { class: 'shots' }, h('div', { class: 'empty-state' }, '讀取中⋯'));
     api.list_screenshots({ id: instance.id }).then((shots) => {
-        clear(grid).append(...(shots.length ? shots.map((shot) => h('button', {
-            type: 'button',
-            class: 'shot',
-            title: shot.name,
-            onclick: () => api.open_path({ path: shot.path }).catch(fail)
-        }, h('img', { src: fileSrc(shot.path), alt: shot.name, loading: 'lazy' }),
-            h('span', {}, new Date(shot.time * 1000).toLocaleString('zh-TW', { hour12: false }))))
+        clear(grid).append(...(shots.length ? shots.map((shot) => h('div', { class: 'shot' },
+            h('button', { type: 'button', class: 'shot-open', title: shot.name, onclick: () => api.open_path({ path: shot.path }).catch(fail) },
+                h('img', { src: fileSrc(shot.path), alt: shot.name, loading: 'lazy' })),
+            h('div', { class: 'shot-foot' },
+                h('span', {}, new Date(shot.time * 1000).toLocaleString('zh-TW', { hour12: false })),
+                h('button', { type: 'button', class: 'mc', onclick: () => shareScreenshot(instance, shot) }, icon('heart'), '投稿'))))
             : [h('div', { class: 'empty-state' }, '還沒有截圖。遊戲中按 F2 就能截圖。')]));
     }).catch(fail);
     await dialog({
@@ -644,6 +666,7 @@ function moreMenu(instance) {
         item('save', '存檔備份', () => manageBackups(instance)),
         item('image', '截圖', () => showScreenshots(instance)),
         item('folder', '開啟資料夾', () => openFolder(instance)),
+        item('reload', '驗證並修復檔案', () => repairInstance(instance)),
         item('copy', '複製實例', () => duplicateInstance(instance)),
         item('trash', '刪除實例', () => removeInstance(instance), 'danger'));
     const toggle = h('button', {

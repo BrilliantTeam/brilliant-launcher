@@ -23,7 +23,12 @@ use tauri::{Listener, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    if std::path::Path::new("/proc/driver/nvidia").exists() && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _, _| extras::reveal(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -116,6 +121,8 @@ pub fn run() {
             skins::name_change,
             skins::refresh_sessions,
             commands::prefetch,
+            commands::repair_instance,
+            skins::share_screenshot,
             boost::system_info,
             boost::notify_user,
             importer::import_sources,

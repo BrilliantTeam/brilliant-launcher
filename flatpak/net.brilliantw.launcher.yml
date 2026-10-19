@@ -1,0 +1,45 @@
+app-id: net.brilliantw.launcher
+runtime: org.gnome.Platform
+runtime-version: '49'
+sdk: org.gnome.Sdk
+command: BrilliantLauncher
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=x11
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=xdg-download
+  - --filesystem=~/.minecraft:ro
+  - --filesystem=~/.minecraftx:ro
+  - --filesystem=~/.config/xmcl:ro
+  - --filesystem=xdg-data/PrismLauncher:ro
+  - --filesystem=xdg-data/PolyMC:ro
+  - --filesystem=xdg-data/MultiMC:ro
+  - --filesystem=xdg-data/ModrinthApp:ro
+  - --filesystem=~/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher:ro
+  - --filesystem=~/.var/app/com.modrinth.ModrinthApp/data/ModrinthApp:ro
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+modules:
+  - name: brilliant-launcher
+    buildsystem: simple
+    sources:
+      - type: file
+        path: brilliant.deb
+      - type: file
+        path: net.brilliantw.launcher.metainfo.xml
+    build-commands:
+      - ar -x brilliant.deb
+      - tar -xf data.tar.*
+      - install -Dm755 usr/bin/BrilliantLauncher /app/bin/BrilliantLauncher
+      - if [ -d usr/lib ]; then cp -a usr/lib/. /app/lib/; fi
+      - |
+        for png in usr/share/icons/hicolor/*/apps/*.png; do
+          size=$(basename "$(dirname "$(dirname "$png")")")
+          install -Dm644 "$png" "/app/share/icons/hicolor/$size/apps/net.brilliantw.launcher.png"
+        done
+      - install -Dm644 usr/share/applications/*.desktop /app/share/applications/net.brilliantw.launcher.desktop
+      - desktop-file-edit --set-icon=net.brilliantw.launcher --set-key=Exec --set-value=BrilliantLauncher /app/share/applications/net.brilliantw.launcher.desktop
+      - install -Dm644 net.brilliantw.launcher.metainfo.xml /app/share/metainfo/net.brilliantw.launcher.metainfo.xml

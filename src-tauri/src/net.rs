@@ -5,7 +5,7 @@ use futures::StreamExt;
 use serde::{de::DeserializeOwned, Serialize};
 use sha1::{Digest, Sha1};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 use tauri::{AppHandle, Emitter};
 
@@ -99,6 +99,8 @@ pub fn sha1_hex(bytes: &[u8]) -> String {
     hex::encode(Sha1::digest(bytes))
 }
 
+pub static DEEP_VERIFY: AtomicBool = AtomicBool::new(false);
+
 async fn already_good(path: &Path, sha1: Option<&str>, size: u64) -> bool {
     let Ok(meta) = tokio::fs::metadata(path).await else {
         return false;
@@ -106,7 +108,7 @@ async fn already_good(path: &Path, sha1: Option<&str>, size: u64) -> bool {
     if !meta.is_file() {
         return false;
     }
-    if size > 0 {
+    if size > 0 && (meta.len() != size || !DEEP_VERIFY.load(Ordering::Relaxed)) {
         return meta.len() == size;
     }
     match sha1 {
@@ -243,4 +245,27 @@ pub async fn download_all(app: &AppHandle, stage: &str, files: Vec<DlFile>, mirr
         r?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod deep_verify_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn deep_mode_catches_same_size_corruption() {
+        let path = std::env::temp_dir().join("brilliant-deep-verify.bin");
+        std::fs::write(&path, b"broken").unwrap();
+        let want = sha1_hex(b"intact");
+        assert!(already_good(&path, Some(&want), 6).await);
+        DEEP_VERIFY.store(true, Ordering::Relaxed);
+        let deep = already_good(&path, Some(&want), 6).await;
+        DEEP_VERIFY.store(false, Ordering::Relaxed);
+        assert!(!deep);
+        std::fs::write(&path, b"intact").unwrap();
+        DEEP_VERIFY.store(true, Ordering::Relaxed);
+        let fixed = already_good(&path, Some(&want), 6).await;
+        DEEP_VERIFY.store(false, Ordering::Relaxed);
+        assert!(fixed);
+        let _ = std::fs::remove_file(path);
+    }
 }

@@ -158,6 +158,25 @@ async function play() {
     }
 }
 
+export async function repairInstance(instance) {
+    if (busy || !instance) return;
+    if (isRunning(instance.id)) return toast('請先關閉遊戲再修復', 'warn');
+    busy = true;
+    renderPlayBar();
+    setProgress({ label: '驗證檔案中⋯⋯', doneFiles: 0, totalFiles: 0, doneBytes: 0, totalBytes: 0 });
+    toast(`正在逐一驗證「${instance.name}」的遊戲檔案，損壞的會重新下載⋯`);
+    try {
+        await api.repair_instance({ id: instance.id });
+        toast('檔案驗證完成，損壞或缺少的檔案都已修復');
+    } catch (error) {
+        fail(error);
+    } finally {
+        busy = false;
+        $('#progress').hidden = true;
+        renderPlayBar();
+    }
+}
+
 function showCrash(code) {
     const lines = recentLog();
     const { findings, exception } = diagnose(lines);
@@ -170,6 +189,7 @@ function showCrash(code) {
         title: `遊戲異常結束（代碼 ${code}）`,
         content,
         buttons: [
+            { label: '修復遊戲檔案', value: 'repair' },
             { label: '複製日誌', value: 'copy' },
             { label: '查看日誌', value: 'log' },
             { label: '關閉', value: null }
@@ -179,6 +199,8 @@ function showCrash(code) {
             await navigator.clipboard.writeText(lines.join('\n')).then(() => toast('已複製日誌'), fail);
         } else if (value === 'log') {
             location.hash = '#log';
+        } else if (value === 'repair') {
+            repairInstance(selectedInstance());
         }
     });
 }
