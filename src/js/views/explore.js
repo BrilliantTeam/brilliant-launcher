@@ -1,11 +1,15 @@
 import { api, openUrl } from '../api.js';
-import { $, clear, confirm, h, toast, guard } from '../ui.js';
+import { $, $$, clear, confirm, h, toast, guard } from '../ui.js';
 import { icon } from '../icons.js';
 import { selectedInstance } from '../store.js';
 import { joinServer } from './home.js';
 
-let servers = null;
-let loadedAt = 0;
+const TABS = {
+    servers: { path: '/api/launcher/servers', key: 'servers', empty: '目前還沒有合作伺服器。', hint: '與輝煌合作的伺服器。按「用目前實例加入」會用你選中的實例直接連進去，輝煌分流的設定不會被改動。' },
+    works: { path: '/api/launcher/works', key: 'works', empty: '目前還沒有推薦作品。', hint: '輝煌朋友們的作品，喜歡的話歡迎加入願望清單支持他們。' }
+};
+const data = {};
+let tab = 'servers';
 
 function statusLine(status) {
     if (status === undefined) return h('span', { class: 'srv-state pending' }, '查詢中⋯');
@@ -44,21 +48,44 @@ function card(server) {
             link('discord', 'Discord', server.discord)));
 }
 
+function workCard(work) {
+    return h('article', { class: 'srv-card work-card' },
+        work.image ? h('img', { class: 'work-cover', src: work.image, alt: work.name, loading: 'lazy' }) : null,
+        h('div', { class: 'work-body' },
+            h('h2', {}, work.name),
+            h('div', { class: 'srv-meta' },
+                work.developers.length ? h('span', { class: 'mtag side' }, work.developers.join('、')) : null,
+                work.release ? h('span', { class: 'mtag' }, work.release) : null,
+                work.price ? h('span', { class: 'mtag' }, work.price) : null,
+                ...work.platforms.map((p) => h('span', { class: 'mtag' }, p))),
+            work.description ? h('p', { class: 'srv-desc' }, work.description) : null,
+            work.genres.length ? h('div', { class: 'work-genres' }, work.genres.join('・')) : null,
+            h('div', { class: 'srv-actions' },
+                h('button', { type: 'button', class: 'mc primary', onclick: () => openUrl(work.url) }, icon(work.comingSoon ? 'heart' : 'external-link'), work.comingSoon ? '到 Steam 加入願望清單' : '到 Steam 查看'))));
+}
+
 async function render(force = false) {
     const box = $('#explore-list');
-    if (!servers || force || Date.now() - loadedAt > 10 * 60 * 1000) {
-        if (!servers) clear(box).append(h('div', { class: 'empty-state' }, '讀取中⋯'));
+    const conf = TABS[tab];
+    $('#explore-hint').textContent = conf.hint;
+    for (const b of $$('#explore-tabs button')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+    const cached = data[tab];
+    if (!cached || force || Date.now() - cached.at > 10 * 60 * 1000) {
+        if (!cached) clear(box).append(h('div', { class: 'empty-state' }, '讀取中⋯'));
+        const want = tab;
         try {
-            servers = (await api.site_json({ path: '/api/launcher/servers' })).servers || [];
-            loadedAt = Date.now();
+            data[want] = { at: Date.now(), list: (await api.site_json({ path: conf.path }))[conf.key] || [] };
         } catch {
-            if (!servers) return clear(box).append(h('div', { class: 'empty-state' }, '暫時連不上官網，請稍後再試。'));
+            if (!data[want] && want === tab) return clear(box).append(h('div', { class: 'empty-state' }, '暫時連不上官網，請稍後再試。'));
         }
+        if (want !== tab) return;
     }
-    clear(box).append(...(servers.length ? servers.map(card) : [h('div', { class: 'empty-state' }, '目前還沒有合作伺服器。')]));
+    const list = data[tab].list;
+    clear(box).append(...(list.length ? list.map(tab === 'works' ? workCard : card) : [h('div', { class: 'empty-state' }, conf.empty)]));
 }
 
 export function initExplore() {
+    for (const b of $$('#explore-tabs button')) b.addEventListener('click', () => { tab = b.dataset.tab; render(); });
     $('#btn-explore-refresh').addEventListener('click', guard(() => render(true)));
     window.addEventListener('hashchange', () => { if (location.hash === '#explore') render(); });
     if (location.hash === '#explore') render();

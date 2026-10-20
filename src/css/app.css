@@ -1183,6 +1183,14 @@ button[data-pending] { opacity: 0.6; }
 .srv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .srv-actions .mc { display: inline-flex; align-items: center; gap: 6px; }
 .srv-actions .mc .ico { width: 16px; height: 16px; }
+.work-card { display: grid; grid-template-columns: minmax(240px, 380px) 1fr; gap: 18px; align-items: start; }
+.work-cover { width: 100%; aspect-ratio: 460 / 215; object-fit: cover; border: 2px solid; border-color: var(--bevel-down); }
+.work-body { min-width: 0; display: grid; gap: 8px; }
+.work-body h2 { margin: 0; font-size: 22px; }
+.work-body .srv-desc { margin: 0; }
+.work-body .srv-actions { margin-top: 4px; }
+.work-genres { font-size: 13px; color: var(--text-subtle); }
+@media (max-width: 1180px) { .work-card { grid-template-columns: 1fr; } }
 
 
 .shard .restart-soon { margin-top: 3px; font-size: 11px; color: var(--warning, #f0ad4e); }

@@ -781,7 +781,7 @@ function moreMenu(instance) {
         item('arrow-right', '升級版本⋯', () => pickUpgrade(instance)),
         item('folder', '開啟資料夾', () => openFolder(instance)),
         item('reload', '驗證並修復檔案', () => repairInstance(instance)),
-        item('external-link', '建立桌面捷徑', () => createShortcut(instance)),
+        navigator.userAgent.includes('Mac') ? null : item('external-link', '建立桌面捷徑', () => createShortcut(instance)),
         item('bug', '匯出診斷包', () => exportDiagnostics(instance)),
         item('copy', '複製實例', () => duplicateInstance(instance)),
         item('trash', '刪除實例', () => removeInstance(instance), 'danger'));

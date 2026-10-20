@@ -111,7 +111,11 @@
                     <h1>探索</h1>
                     <button type="button" class="mc" id="btn-explore-refresh"><i data-icon="reload"></i>重新整理</button>
                 </div>
-                <p class="hint">與輝煌合作的伺服器。按「用目前實例加入」會用你選中的實例直接連進去，輝煌分流的設定不會被改動。</p>
+                <div class="store-tabs" role="tablist" id="explore-tabs">
+                    <button type="button" role="tab" data-tab="servers" aria-selected="true">合作伺服器</button>
+                    <button type="button" role="tab" data-tab="works" aria-selected="false">推薦作品</button>
+                </div>
+                <p class="hint" id="explore-hint"></p>
                 <div class="srv-list" id="explore-list"></div>
             </section>
 

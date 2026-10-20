@@ -172,7 +172,7 @@ pub fn inspect_instance(dir: &Path) -> Option<Source> {
 }
 
 fn official(r: &Roots) -> Vec<Source> {
-    let dir = if cfg!(target_os = "linux") { r.home.join(".minecraft") } else { r.data.join(".minecraft") };
+    let dir = if cfg!(target_os = "linux") { r.home.join(".minecraft") } else if cfg!(target_os = "macos") { r.data.join("minecraft") } else { r.data.join(".minecraft") };
     let profiles: Vec<Value> = read_json(&dir.join("launcher_profiles.json"))
         .and_then(|v| v.get("profiles")?.as_object().map(|m| m.values().cloned().collect()))
         .unwrap_or_default();

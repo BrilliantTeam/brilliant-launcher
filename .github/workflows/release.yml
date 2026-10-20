@@ -17,7 +17,9 @@ jobs:
           - os: windows-latest
             args: ""
           - os: ubuntu-22.04
-            args: "--bundles appimage,deb"
+            args: "--bundles appimage"
+          - os: macos-latest
+            args: "--target universal-apple-darwin --bundles dmg"
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -28,6 +30,8 @@ jobs:
 
       - name: 設置 Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: 安裝 Linux 依賴
         if: matrix.os == 'ubuntu-22.04'
@@ -66,10 +70,8 @@ jobs:
           b=src-tauri/target
           case "${{ matrix.os }}" in
             windows-latest) cp "$(ls $b/release/bundle/nsis/*-setup.exe | head -1)" "release/BrilliantLauncher_${v}_x64-setup.exe" ;;
-            *)
-              cp "$(ls $b/release/bundle/appimage/*.AppImage | head -1)" "release/BrilliantLauncher_${v}_amd64.AppImage"
-              cp "$(ls $b/release/bundle/deb/*.deb | head -1)" "release/BrilliantLauncher_${v}_amd64.deb"
-              ;;
+            macos-latest) cp "$(ls $b/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)" "release/BrilliantLauncher_${v}_universal.dmg" ;;
+            *) cp "$(ls $b/release/bundle/appimage/*.AppImage | head -1)" "release/BrilliantLauncher_${v}_amd64.AppImage" ;;
           esac
           ls -la release
 
@@ -81,7 +83,8 @@ jobs:
           sudo apt-get install -y flatpak
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y flathub org.flatpak.Builder org.gnome.Platform//49 org.gnome.Sdk//49
-          cp "release/BrilliantLauncher_${v}_amd64.deb" flatpak/brilliant.deb
+          cp src-tauri/target/release/BrilliantLauncher flatpak/BrilliantLauncher
+          cp src-tauri/icons/icon.png flatpak/icon.png
           sed -i "s|<release version=\"[^\"]*\" date=\"[^\"]*\"|<release version=\"${v}\" date=\"$(date +%F)\"|" flatpak/net.brilliantw.launcher.metainfo.xml
           dbus-run-session -- flatpak run org.flatpak.Builder --user --disable-rofiles-fuse --force-clean --repo=flatpak-repo flatpak-build flatpak/net.brilliantw.launcher.yml
           flatpak build-bundle flatpak-repo "release/BrilliantLauncher_${v}_x86_64.flatpak" net.brilliantw.launcher --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo

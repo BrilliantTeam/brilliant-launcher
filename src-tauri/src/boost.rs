@@ -121,7 +121,18 @@ fn total_memory_mb() -> u64 {
         .unwrap_or(0)
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+fn total_memory_mb() -> u64 {
+    std::process::Command::new("sysctl")
+        .args(["-n", "hw.memsize"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse::<u64>().ok())
+        .map(|bytes| bytes / 1_048_576)
+        .unwrap_or(0)
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 fn total_memory_mb() -> u64 {
     0
 }
@@ -129,6 +140,8 @@ fn total_memory_mb() -> u64 {
 pub fn official_minecraft_dir() -> Option<std::path::PathBuf> {
     if cfg!(target_os = "linux") {
         dirs::home_dir().map(|h| h.join(".minecraft"))
+    } else if cfg!(target_os = "macos") {
+        dirs::data_dir().map(|d| d.join("minecraft"))
     } else {
         dirs::data_dir().map(|d| d.join(".minecraft"))
     }

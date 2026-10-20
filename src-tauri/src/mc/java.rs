@@ -66,9 +66,10 @@ fn exe_name() -> &'static str {
 
 fn runtime_exe(dir: &Path) -> PathBuf {
     if cfg!(target_os = "macos") {
-        let bundled = dir.join("jre.bundle/Contents/Home/bin/java");
-        if bundled.exists() {
-            return bundled;
+        for bundled in [dir.join("jre.bundle/Contents/Home/bin/java"), dir.join("Contents/Home/bin/java")] {
+            if bundled.exists() {
+                return bundled;
+            }
         }
     }
     dir.join("bin").join(exe_name())
@@ -188,7 +189,7 @@ pub async fn scan() -> Vec<JavaInfo> {
 }
 
 async fn install_adoptium(app: &AppHandle, component: &str, major: u32) -> R<PathBuf> {
-    let os = if cfg!(target_os = "windows") { "windows" } else { "linux" };
+    let os = if cfg!(target_os = "windows") { "windows" } else if cfg!(target_os = "macos") { "mac" } else { "linux" };
     let arch = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x64" };
     net::emit_stage(app, "java", &format!("改從 Adoptium 下載 Java {major}"));
     let bytes = net::get_bytes(&format!("https://api.adoptium.net/v3/binary/latest/{major}/ga/{os}/{arch}/jre/hotspot/normal/eclipse"), false).await?;
@@ -212,7 +213,7 @@ async fn install_adoptium(app: &AppHandle, component: &str, major: u32) -> R<Pat
     let home = std::fs::read_dir(&staging)?
         .flatten()
         .map(|e| e.path())
-        .find(|p| p.join("bin").join(exe_name()).is_file())
+        .find(|p| p.join("bin").join(exe_name()).is_file() || p.join("Contents/Home/bin").join(exe_name()).is_file())
         .context("下載的 Java 內容不完整")?;
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::rename(&home, &dir)?;

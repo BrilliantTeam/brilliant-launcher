@@ -264,6 +264,17 @@ pub fn set_autostart(on: bool) -> R<()> {
             bail!("無法設定開機自動啟動");
         }
     }
+    #[cfg(target_os = "macos")]
+    {
+        let file = dirs::home_dir().context("找不到使用者資料夾")?.join("Library/LaunchAgents/net.brilliantw.launcher.plist");
+        if on {
+            std::fs::create_dir_all(file.parent().unwrap_or(&file))?;
+            let escaped = exe.to_string_lossy().replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+            std::fs::write(&file, format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\"><dict><key>Label</key><string>net.brilliantw.launcher</string><key>ProgramArguments</key><array><string>{escaped}</string></array><key>RunAtLoad</key><true/></dict></plist>\n"))?;
+        } else {
+            let _ = std::fs::remove_file(&file);
+        }
+    }
     #[cfg(target_os = "linux")]
     {
         if std::env::var_os("FLATPAK_ID").is_some() {

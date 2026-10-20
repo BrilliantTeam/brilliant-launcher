@@ -27,19 +27,15 @@ modules:
     buildsystem: simple
     sources:
       - type: file
-        path: brilliant.deb
+        path: BrilliantLauncher
+      - type: file
+        path: icon.png
+      - type: file
+        path: net.brilliantw.launcher.desktop
       - type: file
         path: net.brilliantw.launcher.metainfo.xml
     build-commands:
-      - ar -x brilliant.deb
-      - tar -xf data.tar.*
-      - install -Dm755 usr/bin/BrilliantLauncher /app/bin/BrilliantLauncher
-      - if [ -d usr/lib ]; then cp -a usr/lib/. /app/lib/; fi
-      - |
-        for png in usr/share/icons/hicolor/*/apps/*.png; do
-          size=$(basename "$(dirname "$(dirname "$png")")")
-          install -Dm644 "$png" "/app/share/icons/hicolor/$size/apps/net.brilliantw.launcher.png"
-        done
-      - install -Dm644 usr/share/applications/*.desktop /app/share/applications/net.brilliantw.launcher.desktop
-      - desktop-file-edit --set-icon=net.brilliantw.launcher --set-key=Exec --set-value=BrilliantLauncher /app/share/applications/net.brilliantw.launcher.desktop
+      - install -Dm755 BrilliantLauncher /app/bin/BrilliantLauncher
+      - install -Dm644 icon.png /app/share/icons/hicolor/128x128/apps/net.brilliantw.launcher.png
+      - install -Dm644 net.brilliantw.launcher.desktop /app/share/applications/net.brilliantw.launcher.desktop
       - install -Dm644 net.brilliantw.launcher.metainfo.xml /app/share/metainfo/net.brilliantw.launcher.metainfo.xml

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=輝煌啟動器
+Comment=輝煌伺服器 Minecraft 啟動器
+Exec=BrilliantLauncher
+Icon=net.brilliantw.launcher
+Terminal=false
+Categories=Game;

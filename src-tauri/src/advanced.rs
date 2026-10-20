@@ -473,6 +473,9 @@ fn launch_command() -> R<(String, Vec<String>)> {
 }
 
 pub fn create_shortcut(instance: &Instance, join: Option<String>) -> R<PathBuf> {
+    if cfg!(target_os = "macos") {
+        bail!("macOS 版暫不支援建立桌面捷徑");
+    }
     let (program, mut base) = launch_command()?;
     base.push("--launch".into());
     base.push(instance.id.clone());
