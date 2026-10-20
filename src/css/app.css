@@ -626,6 +626,7 @@ button.mc.icon-btn.danger:hover { color: var(--danger); }
 .store-tabs button[aria-selected="true"] { color: var(--text); font-weight: 700; border-bottom-color: var(--accent); }
 .store-tabs button:hover { color: var(--text); }
 .store-tabs .count { font-size: 11px; color: var(--text-faint); font-weight: 400; }
+#installed-search { width: 240px; flex: 0 1 240px; min-width: 140px; }
 
 .presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 10px; margin-bottom: 18px; }
 .presets[hidden] { display: none; }

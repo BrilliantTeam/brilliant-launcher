@@ -49,7 +49,7 @@ export const PRESETS = [
     }
 ];
 
-const state = { kind: 'mod', tab: 'explore', category: '', offset: 0, total: 0, searchSeq: 0, listSeq: 0, searchedFor: '' };
+const state = { kind: 'mod', tab: 'explore', category: '', offset: 0, total: 0, searchSeq: 0, listSeq: 0, searchedFor: '', filter: '' };
 const installed = { mod: null, resourcepack: null, shader: null };
 const busy = new Set();
 let timer = 0;
@@ -903,6 +903,14 @@ function renderInstalled() {
             `還沒有安裝任何${KIND_LABEL[state.kind]}。`,
             h('button', { type: 'button', class: 'mc primary', onclick: () => selectTab('explore') }, `去探索${KIND_LABEL[state.kind]}`)));
     }
+    const q = state.filter.trim().toLowerCase();
+    if (q) {
+        const hits = list.filter((e) => [e.name, e.file, e.version].some((v) => (v || '').toLowerCase().includes(q)));
+        return box.append(...(hits.length
+            ? [h('div', { class: 'hint' }, `找到 ${hits.length} 個符合「${state.filter.trim()}」的${KIND_LABEL[state.kind]}`), ...hits.map(installedRow)]
+            : [h('div', { class: 'empty-state' }, `已安裝的${KIND_LABEL[state.kind]}裡沒有「${state.filter.trim()}」。`,
+                h('button', { type: 'button', class: 'mc primary', onclick: () => { $('#mod-search').value = state.filter.trim(); state.filter = ''; $('#installed-search').value = ''; selectTab('explore'); search(); } }, `到 Modrinth 搜尋`))]));
+    }
     box.append(...[profileBar(list), packPanel(), depBanner(list), ...list.map(installedRow)].filter(Boolean));
 }
 
@@ -948,6 +956,7 @@ function renderHeader() {
     $('#store-explore').hidden = state.tab !== 'explore';
     $('#store-installed').hidden = state.tab !== 'installed';
     $('#mod-search').placeholder = `搜尋 Modrinth 上的${KIND_LABEL[state.kind]}⋯⋯`;
+    $('#installed-search').placeholder = `搜尋已安裝的${KIND_LABEL[state.kind]}⋯`;
 }
 
 function renderAll() {
@@ -1001,6 +1010,8 @@ export function initMods() {
         button.addEventListener('click', () => {
             state.kind = button.dataset.kind;
             state.category = '';
+            state.filter = '';
+            $('#installed-search').value = '';
             renderCategories();
             renderAll();
             reloadInstalled();
@@ -1015,6 +1026,10 @@ export function initMods() {
     $('#store-sort').addEventListener('change', () => search());
     $('#btn-more-mods').addEventListener('click', guard(() => search(false)));
     $('#btn-refresh-mods').addEventListener('click', guard(() => reloadInstalled()));
+    $('#installed-search').addEventListener('input', (e) => {
+        state.filter = e.target.value;
+        renderInstalled();
+    });
     $('#btn-update-all').addEventListener('click', guard(() => update(state.kind, (installed[state.kind] || []).filter((entry) => entry.update && !entry.pinned))));
     $('#btn-add-mod').addEventListener('click', guard(async () => {
         const picked = await pickFiles({ multiple: true, filters: [{ name: 'Minecraft 模組', extensions: ['jar'] }] });

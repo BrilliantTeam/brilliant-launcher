@@ -17,6 +17,38 @@ pub struct Digest {
     pub sha1: String,
     pub nested: Vec<String>,
     pub size: u64,
+    pub icon: Option<String>,
+}
+
+pub fn embedded_icon(bytes: &[u8], is_mod: bool) -> Option<String> {
+    use base64::Engine;
+    use std::io::Read;
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    let path = if is_mod {
+        let mut raw = String::new();
+        zip.by_name("fabric.mod.json").ok()?.read_to_string(&mut raw).ok()?;
+        let clean: String = raw.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+        let meta: serde_json::Value = serde_json::from_str(&clean).ok()?;
+        match meta.get("icon")? {
+            serde_json::Value::String(s) => s.clone(),
+            serde_json::Value::Object(sizes) => sizes
+                .iter()
+                .filter_map(|(k, v)| Some((k.parse::<u32>().ok()?, v.as_str()?.to_string())))
+                .min_by_key(|(size, _)| size.abs_diff(64))?
+                .1,
+            _ => return None,
+        }
+    } else {
+        "pack.png".to_string()
+    };
+    let path = path.trim_start_matches("./").trim_start_matches('/');
+    let mut entry = zip.by_name(path).ok()?;
+    if entry.size() > 512 << 10 {
+        return None;
+    }
+    let mut png = Vec::new();
+    entry.read_to_end(&mut png).ok()?;
+    png.starts_with(b"\x89PNG").then(|| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(&png)))
 }
 
 type DigestCache = Mutex<HashMap<PathBuf, (u64, SystemTime, Digest)>>;
@@ -38,8 +70,10 @@ pub async fn digest(path: &Path) -> Option<Digest> {
     let found = tokio::task::spawn_blocking(move || {
         let bytes = std::fs::read(&path_buf).ok()?;
         let name = path_buf.to_string_lossy().to_lowercase();
-        let nested = if name.ends_with(".jar") || name.ends_with(".jar.disabled") { nested_jars(&bytes) } else { Vec::new() };
-        Some(Digest { sha1: sha1_hex(&bytes), nested, size: bytes.len() as u64 })
+        let is_mod = name.ends_with(".jar") || name.ends_with(".jar.disabled");
+        let nested = if is_mod { nested_jars(&bytes) } else { Vec::new() };
+        let icon = if is_mod || name.ends_with(".zip") || name.ends_with(".zip.disabled") { embedded_icon(&bytes, is_mod) } else { None };
+        Some(Digest { sha1: sha1_hex(&bytes), nested, size: bytes.len() as u64, icon })
     })
     .await
     .ok()??;
@@ -526,6 +560,7 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
     let mut out = Vec::new();
     let mut hashes = Vec::new();
     let mut embedded: Vec<Vec<String>> = Vec::new();
+    let mut local_icons: Vec<Option<String>> = Vec::new();
     if let Ok(mut entries) = tokio::fs::read_dir(&dir).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let file = entry.file_name().to_string_lossy().to_string();
@@ -535,6 +570,7 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
             let Some(found) = digest(&entry.path()).await else { continue };
             hashes.push(found.sha1);
             embedded.push(if kind == Kind::Mod { found.nested } else { Vec::new() });
+            local_icons.push(found.icon);
             let enabled = !file.ends_with(DISABLED_SUFFIX);
             let stem = file.trim_end_matches(DISABLED_SUFFIX).trim_end_matches(kind.extension()).to_string();
             out.push(Installed {
@@ -655,6 +691,11 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
             if let Some(names) = entry.project_id.as_ref().and_then(|id| needed_by.get(id)) {
                 entry.dependents = names.clone();
             }
+        }
+    }
+    for (entry, icon) in out.iter_mut().zip(local_icons) {
+        if entry.icon_url.is_none() {
+            entry.icon_url = icon;
         }
     }
     out.sort_by(|a, b| b.managed.cmp(&a.managed).then(a.name.to_lowercase().cmp(&b.name.to_lowercase())));
@@ -811,6 +852,30 @@ mod tests {
         zip.finish().unwrap();
         assert_eq!(nested_jars(buf.get_ref()), vec!["placeholder-api-2.4.0+1.21.jar".to_string()]);
         assert!(nested_jars(b"not a zip").is_empty());
+    }
+
+    #[test]
+    fn reads_embedded_icons() {
+        use std::io::Write;
+        let png = b"\x89PNG\r\n\x1a\nfake".to_vec();
+        let build = |files: &[(&str, &[u8])]| {
+            let mut buf = std::io::Cursor::new(Vec::new());
+            let mut zip = zip::ZipWriter::new(&mut buf);
+            for (name, data) in files {
+                zip.start_file(*name, zip::write::SimpleFileOptions::default()).unwrap();
+                zip.write_all(data).unwrap();
+            }
+            zip.finish().unwrap();
+            buf.into_inner()
+        };
+        let jar = build(&[("fabric.mod.json", br#"{"id":"x","icon":{"16":"a.png","64":"assets/x/icon.png"}}"#), ("assets/x/icon.png", &png)]);
+        assert!(embedded_icon(&jar, true).unwrap().starts_with("data:image/png;base64,"));
+        let pack = build(&[("pack.png", &png), ("pack.mcmeta", b"{}")]);
+        assert!(embedded_icon(&pack, false).is_some());
+        assert!(embedded_icon(&build(&[("fabric.mod.json", br#"{"id":"x"}"#)]), true).is_none());
+        if let Some(real) = std::env::var_os("BRILLIANT_MOD_JAR") {
+            assert!(embedded_icon(&std::fs::read(real).unwrap(), true).is_some(), "輝煌模組要讀得到圖示");
+        }
     }
 
     #[tokio::test]
