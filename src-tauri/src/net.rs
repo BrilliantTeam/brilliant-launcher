@@ -6,7 +6,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use sha1::{Digest, Sha1};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use tauri::{AppHandle, Emitter};
 
 const RETRIES: usize = 3;
@@ -16,16 +16,45 @@ pub fn set_concurrency(n: u32) {
     CONCURRENCY.store(n.clamp(1, 64) as usize, Ordering::Relaxed);
 }
 
-pub fn client() -> &'static reqwest::Client {
-    static C: OnceLock<reqwest::Client> = OnceLock::new();
-    C.get_or_init(|| {
-        reqwest::Client::builder()
-            .user_agent(format!("BrilliantLauncher/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS))
-            .connect_timeout(std::time::Duration::from_secs(15))
-            .timeout(std::time::Duration::from_secs(300))
-            .build()
-            .expect("建立 HTTP client 失敗")
+static CLIENT: std::sync::RwLock<Option<reqwest::Client>> = std::sync::RwLock::new(None);
+
+fn build_client(proxy: &str) -> crate::err::R<reqwest::Client> {
+    let mut builder = reqwest::Client::builder()
+        .user_agent(format!("BrilliantLauncher/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS))
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(300));
+    let proxy = proxy.trim();
+    if !proxy.is_empty() {
+        if !valid_proxy(proxy) {
+            crate::bail!("代理伺服器格式不正確，請填寫 http://主機:連接埠");
+        }
+        builder = builder.proxy(reqwest::Proxy::all(proxy)?);
+    }
+    Ok(builder.build()?)
+}
+
+pub fn valid_proxy(proxy: &str) -> bool {
+    let rest = proxy.strip_prefix("http://").or_else(|| proxy.strip_prefix("https://"));
+    rest.is_some_and(|r| {
+        let host = r.trim_end_matches('/');
+        host.rsplit_once(':').is_some_and(|(h, p)| !h.is_empty() && p.parse::<u16>().is_ok())
+            && host.chars().all(|c| c.is_ascii_alphanumeric() || ".-:@_[]".contains(c))
     })
+}
+
+pub fn set_proxy(proxy: &str) -> crate::err::R<()> {
+    let client = build_client(proxy)?;
+    *CLIENT.write().unwrap_or_else(|e| e.into_inner()) = Some(client);
+    Ok(())
+}
+
+pub fn client() -> reqwest::Client {
+    if let Some(client) = CLIENT.read().unwrap_or_else(|e| e.into_inner()).clone() {
+        return client;
+    }
+    let client = build_client("").expect("建立 HTTP client 失敗");
+    *CLIENT.write().unwrap_or_else(|e| e.into_inner()) = Some(client.clone());
+    client
 }
 
 const MIRROR: &[(&str, &str)] = &[

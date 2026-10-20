@@ -299,6 +299,7 @@ async function play(relogged = false, join = null) {
         const target = instance.general ? null : shardOf(store.settings?.quickJoin);
         toast(join ? `遊戲已啟動，將直接連線 ${join.name}` : target ? `遊戲已啟動，將直接連線 ${target.label}` : '遊戲已啟動');
         await loadInstances();
+        if (store.settings?.openLogOnLaunch) location.hash = '#log';
         const after = store.settings?.afterLaunch;
         if (after === 'hide') await api.hide_window();
         else if (after === 'exit') await api.exit_launcher();
@@ -549,6 +550,11 @@ export function initHome() {
         setProgress({ ...p, label: `${STAGE_TEXT[p.stage] ?? p.stage}：${p.label}` });
     });
     listen('launcher://tray-play', () => emit('launch'));
+    listen('launcher://cli-launch', async ({ name, error }) => {
+        await loadInstances().catch(() => {});
+        if (error) toast(`捷徑啟動「${name}」失敗：${error}`, 'error');
+        else toast(`已從捷徑啟動「${name}」`);
+    });
     listen('launcher://exit', async ({ code, seconds }) => {
         await api.show_window().catch(() => {});
         await loadInstances().catch(() => {});

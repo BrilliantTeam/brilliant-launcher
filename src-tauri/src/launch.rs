@@ -146,14 +146,12 @@ async fn prepare(
         let _ = std::fs::write(stamp, b"");
     }
 
-    let java_exe = java::ensure(
-        app,
-        &resolved.java_version.component,
-        resolved.java_version.major_version,
-        instance.java(settings),
-        mirror,
-    )
-    .await?;
+    let (java_component, java_major) = if instance.java_major > 0 && instance.java_major != resolved.java_version.major_version {
+        (crate::advanced::java_component(instance.java_major), instance.java_major)
+    } else {
+        (resolved.java_version.component.clone(), resolved.java_version.major_version)
+    };
+    let java_exe = java::ensure(app, &java_component, java_major, instance.java(settings), mirror).await?;
 
     let mut notes = Vec::new();
     if instance.wants_rich_presence(settings) {
@@ -216,7 +214,16 @@ async fn prepare(
     vars.insert("quickPlayRealms", String::new());
 
     let mut args: Vec<String> = Vec::new();
-    args.push(format!("-Xmx{}M", instance.memory(settings)));
+    let max_memory = instance.memory(settings);
+    args.push(format!("-Xmx{max_memory}M"));
+    if settings.memory_min_mb > 0 {
+        args.push(format!("-Xms{}M", settings.memory_min_mb.min(max_memory)));
+    }
+    if settings.debug_mode {
+        args.push("-Dfabric.log.level=debug".into());
+        args.push("-Dmixin.debug.verbose=true".into());
+    }
+    args.extend(crate::advanced::proxy_props(&settings.proxy));
     args.push("-Dfile.encoding=UTF-8".into());
     args.push("-Dstdout.encoding=UTF-8".into());
     args.push("-Dstderr.encoding=UTF-8".into());
@@ -300,11 +307,42 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
             .context("備份工作中斷")??;
     }
 
+    let mut early_notes = Vec::new();
+    if settings.auto_update_mods && !instance.freeze_mods && instance.loader == "fabric" {
+        net::emit_stage(app, "mods", "檢查模組更新");
+        let mods_kind = crate::modrinth::Kind::Mod;
+        match crate::modrinth::installed(&instance.id, mods_kind, &instance.mc_version, &instance.pinned, instance.wants_rich_presence(&settings), instance.channel(&settings), false).await {
+            Ok(list) => {
+                let mut updated = 0;
+                for entry in list.into_iter().filter(|e| !e.pinned && !e.managed) {
+                    if let Some(update) = entry.update {
+                        if crate::modrinth::replace(app, &instance.id, mods_kind, &entry.file, update).await.is_ok() {
+                            updated += 1;
+                        }
+                    }
+                }
+                if updated > 0 {
+                    early_notes.push(format!("啟動前已自動更新 {updated} 個模組"));
+                }
+            }
+            Err(e) => early_notes.push(format!("檢查模組更新失敗，這次照原本的版本啟動（{:#}）", e.0)),
+        }
+    }
+    {
+        let (inst, s) = (instance.clone(), settings.clone());
+        let shared = tokio::task::spawn_blocking(move || crate::advanced::sync_shared(&inst, &s))
+            .await
+            .context("共用資料夾工作中斷")??;
+        early_notes.extend(shared);
+    }
+
     let prepared = {
         let _guard = state.prep_lock.lock().await;
         prepare(app, &instance, &settings, Some(&account)).await?
     };
-    let (java_exe, args, game_dir, notes) = prepared.context("準備啟動參數失敗")?;
+    let (java_exe, args, game_dir, mut notes) = prepared.context("準備啟動參數失敗")?;
+    early_notes.append(&mut notes);
+    let notes = early_notes;
 
     if !settings.pre_launch_cmd.trim().is_empty() {
         net::emit_stage(app, "hook", "執行啟動前指令");
@@ -320,9 +358,23 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     net::emit_stage(app, "launch", "啟動遊戲");
     let log_file = paths::logs().join(format!("{instance_id}-{}.log", now_secs()));
     tokio::fs::create_dir_all(paths::logs()).await?;
-    append_log(&log_file, &format!("$ {} {}", java_exe.display(), args.join(" "))).await;
+    let wrapper = instance.wrapper_cmd(&settings);
+    append_log(&log_file, &crate::advanced::redact(&format!("$ {} {} {}", wrapper.join(" "), java_exe.display(), args.join(" ")))).await;
 
-    let mut cmd = tokio::process::Command::new(&java_exe);
+    let mut cmd = match wrapper.split_first() {
+        Some((program, rest)) => {
+            let mut c = tokio::process::Command::new(program);
+            c.args(rest).arg(&java_exe);
+            c
+        }
+        None => tokio::process::Command::new(&java_exe),
+    };
+    for (key, value) in instance.env(&settings) {
+        cmd.env(key, value);
+    }
+    if settings.prefer_dgpu {
+        crate::advanced::prefer_dgpu(&mut cmd, &java_exe);
+    }
     cmd.args(&args)
         .current_dir(&game_dir)
         .stdout(std::process::Stdio::piped())
@@ -332,7 +384,10 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
 
     let mut child = cmd
         .spawn()
-        .with_context(|| format!("無法執行 {}", java_exe.display()))?;
+        .with_context(|| match wrapper.first() {
+            Some(program) => format!("無法執行包裝指令「{program}」，請確認它已安裝並在 PATH 中"),
+            None => format!("無法執行 {}", java_exe.display()),
+        })?;
 
     let stdout = child.stdout.take().context("取不到遊戲輸出")?;
     let stderr = child.stderr.take().context("取不到遊戲錯誤輸出")?;

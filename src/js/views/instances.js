@@ -4,6 +4,7 @@ import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../
 import { icon, INSTANCE_ICONS, instanceIconName } from '../icons.js';
 import { importPack } from './mods.js';
 import { isPreparing, repairInstance } from './home.js';
+import { jvmPresetButtons } from './settings.js';
 
 export async function versionData() {
     if (!store.versions) store.versions = await api.list_versions();
@@ -167,10 +168,32 @@ async function editorDialog(title, source) {
     const width = h('input', { type: 'number', min: '0', max: '7680', value: source.width || '', placeholder: '沿用全域' });
     const height = h('input', { type: 'number', min: '0', max: '4320', value: source.height || '', placeholder: '沿用全域' });
     const fullscreen = h('input', { type: 'checkbox', checked: !!source.fullscreen });
-    const advanced = h('details', { class: 'advanced', open: !!(source.javaPath || source.jvmArgs || source.width) },
+    const javaMajor = h('select', {},
+        ...[[0, '自動（依 Minecraft 版本）'], [8, 'Java 8'], [17, 'Java 17'], [21, 'Java 21'], [25, 'Java 25']].map(([value, label]) =>
+            h('option', { value: String(value), selected: Number(source.javaMajor || 0) === value }, label)));
+    const wrapper = h('input', { type: 'text', spellcheck: 'false', value: source.wrapper ?? '', placeholder: '留空沿用全域設定' });
+    const envVars = h('textarea', { spellcheck: 'false', placeholder: '每行一個 KEY=VALUE，會覆蓋全域的同名變數' }, source.envVars ?? '');
+    const useShared = h('input', { type: 'checkbox', checked: !!source.useShared });
+    const sharedList = (store.settings?.sharedFolders ?? []).map((f) => ({ saves: '存檔', resourcepacks: '資源包', shaderpacks: '光影', screenshots: '截圖' })[f]).filter(Boolean);
+    const modChannel = h('select', {},
+        ...[['', '沿用全域設定'], ['release', '只用正式版'], ['beta', '允許 Beta 版'], ['alpha', '允許所有版本']].map(([value, label]) =>
+            h('option', { value, selected: (source.modChannel ?? '') === value }, label)));
+    const freezeMods = h('input', { type: 'checkbox', checked: !!source.freezeMods });
+    const advanced = h('details', { class: 'advanced', open: !!(source.javaPath || source.jvmArgs || source.width || source.javaMajor || source.wrapper || source.envVars || source.useShared || source.modChannel || source.freezeMods) },
         h('summary', {}, '進階設定（覆寫全域）'),
-        h('div', { class: 'field' }, h('label', {}, 'Java 執行檔'), javaPath),
-        h('div', { class: 'field' }, h('label', {}, 'JVM 參數'), jvmArgs),
+        h('div', { class: 'field-row' },
+            h('div', { class: 'field' }, h('label', {}, 'Java 版本'), javaMajor),
+            h('div', { class: 'field' }, h('label', {}, 'Java 執行檔'), javaPath)),
+        h('div', { class: 'hint' }, '指定版本時，啟動器會自動下載並管理對應的 Java；選了「Java 執行檔」則以執行檔為準。'),
+        h('div', { class: 'field' }, h('label', {}, 'JVM 參數'), jvmArgs, h('div', { class: 'jvm-presets' }, ...jvmPresetButtons(jvmArgs, () => {}))),
+        h('div', { class: 'field' }, h('label', {}, '啟動包裝指令'), wrapper),
+        h('div', { class: 'field' }, h('label', {}, '環境變數'), envVars),
+        h('div', { class: 'field' },
+            h('label', {}, useShared, '使用共用資料夾'),
+            h('div', { class: 'hint' }, sharedList.length ? `會共用：${sharedList.join('、')}（在「設定 → 進階」調整）` : '目前沒有選擇要共用的資料夾，請先到「設定 → 進階」勾選。')),
+        h('div', { class: 'field-row' },
+            h('div', { class: 'field' }, h('label', {}, '模組更新管道'), modChannel),
+            h('div', { class: 'field' }, h('label', {}, freezeMods, '凍結模組'), h('div', { class: 'hint' }, '不檢查也不自動更新這個實例的模組，適合穩定的整合包。'))),
         h('div', { class: 'field-row' },
             h('div', { class: 'field' }, h('label', {}, '視窗寬度'), width),
             h('div', { class: 'field' }, h('label', {}, '視窗高度'), height)),
@@ -221,6 +244,12 @@ async function editorDialog(title, source) {
         width: Math.max(0, Number(width.value) || 0),
         height: Math.max(0, Number(height.value) || 0),
         fullscreen: fullscreen.checked,
+        javaMajor: Number(javaMajor.value) || 0,
+        wrapper: wrapper.value.trim(),
+        envVars: envVars.value.trim(),
+        useShared: useShared.checked,
+        modChannel: modChannel.value,
+        freezeMods: freezeMods.checked,
         pickedImage
     };
 }
@@ -228,7 +257,8 @@ async function editorDialog(title, source) {
 const BLANK = {
     id: '', name: '', icon: 'zap', mcVersion: '', loader: 'vanilla', loaderVersion: '',
     versionId: '', memoryMb: 0, jvmArgs: '', width: 0, height: 0, fullscreen: false,
-    injectRichPresence: null, general: false, join: '', createdAt: 0, lastPlayed: 0, playSeconds: 0
+    injectRichPresence: null, general: false, join: '', createdAt: 0, lastPlayed: 0, playSeconds: 0,
+    javaMajor: 0, wrapper: '', envVars: '', useShared: false, modChannel: '', freezeMods: false
 };
 
 async function applyImage(id, pickedImage) {
@@ -680,6 +710,38 @@ async function showScreenshots(instance) {
     });
 }
 
+async function createShortcut(instance) {
+    const target = h('select', {},
+        h('option', { value: '' }, '只開啟遊戲（進主畫面）'),
+        ...(instance.general ? [] : [['s1', '炒飯服'], ['s2', '書碼服'], ['s3', '羽森服'], ['s4', '恐龍服']].map(([value, label]) =>
+            h('option', { value }, `直接連線 ${label}`))));
+    const ok = await dialog({
+        title: `建立「${instance.name}」的桌面捷徑`,
+        content: h('div', {},
+            h('p', { class: 'hint' }, '在桌面放一個捷徑，點兩下就用這個實例直接開始遊戲，不必先操作啟動器。'),
+            h('div', { class: 'field' }, h('label', {}, '開啟後'), target)),
+        buttons: [{ label: '取消', value: false }, { label: '建立', value: true }]
+    });
+    if (ok !== true) return;
+    try {
+        const path = await api.create_shortcut({ id: instance.id, join: target.value || null });
+        toast(`已建立捷徑：${path.split(/[\\/]/).pop()}`);
+    } catch (error) {
+        fail(error);
+    }
+}
+
+async function exportDiagnostics(instance) {
+    toast('正在打包診斷資料⋯');
+    try {
+        const path = await api.export_diagnostics({ id: instance.id });
+        toast(`已匯出到「下載」資料夾：${path.split(/[\\/]/).pop()}\n裡面的登入憑證已自動隱藏，可以放心傳給管理員。`);
+        api.open_path({ path: path.replace(/[\\/][^\\/]+$/, '') }).catch(() => {});
+    } catch (error) {
+        fail(error);
+    }
+}
+
 function moreMenu(instance) {
     const item = (name, label, handler, extra = '') =>
         h('button', { type: 'button', role: 'menuitem', class: extra, onclick: (e) => { e.stopPropagation(); closeMenus(); handler(); } }, icon(name), label);
@@ -689,6 +751,8 @@ function moreMenu(instance) {
         item('image', '截圖', () => showScreenshots(instance)),
         item('folder', '開啟資料夾', () => openFolder(instance)),
         item('reload', '驗證並修復檔案', () => repairInstance(instance)),
+        item('external-link', '建立桌面捷徑', () => createShortcut(instance)),
+        item('bug', '匯出診斷包', () => exportDiagnostics(instance)),
         item('copy', '複製實例', () => duplicateInstance(instance)),
         item('trash', '刪除實例', () => removeInstance(instance), 'danger'));
     const toggle = h('button', {

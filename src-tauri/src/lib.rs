@@ -18,6 +18,7 @@ pub mod ping;
 pub mod skins;
 pub mod state;
 pub mod worlds;
+pub mod advanced;
 
 use tauri::{Listener, Manager};
 
@@ -28,13 +29,21 @@ pub fn run() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| extras::reveal(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
+            extras::reveal(app);
+            advanced::handle_cli(app, &argv);
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(state::AppState::default())
         .setup(|app| {
-            net::set_concurrency(tauri::async_runtime::block_on(config::load_settings()).download_threads);
+            let startup = tauri::async_runtime::block_on(config::load_settings());
+            net::set_concurrency(startup.download_threads);
+            if let Err(e) = net::set_proxy(&startup.proxy) {
+                eprintln!("[setup] 代理設定無效，改用直接連線：{:#}", e.0);
+            }
+            advanced::handle_cli(app.handle(), &std::env::args().collect::<Vec<_>>());
             extras::setup_tray(app)?;
             for dir in [paths::instances(), paths::shared(), paths::logs()] {
                 if let Err(e) = std::fs::create_dir_all(&dir) {
@@ -70,6 +79,10 @@ pub fn run() {
             commands::select_instance,
             commands::set_mod_enabled,
             commands::add_mods,
+            commands::create_shortcut,
+            commands::export_diagnostics,
+            commands::export_config,
+            commands::import_config,
             commands::launch_game,
             commands::stop_game,
             commands::ping_server,

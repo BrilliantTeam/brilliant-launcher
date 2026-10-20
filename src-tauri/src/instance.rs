@@ -38,6 +38,12 @@ pub struct Instance {
     pub created_at: i64,
     pub last_played: i64,
     pub play_seconds: i64,
+    pub java_major: u32,
+    pub env_vars: String,
+    pub wrapper: String,
+    pub use_shared: bool,
+    pub mod_channel: String,
+    pub freeze_mods: bool,
 }
 
 impl Instance {
@@ -64,6 +70,29 @@ impl Instance {
         } else {
             (s.width, s.height, s.fullscreen)
         }
+    }
+    pub fn channel<'a>(&'a self, s: &'a Settings) -> &'a str {
+        let own = self.mod_channel.trim();
+        let global = s.mod_channel.trim();
+        if !own.is_empty() {
+            own
+        } else if !global.is_empty() {
+            global
+        } else {
+            "release"
+        }
+    }
+    pub fn env(&self, s: &Settings) -> Vec<(String, String)> {
+        let mut vars = crate::advanced::parse_env(&s.env_vars);
+        for (key, value) in crate::advanced::parse_env(&self.env_vars) {
+            vars.retain(|(k, _)| k != &key);
+            vars.push((key, value));
+        }
+        vars
+    }
+    pub fn wrapper_cmd(&self, s: &Settings) -> Vec<String> {
+        let own = self.wrapper.trim();
+        crate::advanced::split_args(if own.is_empty() { &s.wrapper } else { own })
     }
     pub fn wants_rich_presence(&self, s: &Settings) -> bool {
         !self.general && self.loader == "fabric" && self.inject_rich_presence.unwrap_or(s.inject_rich_presence)

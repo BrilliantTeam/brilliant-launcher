@@ -23,6 +23,9 @@ pub async fn save_settings(settings: Settings) -> R<()> {
         crate::extras::set_autostart(settings.autostart)?;
     }
     crate::net::set_concurrency(settings.download_threads);
+    if before.proxy.trim() != settings.proxy.trim() {
+        crate::net::set_proxy(&settings.proxy)?;
+    }
     config::save_settings(&settings).await
 }
 
@@ -307,7 +310,7 @@ pub async fn content_install(app: AppHandle, id: String, kind: String, project: 
     let settings = config::load_settings().await;
     let instance = instance::get(&id).await?;
     let kind = modrinth::Kind::parse(&kind)?;
-    modrinth::install(&app, &id, kind, &project, &instance.mc_version, instance.wants_rich_presence(&settings)).await
+    modrinth::install(&app, &id, kind, &project, &instance.mc_version, instance.wants_rich_presence(&settings), instance.channel(&settings)).await
 }
 
 #[tauri::command]
@@ -315,7 +318,7 @@ pub async fn content_list(id: String, kind: String, mc: Option<String>) -> R<Vec
     let instance = instance::get(&id).await?;
     let mc = mc.filter(|m| !m.is_empty() && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')).unwrap_or_else(|| instance.mc_version.clone());
     let settings = config::load_settings().await;
-    modrinth::installed(&id, modrinth::Kind::parse(&kind)?, &mc, &instance.pinned, instance.wants_rich_presence(&settings)).await
+    modrinth::installed(&id, modrinth::Kind::parse(&kind)?, &mc, &instance.pinned, instance.wants_rich_presence(&settings), instance.channel(&settings), instance.freeze_mods).await
 }
 
 #[tauri::command]
@@ -426,6 +429,41 @@ pub async fn apply_update(app: AppHandle, path: String) -> R<()> {
         .with_context(|| format!("無法執行更新：{}", path.display()))?;
     app.exit(0);
     Ok(())
+}
+
+#[tauri::command]
+pub async fn create_shortcut(id: String, join: Option<String>) -> R<String> {
+    let instance = instance::get(&id).await?;
+    let join = join.filter(|j| j.len() <= 260 && j.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':'));
+    let path = tokio::task::spawn_blocking(move || crate::advanced::create_shortcut(&instance, join)).await.context("建立捷徑中斷")??;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn export_diagnostics(id: String) -> R<String> {
+    let instance = instance::get(&id).await?;
+    let settings = config::load_settings().await;
+    let java = instance.java(&settings).to_string();
+    let path = tokio::task::spawn_blocking(move || crate::advanced::export_diagnostics(&instance, &settings, &java)).await.context("匯出中斷")??;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn export_config() -> R<String> {
+    Ok(crate::advanced::export_config().await?.to_string_lossy().to_string())
+}
+
+#[derive(Serialize)]
+pub struct ImportSummary {
+    added: usize,
+    skipped: usize,
+    settings: bool,
+}
+
+#[tauri::command]
+pub async fn import_config(path: String) -> R<ImportSummary> {
+    let (added, skipped, settings) = crate::advanced::import_config(&path).await?;
+    Ok(ImportSummary { added, skipped, settings })
 }
 
 #[tauri::command]

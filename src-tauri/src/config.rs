@@ -44,6 +44,16 @@ pub struct Settings {
     pub music: String,
     pub music_volume: u32,
     pub usage_stats: bool,
+    pub memory_min_mb: u32,
+    pub env_vars: String,
+    pub wrapper: String,
+    pub prefer_dgpu: bool,
+    pub shared_folders: Vec<String>,
+    pub mod_channel: String,
+    pub auto_update_mods: bool,
+    pub proxy: String,
+    pub debug_mode: bool,
+    pub open_log_on_launch: bool,
 }
 
 impl Default for Settings {
@@ -85,6 +95,16 @@ impl Default for Settings {
             music: String::new(),
             music_volume: 40,
             usage_stats: true,
+            memory_min_mb: 0,
+            env_vars: String::new(),
+            wrapper: String::new(),
+            prefer_dgpu: false,
+            shared_folders: Vec::new(),
+            mod_channel: "release".into(),
+            auto_update_mods: false,
+            proxy: String::new(),
+            debug_mode: false,
+            open_log_on_launch: false,
         }
     }
 }

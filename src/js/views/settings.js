@@ -1,6 +1,6 @@
 import { api, pickFiles } from '../api.js';
 import { $, clear, confirm, fail, fmtBytes, h, rangeFill, toast, guard } from '../ui.js';
-import { on, saveSettings, store } from '../store.js';
+import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { gpuName, isIntegratedGpu } from '../services.js';
 
 const FIELDS = {
@@ -29,8 +29,38 @@ const FIELDS = {
     notifications: '#set-notify',
     usageStats: '#set-usage',
     inheritOptions: '#set-inherit',
-    musicVolume: '#set-volume'
+    musicVolume: '#set-volume',
+    memoryMinMb: '#set-memory-min',
+    wrapper: '#set-wrapper',
+    envVars: '#set-env',
+    preferDgpu: '#set-dgpu',
+    modChannel: '#set-mod-channel',
+    autoUpdateMods: '#set-mod-auto',
+    proxy: '#set-proxy',
+    debugMode: '#set-debug',
+    openLogOnLaunch: '#set-open-log'
 };
+
+export const JVM_PRESETS = [
+    ['G1 調校（預設）', '平衡穩定，適合大多數電腦', '-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -XX:-UseAdaptiveSizePolicy -XX:-OmitStackTraceInFastThrow'],
+    ["Aikar's Flags", '社群常用的 G1 調校，記憶體 6 GB 以上效果較好', '-XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200 -XX:+UnlockExperimentalVMOptions -XX:+DisableExplicitGC -XX:G1NewSizePercent=30 -XX:G1MaxNewSizePercent=40 -XX:G1HeapRegionSize=8M -XX:G1ReservePercent=20 -XX:G1HeapWastePercent=5 -XX:G1MixedGCCountTarget=4 -XX:InitiatingHeapOccupancyPercent=15 -XX:G1MixedGCLiveThresholdPercent=90 -XX:G1RSetUpdatingPauseTimePercent=5 -XX:SurvivorRatio=32 -XX:+PerfDisableSharedMem -XX:MaxTenuringThreshold=1'],
+    ['分代式 ZGC', '幾乎沒有 GC 停頓，需要 Java 21 以上，記憶體 8 GB 以上較適合', '-XX:+UseZGC -XX:+ZGenerational -XX:-OmitStackTraceInFastThrow']
+];
+
+export function jvmPresetButtons(target, onPick) {
+    return JVM_PRESETS.map(([label, hint, args]) => h('button', {
+        type: 'button',
+        class: 'mc',
+        title: hint,
+        onclick: () => {
+            target.value = args;
+            onPick();
+        }
+    }, label));
+}
+
+const PROXY_PATTERN = /^https?:\/\/([^\s@/]+@)?[A-Za-z0-9.\-[\]:_]+:\d{1,5}\/?$/;
+const SHARE_LABELS = [['saves', '存檔'], ['resourcepacks', '資源包'], ['shaderpacks', '光影'], ['screenshots', '截圖']];
 
 const ACCENTS = [
     ['', '官網配色'],
@@ -86,6 +116,7 @@ function read() {
     for (const [key, sel] of Object.entries(FIELDS)) {
         const el = $(sel);
         if (key === 'javaPath' && !javaReady) continue;
+        if (key === 'proxy' && el.value.trim() && !PROXY_PATTERN.test(el.value.trim())) continue;
         if (el.type === 'checkbox') patch[key] = el.checked;
         else if (el.type === 'number' || el.type === 'range') patch[key] = Number(el.value) || 0;
         else patch[key] = el.value;
@@ -126,6 +157,8 @@ function write() {
         else el.value = settings[key] ?? '';
     }
     $('#set-backup-keep').disabled = !settings.backupOnLaunch;
+    const shared = settings.sharedFolders ?? [];
+    for (const box of $('#set-shared').querySelectorAll('input')) box.checked = shared.includes(box.value);
     $('#bg-state').textContent = !settings.background ? '目前使用官網輪播' : /\.(mp4|webm)$/i.test(settings.background) ? '目前使用自訂影片' : '目前使用自訂圖片';
     $('#music-state').textContent = settings.music ? `目前播放：${settings.music.split(/[\\/]/).pop().replace(/^music-\d+\./, '自訂音樂.')}` : '未設定';
     $('#btn-music-clear').disabled = !settings.music;
@@ -195,6 +228,40 @@ export function initSettings() {
     }));
     $('#btn-music-clear').addEventListener('click', guard(() => persist({ music: '' })));
     $('#btn-bg-reset').addEventListener('click', guard(() => persist({ background: '' })));
+
+    $('#jvm-presets').append(...jvmPresetButtons($('#set-jvm'), () => {
+        persist(read());
+        toast('已套用 JVM 參數預設組');
+    }));
+    $('#set-shared').append(...SHARE_LABELS.map(([value, label]) => h('label', {},
+        h('input', {
+            type: 'checkbox',
+            value,
+            onchange: () => persist({ sharedFolders: [...$('#set-shared').querySelectorAll('input:checked')].map((b) => b.value) })
+        }), label)));
+    $('#btn-config-export').addEventListener('click', guard(async () => {
+        try {
+            const path = await api.export_config();
+            toast(`已匯出設定到「下載」資料夾：${path.split(/[\\/]/).pop()}`);
+            api.open_path({ path: path.replace(/[\\/][^\\/]+$/, '') }).catch(() => {});
+        } catch (error) {
+            fail(error);
+        }
+    }));
+    $('#btn-config-import').addEventListener('click', guard(async () => {
+        const path = await pickFiles({ multiple: false, filters: [{ name: '輝煌啟動器設定', extensions: ['zip'] }] }).catch(fail);
+        if (!path) return;
+        if (!(await confirm('匯入會用檔案裡的啟動器設定取代目前的設定，並加入目前沒有的實例（已存在的實例不會被動到）。要繼續嗎？', '匯入'))) return;
+        try {
+            const result = await api.import_config({ path });
+            await loadSettings();
+            emit('settings');
+            await loadInstances().catch(() => {});
+            toast(`匯入完成：${result.settings ? '已套用啟動器設定，' : ''}新增 ${result.added} 個實例${result.skipped ? `，略過 ${result.skipped} 個已存在的實例` : ''}`);
+        } catch (error) {
+            fail(error);
+        }
+    }));
 
     $('#btn-open-root').addEventListener('click', guard(async () => {
         const paths = await api.launcher_paths();

@@ -350,7 +350,7 @@ pub async fn detail(project: &str, kind: Option<Kind>, mc: Option<&str>) -> R<De
     }
     let compat_version = async {
         match (kind, mc) {
-            (Some(kind), Some(mc)) => version_for(kind, project, mc).await.ok(),
+            (Some(kind), Some(mc)) => version_for(kind, project, mc, "release").await.ok(),
             _ => None,
         }
     };
@@ -394,7 +394,19 @@ pub async fn detail(project: &str, kind: Option<Kind>, mc: Option<&str>) -> R<De
     Ok(detail)
 }
 
-async fn version_for(kind: Kind, project: &str, mc: &str) -> R<Version> {
+fn channel_rank(version_type: &str) -> u8 {
+    match version_type {
+        "release" => 0,
+        "beta" => 1,
+        _ => 2,
+    }
+}
+
+pub fn channel_allows(channel: &str, version_type: &str) -> bool {
+    channel_rank(version_type) <= channel_rank(channel)
+}
+
+async fn version_for(kind: Kind, project: &str, mc: &str, channel: &str) -> R<Version> {
     let url = format!(
         "{API}/project/{project}/version?game_versions={}&loaders={}",
         encode(&format!("[\"{mc}\"]")),
@@ -404,7 +416,7 @@ async fn version_for(kind: Kind, project: &str, mc: &str) -> R<Version> {
     if versions.is_empty() {
         bail!("這個項目沒有支援 Minecraft {mc} 的版本");
     }
-    let index = versions.iter().position(|v| v.version_type == "release").unwrap_or(0);
+    let index = versions.iter().position(|v| channel_allows(channel, &v.version_type)).unwrap_or(0);
     Ok(versions.swap_remove(index))
 }
 
@@ -413,7 +425,7 @@ fn primary(files: Vec<VersionFile>) -> Option<VersionFile> {
     files.into_iter().nth(index)
 }
 
-pub async fn install(app: &AppHandle, instance_id: &str, kind: Kind, project: &str, mc: &str, skip_fabric_api: bool) -> R<Vec<String>> {
+pub async fn install(app: &AppHandle, instance_id: &str, kind: Kind, project: &str, mc: &str, skip_fabric_api: bool, channel: &str) -> R<Vec<String>> {
     if !valid_id(project) || !valid_mc(mc) {
         bail!("項目或版本參數不正確");
     }
@@ -428,7 +440,7 @@ pub async fn install(app: &AppHandle, instance_id: &str, kind: Kind, project: &s
         }
         let version: Version = match version_id {
             Some(id) if valid_id(&id) => net::get_json(&format!("{API}/version/{id}"), false).await?,
-            _ => version_for(kind, &project_id, mc).await?,
+            _ => version_for(kind, &project_id, mc, channel).await?,
         };
         if skip_fabric_api && version.project_id == FABRIC_API_ID {
             continue;
@@ -472,7 +484,7 @@ fn managed_name(file: &str) -> Option<&'static str> {
     }
 }
 
-pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String], auto_api: bool) -> R<Vec<Installed>> {
+pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String], auto_api: bool, channel: &str, frozen: bool) -> R<Vec<Installed>> {
     let dir = kind.dir(instance_id);
     let mut out = Vec::new();
     let mut hashes = Vec::new();
@@ -545,6 +557,7 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
         };
         let title_of = |id: &str| projects.iter().find(|p| p.id == id).map(|p| p.title.clone()).unwrap_or_else(|| id.to_string());
         let mut needed_by: HashMap<String, Vec<String>> = HashMap::new();
+        let mut fallback: Vec<(usize, String, String, String)> = Vec::new();
         for (index, (entry, hash)) in out.iter_mut().zip(&hashes).enumerate() {
             let Some(version) = current.get(hash) else { continue };
             entry.project_id = Some(version.project_id.clone());
@@ -574,6 +587,14 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
                 continue;
             }
             entry.compatible = Some(latest.contains_key(hash));
+            if frozen {
+                continue;
+            }
+            if let Some(newer) = latest.get(hash).filter(|v| v.id != version.id && !channel_allows(channel, &v.version_type)) {
+                let _ = newer;
+                fallback.push((index, version.project_id.clone(), version.id.clone(), version.date_published.clone()));
+                continue;
+            }
             if let Some(newer) = latest.get(hash).filter(|v| v.id != version.id) {
                 if let Some(file) = primary(newer.files.clone()) {
                     entry.update = Some(Update {
@@ -584,6 +605,13 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
                         size: file.size,
                     });
                 }
+            }
+        }
+        for (index, project_id, current_id, current_date) in fallback {
+            let Ok(list) = versions(kind, &project_id, Some(mc)).await else { continue };
+            let Some(pick) = list.into_iter().find(|v| channel_allows(channel, &v.version_type)) else { continue };
+            if pick.id != current_id && pick.date_published > current_date {
+                out[index].update = pick.file;
             }
         }
         for entry in out.iter_mut() {
@@ -723,7 +751,7 @@ mod tests {
                 std::fs::copy(entry.path(), dir.join(entry.file_name())).unwrap();
             }
         }
-        let list = installed("real", Kind::Mod, &mc, &[], false).await.unwrap();
+        let list = installed("real", Kind::Mod, &mc, &[], false, "release", false).await.unwrap();
         let known = list.iter().filter(|e| e.project_id.is_some()).count();
         println!("共 {} 個，Modrinth 認得 {} 個", list.len(), known);
         for e in &list {

@@ -209,6 +209,7 @@
                     <a href="#" data-jump="set-game">遊戲</a>
                     <a href="#" data-jump="set-flow">啟動流程</a>
                     <a href="#" data-jump="set-look">外觀</a>
+                    <a href="#" data-jump="set-advanced">進階</a>
                     <a href="#" data-jump="set-system">系統與下載</a>
                     <a href="#" data-jump="set-data">資料</a>
                     <a href="#" data-jump="set-keys">快捷鍵</a>
@@ -219,6 +220,14 @@
                 <div class="field">
                     <label for="set-memory">記憶體上限：<b id="set-memory-value">4096</b> MB</label>
                     <input type="range" id="set-memory" min="1024" max="32768" step="512">
+                </div>
+                <div class="field">
+                    <div class="field-inline">
+                        <label for="set-memory-min">記憶體下限（-Xms）</label>
+                        <input type="number" id="set-memory-min" min="0" max="32768" step="256">
+                        <span>MB，0 為不設定</span>
+                    </div>
+                    <div class="hint">設定後遊戲一開始就向系統要這麼多記憶體，減少執行中擴充記憶體造成的卡頓；超過上限時會自動以上限為準。</div>
                 </div>
                 <div class="field-row">
                     <div class="field">
@@ -241,6 +250,7 @@
                 <div class="field">
                     <label for="set-jvm">JVM 參數</label>
                     <textarea id="set-jvm" spellcheck="false"></textarea>
+                    <div class="jvm-presets" id="jvm-presets"></div>
                     <div class="hint">留空會套用 Mojang 官方啟動器的 G1 GC 預設值。每個實例也可以在「實例 → 設定 → 進階」個別覆寫。</div>
                 </div>
                 <div class="field">
@@ -326,6 +336,51 @@
                     <label><input type="checkbox" id="set-motion">減少動畫效果</label>
                 </div>
 
+                <h2 id="set-advanced">進階</h2>
+                <div class="field">
+                    <label for="set-wrapper">啟動包裝指令</label>
+                    <input type="text" id="set-wrapper" spellcheck="false" placeholder="例如 gamemoderun mangohud（Linux）">
+                    <div class="hint">把遊戲交給這個指令來啟動，例如 Linux 的 gamemoderun、mangohud、prime-run。包含空格的路徑請用雙引號包起來。每個實例也可以個別覆寫。</div>
+                </div>
+                <div class="field">
+                    <label for="set-env">環境變數</label>
+                    <textarea id="set-env" spellcheck="false" placeholder="每行一個，例如&#10;MESA_GL_VERSION_OVERRIDE=4.6&#10;# 以 # 開頭的行會被忽略"></textarea>
+                    <div class="hint">套用在所有實例；實例裡設定的同名變數會覆蓋這裡的值。</div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-dgpu">使用獨立顯示卡執行遊戲</label>
+                    <div class="hint">筆電同時有內建與獨立顯示卡時建議開啟。Windows 會在系統的「圖形設定」把遊戲用的 Java 設為高效能；Linux 會加上 PRIME offload 的環境變數。</div>
+                </div>
+                <div class="field">
+                    <label>共用資料夾</label>
+                    <div class="share-boxes" id="set-shared"></div>
+                    <div class="hint">勾選的資料夾會讓「啟用共用資料夾」的實例共用同一份，不必每個實例各放一份。第一次啟用時，實例原本的內容會搬進共用資料夾（同名的會加上實例名稱，不會覆蓋）；之後取消共用，會把共用內容複製一份回實例。</div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-mod-channel">模組更新管道</label>
+                        <select id="set-mod-channel">
+                            <option value="release">只用正式版（推薦）</option>
+                            <option value="beta">允許 Beta 版</option>
+                            <option value="alpha">允許所有版本（含 Alpha）</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label><input type="checkbox" id="set-mod-auto">開始遊戲前自動更新全部模組</label>
+                        <div class="hint">已鎖定版本的模組與「凍結模組」的實例會跳過。</div>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="set-proxy">代理伺服器</label>
+                    <input type="text" id="set-proxy" spellcheck="false" placeholder="例如 http://127.0.0.1:7890，留空為直接連線">
+                    <div class="hint">學校或公司網路需要代理才能下載時使用，啟動器與遊戲內的連線都會走這個代理。目前支援 HTTP／HTTPS 代理；格式正確後才會自動儲存。</div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-debug">除錯模式（Fabric 與 Mixin 詳細日誌）</label>
+                    <label><input type="checkbox" id="set-open-log">開始遊戲後自動切到「日誌」頁</label>
+                    <div class="hint">回報模組衝突或當機時很有用；平常建議關閉。實例的「更多 → 匯出診斷包」可以把日誌、當機報告與模組清單打包成一個檔案（會自動隱藏登入憑證）。</div>
+                </div>
+
                 <h2 id="set-system">系統與下載</h2>
                 <div class="field">
                     <label><input type="checkbox" id="set-notify">系統通知（新公告、伺服器升版、遊戲異常結束）</label>
@@ -361,8 +416,10 @@
                 <div class="toolbar">
                     <button type="button" class="mc" id="btn-open-root"><i data-icon="folder"></i>開啟啟動器資料夾</button>
                     <button type="button" class="mc" id="btn-clean-cache"><i data-icon="trash"></i>清理快取</button>
+                    <button type="button" class="mc" id="btn-config-export"><i data-icon="download"></i>匯出設定</button>
+                    <button type="button" class="mc" id="btn-config-import"><i data-icon="archive"></i>匯入設定</button>
                 </div>
-                <div class="hint">清理快取會刪除可自動重建的 natives 與 7 天前的日誌，不會動到存檔、模組與設定。</div>
+                <div class="hint">清理快取會刪除可自動重建的 natives 與 7 天前的日誌，不會動到存檔、模組與設定。<br>匯出設定會把啟動器設定與所有實例的設定打包到「下載」資料夾（不含帳號登入資料與遊戲檔案），換電腦時匯入就能還原，遊戲檔案會在第一次開始遊戲時自動下載。</div>
 
                 <h2 id="set-keys">快捷鍵</h2>
                 <div class="keys">
