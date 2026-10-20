@@ -1,6 +1,6 @@
 [package]
 name = "brilliant-launcher"
-version = "1.0.22"
+version = "1.0.23"
 description = "輝煌伺服器 Minecraft 啟動器"
 authors = ["RiceChen_"]
 publish = false
@@ -41,7 +41,7 @@ rand = "0.8"
 windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation"] }
 
 [profile.release]
-opt-level = 3
+opt-level = "s"
 lto = true
 codegen-units = 1
 strip = true
