@@ -367,8 +367,129 @@ fn update_dir() -> std::path::PathBuf {
     std::env::temp_dir().join("BrilliantLauncher-update")
 }
 
+pub fn update_kind() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "windows"
+    } else if cfg!(target_os = "macos") {
+        "mac"
+    } else if std::env::var_os("APPIMAGE").is_some() && std::env::var_os("FLATPAK_ID").is_none() {
+        "linux"
+    } else {
+        ""
+    }
+}
+
+pub fn update_suffix(kind: &str) -> Option<&'static str> {
+    match kind {
+        "windows" => Some("_x64-setup.exe"),
+        "mac" => Some("_universal.app.tar.gz"),
+        "linux" => Some("_amd64.AppImage"),
+        _ => None,
+    }
+}
+
 fn update_file_ok(file: &str) -> bool {
-    modinject::safe_file_name(file, "BrilliantLauncher_", "_x64-setup.exe")
+    update_suffix(update_kind()).is_some_and(|suffix| modinject::safe_file_name(file, "BrilliantLauncher_", suffix))
+}
+
+#[tauri::command]
+pub fn update_platform() -> String {
+    update_kind().to_string()
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::*;
+
+    #[test]
+    fn update_files_match_platform() {
+        assert_eq!(update_suffix("mac"), Some("_universal.app.tar.gz"));
+        assert_eq!(update_suffix("linux"), Some("_amd64.AppImage"));
+        assert_eq!(update_suffix(""), None);
+        if cfg!(target_os = "windows") {
+            assert!(update_file_ok("BrilliantLauncher_1.0.27_x64-setup.exe"));
+            assert!(!update_file_ok("BrilliantLauncher_1.0.27_universal.app.tar.gz"));
+            assert!(!update_file_ok("BrilliantLauncher_../x64-setup.exe"));
+        }
+    }
+}
+
+#[cfg(unix)]
+fn relaunch_after_exit(target: &std::path::Path, cleanup: &[std::path::PathBuf]) -> R<()> {
+    let opener = if cfg!(target_os = "macos") { "open \"$1\"" } else { "nohup \"$1\" >/dev/null 2>&1 &" };
+    let script = format!("while kill -0 {} 2>/dev/null; do sleep 0.2; done; {opener}; shift; rm -rf \"$@\"", std::process::id());
+    std::process::Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .arg("sh")
+        .arg(target)
+        .args(cleanup)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .context("無法重新啟動啟動器")?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn install_update(archive: &std::path::Path) -> R<()> {
+    let exe = std::env::current_exe()?;
+    let bundle = exe
+        .ancestors()
+        .nth(3)
+        .filter(|p| p.extension().is_some_and(|e| e == "app"))
+        .context("找不到啟動器的 .app，請到官網下載新版")?
+        .to_path_buf();
+    let shown = bundle.to_string_lossy();
+    if shown.contains("/AppTranslocation/") || shown.starts_with("/Volumes/") {
+        bail!("請先把輝煌啟動器拖進「應用程式」資料夾，再從那裡開啟，之後就能自動更新");
+    }
+    let parent = bundle.parent().context("找不到啟動器所在的資料夾")?;
+    let staging = parent.join(".brilliant-update");
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging).context("沒有權限更新「應用程式」裡的輝煌啟動器，請到官網下載新版")?;
+    let ok = std::process::Command::new("tar").arg("-xzf").arg(archive).arg("-C").arg(&staging).status()?.success();
+    let fresh = std::fs::read_dir(&staging)?
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|e| e == "app") && p.join("Contents/MacOS").is_dir());
+    let Some(fresh) = fresh.filter(|_| ok) else {
+        let _ = std::fs::remove_dir_all(&staging);
+        bail!("更新檔內容不完整，請到官網下載新版");
+    };
+    let old = parent.join(".brilliant-old.app");
+    let _ = std::fs::remove_dir_all(&old);
+    std::fs::rename(&bundle, &old).context("沒有權限更新「應用程式」裡的輝煌啟動器，請到官網下載新版")?;
+    if let Err(e) = std::fs::rename(&fresh, &bundle) {
+        let _ = std::fs::rename(&old, &bundle);
+        let _ = std::fs::remove_dir_all(&staging);
+        bail!("替換啟動器失敗：{e}");
+    }
+    relaunch_after_exit(&bundle, &[old, staging])
+}
+
+#[cfg(target_os = "linux")]
+fn install_update(file: &std::path::Path) -> R<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let target = std::path::PathBuf::from(std::env::var_os("APPIMAGE").context("只有 AppImage 版能自動更新")?);
+    let staging = target.with_extension("update");
+    std::fs::copy(file, &staging).context("沒有權限更新 AppImage 所在的資料夾，請到官網下載新版")?;
+    std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755))?;
+    if let Err(e) = std::fs::rename(&staging, &target) {
+        let _ = std::fs::remove_file(&staging);
+        bail!("替換 AppImage 失敗：{e}");
+    }
+    relaunch_after_exit(&target, &[])
+}
+
+#[cfg(target_os = "windows")]
+fn install_update(file: &std::path::Path) -> R<()> {
+    std::process::Command::new(file)
+        .args(["/S", "/UPDATE", "/R"])
+        .spawn()
+        .with_context(|| format!("無法執行更新：{}", file.display()))?;
+    Ok(())
 }
 
 #[derive(serde::Serialize, Clone)]
@@ -379,7 +500,7 @@ struct UpdateProgress {
 
 #[tauri::command]
 pub async fn download_update(app: AppHandle, url: String, file: String, sha256: String) -> R<String> {
-    if !cfg!(target_os = "windows") {
+    if update_suffix(update_kind()).is_none() {
         bail!("請到官網下載新版");
     }
     if !url.starts_with(&format!("{SITE}/api/launcher/download/")) || !update_file_ok(&file) || sha256.len() != 64 {
@@ -423,10 +544,7 @@ pub async fn apply_update(app: AppHandle, path: String) -> R<()> {
     if path.parent() != Some(update_dir().as_path()) || !update_file_ok(&name) || !path.is_file() {
         bail!("找不到已下載的更新檔，請重新下載");
     }
-    std::process::Command::new(&path)
-        .args(["/S", "/UPDATE", "/R"])
-        .spawn()
-        .with_context(|| format!("無法執行更新：{}", path.display()))?;
+    install_update(&path)?;
     app.exit(0);
     Ok(())
 }

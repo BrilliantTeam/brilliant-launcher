@@ -163,7 +163,10 @@ export function newerVersion(latest, current) {
 let pendingUpdate = null;
 const updater = { version: '', path: null, downloading: false };
 
-const canSelfUpdate = (latest) => !!latest.sha256 && navigator.userAgent.includes('Windows');
+const UPDATE_ASSET = { windows: 'windows', mac: 'macUpdate', linux: 'linux' };
+let updateKind = null;
+const updateAsset = (latest) => (updateKind ? latest.platforms?.[UPDATE_ASSET[updateKind]] ?? (updateKind === 'windows' ? latest : null) : null);
+const canSelfUpdate = (latest) => !!updateAsset(latest)?.sha256;
 
 function updateChip() {
     const latest = pendingUpdate?.latest;
@@ -182,7 +185,8 @@ async function downloadUpdate() {
     updater.path = null;
     $('#update-label').textContent = '下載更新 0%';
     try {
-        updater.path = await api.download_update({ url: latest.url, file: latest.file, sha256: latest.sha256 });
+        const asset = updateAsset(latest);
+        updater.path = await api.download_update({ url: asset.url, file: asset.file, sha256: asset.sha256 });
         notifyOnce(`launcher-ready:${latest.version}`, `輝煌啟動器 v${latest.version} 已準備好`, '點右上角「重新啟動以更新」，幾秒內就會完成並重新開啟。');
     } catch {
         updater.path = null;
@@ -203,7 +207,8 @@ async function applyUpdate() {
 }
 
 async function checkUpdate() {
-    const [info, current] = await Promise.all([api.launcher_info().catch(() => null), appVersion().catch(() => '')]);
+    const [info, current, kind] = await Promise.all([api.launcher_info().catch(() => null), appVersion().catch(() => ''), api.update_platform().catch(() => '')]);
+    updateKind = kind;
     const latest = info?.launcher;
     if (!latest || !current || !newerVersion(latest.version, current)) return;
     const first = !pendingUpdate;

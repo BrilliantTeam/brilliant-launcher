@@ -19,7 +19,7 @@ jobs:
           - os: ubuntu-22.04
             args: "--bundles appimage"
           - os: macos-latest
-            args: "--target universal-apple-darwin --bundles dmg"
+            args: "--target universal-apple-darwin --bundles app,dmg"
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -70,7 +70,11 @@ jobs:
           b=src-tauri/target
           case "${{ matrix.os }}" in
             windows-latest) cp "$(ls $b/release/bundle/nsis/*-setup.exe | head -1)" "release/BrilliantLauncher_${v}_x64-setup.exe" ;;
-            macos-latest) cp "$(ls $b/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)" "release/BrilliantLauncher_${v}_universal.dmg" ;;
+            macos-latest)
+              cp "$(ls $b/universal-apple-darwin/release/bundle/dmg/*.dmg | head -1)" "release/BrilliantLauncher_${v}_universal.dmg"
+              app="$(ls -d $b/universal-apple-darwin/release/bundle/macos/*.app | head -1)"
+              tar -czf "release/BrilliantLauncher_${v}_universal.app.tar.gz" -C "$(dirname "$app")" "$(basename "$app")"
+              ;;
             *) cp "$(ls $b/release/bundle/appimage/*.AppImage | head -1)" "release/BrilliantLauncher_${v}_amd64.AppImage" ;;
           esac
           ls -la release

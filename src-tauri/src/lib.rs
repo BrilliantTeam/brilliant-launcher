@@ -112,6 +112,7 @@ pub fn run() {
             commands::launcher_info,
             commands::download_update,
             commands::apply_update,
+            commands::update_platform,
             commands::open_path,
             commands::open_instance_folder,
             commands::hide_window,
