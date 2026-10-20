@@ -197,9 +197,20 @@ function stage(seq, { skin, slim, cape, name, fallback }) {
         play(animationKey);
         const restore = () => {
             viewer?.loadSkin(skin, { model: slim ? 'slim' : 'default' });
+            viewer?.loadCape(cape || null);
+            for (const b of document.querySelectorAll('.cape.trying')) b.classList.remove('trying');
             clear(caption);
         };
         stageControl = {
+            restore,
+            tryCape: (account, item) => {
+                viewer.loadCape(item ? https(item.url) : null);
+                viewer.autoRotate = true;
+                clear(caption).append(
+                    h('span', {}, `試穿披風：${item ? item.alias : '不顯示'}`),
+                    h('button', { type: 'button', class: 'mc primary', onclick: () => setCape(account, item) }, '換上'),
+                    h('button', { type: 'button', class: 'mc', onclick: restore }, '還原'));
+            },
             tryOn: async (account, entry) => {
                 try {
                     viewer.loadSkin(await api.skin_data({ file: entry.file }), { model: entry.variant === 'slim' ? 'slim' : 'default' });
@@ -399,7 +410,16 @@ async function renderPanel() {
         class: 'cape',
         'aria-pressed': String(cape ? cape === activeCape : !activeCape),
         title: cape ? cape.alias : '不顯示披風',
-        onclick: () => setCape(account, cape)
+        onclick: async (e) => {
+            const applied = cape ? cape === activeCape : !activeCape;
+            if (stageControl) {
+                if (applied) return stageControl.restore();
+                for (const b of document.querySelectorAll('.cape.trying')) b.classList.remove('trying');
+                e.currentTarget.classList.add('trying');
+                return stageControl.tryCape(account, cape);
+            }
+            if (!applied && await confirm(cape ? `要換上「${cape.alias}」披風嗎？` : '要隱藏披風嗎？', '換上')) setCape(account, cape);
+        }
     }, cape ? capePreview(https(cape.url)) : icon('close'), h('span', {}, cape ? cape.alias : '不顯示'));
 
     clear(box).append(
