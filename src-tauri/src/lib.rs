@@ -20,6 +20,7 @@ pub mod state;
 pub mod worlds;
 pub mod advanced;
 pub mod insight;
+pub mod trust;
 
 use tauri::{Listener, Manager};
 
@@ -71,6 +72,7 @@ pub fn run() {
             commands::launcher_paths,
             commands::list_accounts,
             commands::login_microsoft,
+            commands::cancel_login,
             commands::add_offline_account,
             commands::remove_account,
             commands::select_account,
@@ -115,6 +117,7 @@ pub fn run() {
             commands::download_update,
             commands::apply_update,
             commands::update_platform,
+            commands::check_update,
             commands::open_path,
             commands::open_instance_folder,
             commands::hide_window,

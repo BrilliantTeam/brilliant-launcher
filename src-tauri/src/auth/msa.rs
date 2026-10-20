@@ -70,9 +70,10 @@ struct McProfile {
 pub struct Pkce {
     pub verifier: String,
     pub state: String,
+    pub redirect: String,
 }
 
-pub fn authorize_url(client_id: &str) -> (String, Pkce) {
+pub fn authorize_url(client_id: &str, redirect: &str) -> (String, Pkce) {
     let verifier = random_hex(32);
     let state = random_hex(16);
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
@@ -80,14 +81,14 @@ pub fn authorize_url(client_id: &str) -> (String, Pkce) {
     url.query_pairs_mut()
         .append_pair("client_id", client_id)
         .append_pair("response_type", "code")
-        .append_pair("redirect_uri", REDIRECT_URI)
+        .append_pair("redirect_uri", redirect)
         .append_pair("response_mode", "query")
         .append_pair("scope", SCOPE)
         .append_pair("code_challenge", &challenge)
         .append_pair("code_challenge_method", "S256")
         .append_pair("state", &state)
         .append_pair("prompt", "select_account");
-    (url.into(), Pkce { verifier, state })
+    (url.into(), Pkce { verifier, state, redirect: redirect.to_string() })
 }
 
 pub enum Redirect {
@@ -96,8 +97,8 @@ pub enum Redirect {
     Ignore,
 }
 
-pub fn read_redirect(url: &tauri::Url, state: &str) -> Redirect {
-    if !url.as_str().starts_with(REDIRECT_URI) {
+pub fn read_redirect(url: &tauri::Url, state: &str, redirect: &str) -> Redirect {
+    if !url.as_str().starts_with(redirect) || !url.query().is_some_and(|q| q.contains("state=")) {
         return Redirect::Ignore;
     }
     let query: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
@@ -119,7 +120,7 @@ pub async fn exchange(client_id: &str, code: &str, pkce: &Pkce) -> R<Account> {
             ("grant_type", "authorization_code"),
             ("client_id", client_id),
             ("code", code),
-            ("redirect_uri", REDIRECT_URI),
+            ("redirect_uri", pkce.redirect.as_str()),
             ("code_verifier", pkce.verifier.as_str()),
             ("scope", SCOPE),
         ])
@@ -263,13 +264,19 @@ mod tests {
 
     #[test]
     fn redirect_is_parsed_and_state_checked() {
-        let (url, pkce) = authorize_url("cid");
+        let (url, pkce) = authorize_url("cid", REDIRECT_URI);
         assert!(url.contains("code_challenge_method=S256") && url.contains(&pkce.state));
         let ok = tauri::Url::parse(&format!("{REDIRECT_URI}?code=abc&state={}", pkce.state)).unwrap();
-        assert!(matches!(read_redirect(&ok, &pkce.state), Redirect::Code(c) if c == "abc"));
+        assert!(matches!(read_redirect(&ok, &pkce.state, REDIRECT_URI), Redirect::Code(c) if c == "abc"));
         let forged = tauri::Url::parse(&format!("{REDIRECT_URI}?code=abc&state=evil")).unwrap();
-        assert!(matches!(read_redirect(&forged, &pkce.state), Redirect::Denied(_)));
+        assert!(matches!(read_redirect(&forged, &pkce.state, REDIRECT_URI), Redirect::Denied(_)));
         let other = tauri::Url::parse("https://login.live.com/ppsecure/post.srf").unwrap();
-        assert!(matches!(read_redirect(&other, &pkce.state), Redirect::Ignore));
+        assert!(matches!(read_redirect(&other, &pkce.state, REDIRECT_URI), Redirect::Ignore));
+        let local = "http://localhost:51234";
+        let (_, pkce) = authorize_url("cid", local);
+        let favicon = tauri::Url::parse(&format!("{local}/favicon.ico")).unwrap();
+        assert!(matches!(read_redirect(&favicon, &pkce.state, local), Redirect::Ignore));
+        let back = tauri::Url::parse(&format!("{local}/?code=xyz&state={}", pkce.state)).unwrap();
+        assert!(matches!(read_redirect(&back, &pkce.state, local), Redirect::Code(c) if c == "xyz"));
     }
 }

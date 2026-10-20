@@ -54,6 +54,8 @@ pub struct Settings {
     pub proxy: String,
     pub debug_mode: bool,
     pub open_log_on_launch: bool,
+    pub launcher_update: String,
+    pub mod_update: String,
 }
 
 impl Default for Settings {
@@ -105,6 +107,8 @@ impl Default for Settings {
             proxy: String::new(),
             debug_mode: false,
             open_log_on_launch: false,
+            launcher_update: "auto".into(),
+            mod_update: "auto".into(),
         }
     }
 }

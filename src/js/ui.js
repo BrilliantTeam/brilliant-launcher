@@ -93,6 +93,8 @@ export function dialog({ title, content, wide = false, buttons = [{ label: '關�
     });
 }
 
+export const dismissDialog = (value) => closeOpenDialog?.(value);
+
 export async function confirm(message, okLabel = '確定') {
     const answer = await dialog({
         title: '確認',

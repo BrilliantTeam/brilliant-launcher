@@ -93,6 +93,11 @@ jobs:
           dbus-run-session -- flatpak run org.flatpak.Builder --user --disable-rofiles-fuse --force-clean --repo=flatpak-repo flatpak-build flatpak/net.brilliantw.launcher.yml
           flatpak build-bundle flatpak-repo "release/BrilliantLauncher_${v}_x86_64.flatpak" net.brilliantw.launcher --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
 
+      - name: 數位簽章
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node .github/sign-release.mjs release "SIGNATURES-${{ runner.os }}.json"
+
       - name: 發佈 Release
         uses: softprops/action-gh-release@v2
         with:

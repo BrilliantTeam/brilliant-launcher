@@ -166,7 +166,7 @@ const updater = { version: '', path: null, downloading: false };
 const UPDATE_ASSET = { windows: 'windows', mac: 'macUpdate', linux: 'linux' };
 let updateKind = null;
 const updateAsset = (latest) => (updateKind ? latest.platforms?.[UPDATE_ASSET[updateKind]] ?? (updateKind === 'windows' ? latest : null) : null);
-const canSelfUpdate = (latest) => !!updateAsset(latest)?.sha256;
+const canSelfUpdate = (latest) => !!updateAsset(latest)?.sha256 && !!updateAsset(latest)?.signature;
 
 function updateChip() {
     const latest = pendingUpdate?.latest;
@@ -186,10 +186,11 @@ async function downloadUpdate() {
     $('#update-label').textContent = '下載更新 0%';
     try {
         const asset = updateAsset(latest);
-        updater.path = await api.download_update({ url: asset.url, file: asset.file, sha256: asset.sha256 });
+        updater.path = await api.download_update({ url: asset.url, file: asset.file, sha256: asset.sha256, signature: asset.signature });
         notifyOnce(`launcher-ready:${latest.version}`, `輝煌啟動器 v${latest.version} 已準備好`, '點右上角「重新啟動以更新」，幾秒內就會完成並重新開啟。');
-    } catch {
+    } catch (error) {
         updater.path = null;
+        if (/簽章/.test(String(error?.message ?? error))) fail(error);
     } finally {
         updater.downloading = false;
         updateChip();
@@ -206,15 +207,19 @@ async function applyUpdate() {
     });
 }
 
-async function checkUpdate() {
-    const [info, current, kind] = await Promise.all([api.launcher_info().catch(() => null), appVersion().catch(() => ''), api.update_platform().catch(() => '')]);
+async function checkUpdate(manual = false) {
+    const mode = store.settings?.launcherUpdate || 'auto';
+    if (mode === 'off' && !manual) return;
+    const [info, current, kind] = await Promise.all([api.check_update().catch(() => null), appVersion().catch(() => ''), api.update_platform().catch(() => '')]);
     updateKind = kind;
     const latest = info?.launcher;
+    store.update = { checkedAt: Date.now(), current, latest: latest ?? null, reachable: !!info, newer: !!(latest && current && newerVersion(latest.version, current)), signed: !!updateAsset(latest ?? {})?.signature, self: !!updateKind };
+    emit('update-status');
     if (!latest || !current || !newerVersion(latest.version, current)) return;
     const first = !pendingUpdate;
     pendingUpdate = { latest, current };
     updateChip();
-    if (canSelfUpdate(latest)) downloadUpdate();
+    if (canSelfUpdate(latest) && mode === 'auto') downloadUpdate();
     else notifyOnce(`launcher:${latest.version}`, `輝煌啟動器 v${latest.version} 已推出`, '打開啟動器，點右上角的更新按鈕前往下載。');
     if (!first) return;
     listen('launcher://update-progress', ({ done, total }) => {
@@ -227,11 +232,12 @@ async function checkUpdate() {
         const status = !self ? '這個平台需要到官網下載新版。'
             : ready ? '新版已下載完成。按「重新啟動並更新」，啟動器會在背景完成安裝並自動重新開啟，不會出現安裝精靈，設定與遊戲資料都會保留。'
             : updater.downloading ? '正在背景下載新版，完成後右上角會變成「重新啟動以更新」。'
-            : '下載失敗了，可以再試一次，或到官網手動下載。';
+            : updater.version === latest.version ? '下載失敗了，可以再試一次，或到官網手動下載。'
+            : '按「下載更新」會在背景下載，並先驗證輝煌官方數位簽章，完成後再由你決定何時重新啟動。';
         const buttons = !self ? [{ label: '稍後', value: null }, { label: '前往官網下載', value: 'web' }]
             : ready ? [{ label: '稍後', value: null }, { label: '重新啟動並更新', value: 'apply' }]
             : updater.downloading ? [{ label: '關閉', value: null }]
-            : [{ label: '前往官網', value: 'web' }, { label: '重新下載', value: 'retry' }];
+            : [{ label: '前往官網', value: 'web' }, { label: updater.version === latest.version ? '重新下載' : '下載更新', value: 'retry' }];
         const go = await dialog({
             title: `輝煌啟動器 v${latest.version}`,
             content: h('div', {},
@@ -273,7 +279,13 @@ async function boot() {
     emit('settings');
     show(location.hash.slice(1) || 'home');
     checkUpdate();
-    setInterval(checkUpdate, 30 * 60 * 1000);
+    setInterval(() => checkUpdate(), 30 * 60 * 1000);
+    on('check-update', () => checkUpdate(true).catch(fail));
+    $('#about-update-link').addEventListener('click', (e) => {
+        e.preventDefault();
+        location.hash = '#settings';
+        setTimeout(() => document.querySelector('#settings-nav a[data-jump="set-update"]')?.click(), 120);
+    });
     startServices();
 
     if (!store.accounts.length) {

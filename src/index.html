@@ -234,6 +234,7 @@
                     <a href="#" data-jump="set-flow">啟動流程</a>
                     <a href="#" data-jump="set-look">外觀</a>
                     <a href="#" data-jump="set-advanced">進階</a>
+                    <a href="#" data-jump="set-update">更新與安全</a>
                     <a href="#" data-jump="set-system">系統與下載</a>
                     <a href="#" data-jump="set-data">資料</a>
                     <a href="#" data-jump="set-keys">快捷鍵</a>
@@ -405,6 +406,31 @@
                     <div class="hint">回報模組衝突或當機時很有用；平常建議關閉。實例的「更多 → 匯出診斷包」可以把日誌、當機報告與模組清單打包成一個檔案（會自動隱藏登入憑證）。</div>
                 </div>
 
+                <h2 id="set-update">更新與安全</h2>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-launcher-update">啟動器更新</label>
+                        <select id="set-launcher-update">
+                            <option value="auto">自動下載，重新啟動時安裝（推薦）</option>
+                            <option value="notify">有新版時通知我，由我決定何時下載</option>
+                            <option value="off">不自動檢查，我自己按「立即檢查」</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-mod-update">輝煌模組更新</label>
+                        <select id="set-mod-update">
+                            <option value="auto">開始遊戲前自動更新到最新版（推薦）</option>
+                            <option value="keep">保持目前已安裝的版本</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="rows" id="update-status"></div>
+                <div class="toolbar">
+                    <button type="button" class="mc" id="btn-check-update"><i data-icon="reload"></i>立即檢查更新</button>
+                    <button type="button" class="mc" id="btn-update-page"><i data-icon="external-link"></i>官網下載頁</button>
+                </div>
+                <div class="hint">啟動器與輝煌模組的每個更新檔都附有輝煌官方的數位簽章。下載後會先用啟動器內建的公鑰驗證，內容被竄改或不是官方發布的檔案一律拒絕安裝，就算官網或下載途中出問題也一樣。選擇「保持目前已安裝的版本」時，伺服器升版後可能要手動改回自動更新才能連線。</div>
+
                 <h2 id="set-system">系統與下載</h2>
                 <div class="field">
                     <label><input type="checkbox" id="set-notify">系統通知（新公告、伺服器升版、遊戲異常結束）</label>
@@ -486,6 +512,11 @@
                 <p class="hint">
                     字型：Minecraft-Font、GNU Unifont、內海字體（SIL OFL 1.1）；3D 皮膚預覽：skinview3d（MIT）；圖示：Pixelarticons（MIT）。
                     資料處理方式請見 <a href="#" data-url="https://www.brilliantw.net/%E9%9A%B1%E7%A7%81%E6%94%BF%E7%AD%96/">隱私政策第七節</a>。
+                </p>
+                <h2>更新與安全</h2>
+                <p>
+                    啟動器與輝煌模組的更新檔都經過輝煌官方數位簽章驗證才會安裝。更新方式可以在
+                    <a href="#settings" id="about-update-link">設定 → 更新與安全</a> 調整，也能在那裡手動檢查更新。
                 </p>
                 <h2>資料夾</h2>
                 <div class="rows" id="about-paths"></div>

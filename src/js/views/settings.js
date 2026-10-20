@@ -1,4 +1,4 @@
-import { api, pickFiles } from '../api.js';
+import { api, openUrl, pickFiles } from '../api.js';
 import { $, clear, confirm, fail, fmtBytes, h, rangeFill, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { gpuName, isIntegratedGpu } from '../services.js';
@@ -38,7 +38,9 @@ const FIELDS = {
     autoUpdateMods: '#set-mod-auto',
     proxy: '#set-proxy',
     debugMode: '#set-debug',
-    openLogOnLaunch: '#set-open-log'
+    openLogOnLaunch: '#set-open-log',
+    launcherUpdate: '#set-launcher-update',
+    modUpdate: '#set-mod-update'
 };
 
 export const JVM_PRESETS = [
@@ -185,7 +187,34 @@ async function persist(patch) {
     }
 }
 
+let manualCheck = false;
+
+function renderUpdate() {
+    const box = clear($('#update-status'));
+    const u = store.update;
+    if (!u) {
+        box.append(h('div', { class: 'empty-state' }, store.settings?.launcherUpdate === 'off' ? '已關閉自動檢查，按「立即檢查更新」查看有沒有新版。' : '正在檢查更新⋯'));
+        return;
+    }
+    const row = (label, value) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('div', { class: 'name' }, label), h('div', { class: 'meta' }, value)));
+    const latest = u.latest ? `v${u.latest.version}${u.newer ? '（可以更新）' : '（已是最新）'}` : u.reachable ? '—' : '暫時連不上官網';
+    const signed = !u.latest ? '—' : !u.self ? '這個平台請到官網下載新版' : u.signed ? '已附輝煌官方數位簽章，安裝前會先驗證' : '這個版本沒有數位簽章，啟動器不會自動安裝';
+    box.append(row('目前版本', `v${u.current}`), row('最新版本', latest), row('數位簽章', signed),
+        row('上次檢查', new Date(u.checkedAt).toLocaleString('zh-TW', { hour12: false })));
+    if (manualCheck) {
+        manualCheck = false;
+        toast(!u.reachable ? '暫時連不上官網，請稍後再試' : u.newer ? `有新版 v${u.latest.version}，可以點右上角的更新按鈕` : '已經是最新版本', u.reachable ? '' : 'warn');
+    }
+}
+
 export function initSettings() {
+    on('update-status', renderUpdate);
+    on('settings', () => { if (!store.update) renderUpdate(); });
+    $('#btn-check-update').addEventListener('click', () => {
+        manualCheck = true;
+        emit('check-update');
+    });
+    $('#btn-update-page').addEventListener('click', () => openUrl('https://www.brilliantw.net/launcher/'));
     const view = $('#view-settings');
     const isSetting = (el) => Object.values(FIELDS).some((sel) => el.matches(sel));
     let typing = 0;

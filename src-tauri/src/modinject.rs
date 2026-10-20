@@ -27,6 +27,8 @@ struct ModLatest {
     url: String,
     file: String,
     sha256: Option<String>,
+    #[serde(default)]
+    signature: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -128,7 +130,12 @@ fn cached_for(mc: &str) -> Option<PathBuf> {
         .map(|e| e.path())
 }
 
-async fn brilliant_mod(mc: &str) -> R<PathBuf> {
+async fn brilliant_mod(mc: &str, keep: bool) -> R<PathBuf> {
+    if keep {
+        if let Some(cached) = cached_for(mc) {
+            return Ok(cached);
+        }
+    }
     let latest = match net::get_json::<ModLatest>(&format!("{SITE}/api/mod/latest?mc={mc}"), false).await {
         Ok(latest) => latest,
         Err(e) => return cached_for(mc).ok_or(e),
@@ -136,7 +143,12 @@ async fn brilliant_mod(mc: &str) -> R<PathBuf> {
     if !safe_file_name(&latest.file, MOD_PREFIX, ".jar") || !latest.url.starts_with(&format!("{SITE}/api/mod/download/")) {
         bail!("官網回傳的 Brilliant-Server-Mod 資訊不正確");
     }
+    let signature = latest.signature.clone().unwrap_or_default();
     let path = cache_dir().join(&latest.file);
+    let trusted = |bytes: &[u8]| crate::trust::verify(&latest.file, bytes, &signature);
+    if path.is_file() && !tokio::fs::read(&path).await.map(|b| trusted(&b)).unwrap_or(false) {
+        let _ = tokio::fs::remove_file(&path).await;
+    }
     if !path.is_file() {
         let bytes = net::get_bytes(&latest.url, false).await?;
         if let Some(want) = &latest.sha256 {
@@ -144,6 +156,12 @@ async fn brilliant_mod(mc: &str) -> R<PathBuf> {
             if !got.eq_ignore_ascii_case(want) {
                 bail!("Brilliant-Server-Mod SHA-256 不符：預期 {want}，實得 {got}");
             }
+        }
+        if !trusted(&bytes) {
+            if let Some(cached) = cached_for(mc) {
+                return Ok(cached);
+            }
+            bail!("Brilliant-Server-Mod 沒有通過輝煌官方數位簽章驗證，為了安全已拒絕安裝");
         }
         net::write_file(&path, &bytes, false).await?;
     }
@@ -203,7 +221,8 @@ pub async fn inject(app: &AppHandle, instance: &Instance) -> R<Vec<String>> {
         return Ok(notes);
     }
 
-    let jar = match brilliant_mod(mc).await {
+    let keep = crate::config::load_settings().await.mod_update == "keep";
+    let jar = match brilliant_mod(mc, keep).await {
         Ok(jar) => jar,
         Err(e) => {
             prune(&mods_dir, &[MOD_PREFIX, LEGACY_PREFIX], "").await?;

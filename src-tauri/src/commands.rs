@@ -69,14 +69,83 @@ async fn upsert_account(state: &State<'_, AppState>, account: Account) -> R<()> 
     Ok(())
 }
 
+static LOGIN_CANCEL: std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>> = std::sync::Mutex::new(None);
+
+const LOGIN_DONE: &str = "<!doctype html><meta charset=utf-8><title>輝煌啟動器</title><body style=\"margin:0;height:100vh;display:grid;place-items:center;background:#15171c;color:#f2f2f2;font:18px sans-serif;text-align:center\"><div><h1 style=\"color:#f6e0a4\">登入完成</h1><p>可以關閉這個分頁，回到輝煌啟動器。</p></div>";
+const LOGIN_FAILED: &str = "<!doctype html><meta charset=utf-8><title>輝煌啟動器</title><body style=\"margin:0;height:100vh;display:grid;place-items:center;background:#15171c;color:#f2f2f2;font:18px sans-serif;text-align:center\"><div><h1 style=\"color:#ff8a80\">登入沒有完成</h1><p>請回到輝煌啟動器再試一次。</p></div>";
+
+async fn browser_code(app: &AppHandle) -> R<(String, auth::msa::Pkce)> {
+    use tauri_plugin_opener::OpenerExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.context("無法開啟本機登入連接埠")?;
+    let redirect = format!("http://localhost:{}", listener.local_addr()?.port());
+    let (url, pkce) = auth::msa::authorize_url(config::MSA_CLIENT_ID, &redirect);
+    let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
+    if let Ok(mut slot) = LOGIN_CANCEL.lock() {
+        *slot = Some(cancel_tx);
+    }
+    app.opener().open_url(url, None::<&str>).context("無法開啟瀏覽器")?;
+    let wait = async {
+        loop {
+            let (mut stream, _) = listener.accept().await?;
+            let mut buf = vec![0u8; 8192];
+            let n = tokio::time::timeout(std::time::Duration::from_secs(10), stream.read(&mut buf)).await.unwrap_or(Ok(0)).unwrap_or(0);
+            let head = String::from_utf8_lossy(&buf[..n]).to_string();
+            let target = head.split_whitespace().nth(1).unwrap_or("/").to_string();
+            let Ok(full) = tauri::Url::parse(&format!("{redirect}{target}")) else { continue };
+            let outcome = auth::msa::read_redirect(&full, &pkce.state, &redirect);
+            let (status, page) = match &outcome {
+                auth::msa::Redirect::Ignore => ("404 Not Found", ""),
+                auth::msa::Redirect::Code(_) => ("200 OK", LOGIN_DONE),
+                auth::msa::Redirect::Denied(_) => ("200 OK", LOGIN_FAILED),
+            };
+            let _ = stream
+                .write_all(format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{page}", page.len()).as_bytes())
+                .await;
+            let _ = stream.shutdown().await;
+            match outcome {
+                auth::msa::Redirect::Ignore => continue,
+                auth::msa::Redirect::Code(code) => return Ok::<String, crate::err::Error>(code),
+                auth::msa::Redirect::Denied(why) => return Err(anyhow::anyhow!(why).into()),
+            }
+        }
+    };
+    let result = tokio::select! {
+        r = wait => r,
+        _ = &mut cancel_rx => Err(anyhow::anyhow!("已取消登入").into()),
+        _ = tokio::time::sleep(std::time::Duration::from_secs(600)) => Err(anyhow::anyhow!("等太久沒有完成登入，已取消，請再試一次").into()),
+    };
+    if let Ok(mut slot) = LOGIN_CANCEL.lock() {
+        slot.take();
+    }
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.set_focus();
+    }
+    Ok((result?, pkce))
+}
+
 #[tauri::command]
-pub async fn login_microsoft(app: AppHandle, state: State<'_, AppState>) -> R<Account> {
+pub fn cancel_login() {
+    if let Some(tx) = LOGIN_CANCEL.lock().ok().and_then(|mut slot| slot.take()) {
+        let _ = tx.send(());
+    }
+}
+
+#[tauri::command]
+pub async fn login_microsoft(app: AppHandle, state: State<'_, AppState>, browser: Option<bool>) -> R<Account> {
+    if browser.unwrap_or(true) {
+        let (code, pkce) = browser_code(&app).await?;
+        let account = auth::msa::exchange(config::MSA_CLIENT_ID, &code, &pkce).await?;
+        upsert_account(&state, account.clone()).await?;
+        return Ok(Account { access_token: String::new(), refresh_token: String::new(), ..account });
+    }
     const LABEL: &str = "msa-login";
     if let Some(window) = app.get_webview_window(LABEL) {
         let _ = window.set_focus();
         bail!("登入視窗已經開著了");
     }
-    let (url, pkce) = auth::msa::authorize_url(config::MSA_CLIENT_ID);
+    let (url, pkce) = auth::msa::authorize_url(config::MSA_CLIENT_ID, auth::msa::REDIRECT_URI);
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<Result<String, String>>();
     let nav_tx = tx.clone();
     let want_state = pkce.state.clone();
@@ -84,7 +153,7 @@ pub async fn login_microsoft(app: AppHandle, state: State<'_, AppState>) -> R<Ac
         .title("微軟登入")
         .inner_size(500.0, 640.0)
         .resizable(false)
-        .on_navigation(move |url| match auth::msa::read_redirect(url, &want_state) {
+        .on_navigation(move |url| match auth::msa::read_redirect(url, &want_state, auth::msa::REDIRECT_URI) {
             auth::msa::Redirect::Ignore => true,
             auth::msa::Redirect::Code(code) => { let _ = nav_tx.send(Ok(code)); false }
             auth::msa::Redirect::Denied(why) => { let _ = nav_tx.send(Err(why)); false }
@@ -393,6 +462,11 @@ fn update_file_ok(file: &str) -> bool {
 }
 
 #[tauri::command]
+pub async fn check_update() -> R<modinject::LauncherInfo> {
+    modinject::info().await
+}
+
+#[tauri::command]
 pub fn update_platform() -> String {
     update_kind().to_string()
 }
@@ -543,7 +617,7 @@ struct UpdateProgress {
 }
 
 #[tauri::command]
-pub async fn download_update(app: AppHandle, url: String, file: String, sha256: String) -> R<String> {
+pub async fn download_update(app: AppHandle, url: String, file: String, sha256: String, signature: String) -> R<String> {
     if update_suffix(update_kind()).is_none() {
         bail!("請到官網下載新版");
     }
@@ -551,8 +625,10 @@ pub async fn download_update(app: AppHandle, url: String, file: String, sha256: 
         bail!("更新資訊不正確，請到官網手動下載新版");
     }
     let path = update_dir().join(&file);
+    let sig_path = update_dir().join(format!("{file}.sig"));
     if let Ok(existing) = tokio::fs::read(&path).await {
-        if modinject::sha256_hex(&existing).eq_ignore_ascii_case(&sha256) {
+        if modinject::sha256_hex(&existing).eq_ignore_ascii_case(&sha256) && crate::trust::verify(&file, &existing, &signature) {
+            tokio::fs::write(&sig_path, &signature).await?;
             return Ok(path.to_string_lossy().to_string());
         }
     }
@@ -572,12 +648,16 @@ pub async fn download_update(app: AppHandle, url: String, file: String, sha256: 
     if !got.eq_ignore_ascii_case(&sha256) {
         bail!("下載的更新檔 SHA-256 不符，已取消更新");
     }
+    if !crate::trust::verify(&file, &bytes, &signature) {
+        bail!("更新檔沒有通過輝煌官方數位簽章驗證，為了安全已取消更新，請到官網下載");
+    }
     if let Ok(mut entries) = tokio::fs::read_dir(update_dir()).await {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let _ = tokio::fs::remove_file(entry.path()).await;
         }
     }
     crate::net::write_file(&path, &bytes, false).await?;
+    tokio::fs::write(&sig_path, &signature).await?;
     Ok(path.to_string_lossy().to_string())
 }
 
@@ -587,6 +667,12 @@ pub async fn apply_update(app: AppHandle, path: String) -> R<()> {
     let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     if path.parent() != Some(update_dir().as_path()) || !update_file_ok(&name) || !path.is_file() {
         bail!("找不到已下載的更新檔，請重新下載");
+    }
+    let signature = tokio::fs::read_to_string(update_dir().join(format!("{name}.sig"))).await.unwrap_or_default();
+    let bytes = tokio::fs::read(&path).await.context("讀取更新檔失敗")?;
+    if !crate::trust::verify(&name, &bytes, &signature) {
+        let _ = tokio::fs::remove_file(&path).await;
+        bail!("更新檔沒有通過輝煌官方數位簽章驗證，已刪除並取消更新，請重新下載");
     }
     install_update(&path)?;
     app.exit(0);

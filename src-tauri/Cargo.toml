@@ -1,6 +1,6 @@
 [package]
 name = "brilliant-launcher"
-version = "1.0.30"
+version = "1.0.31"
 description = "輝煌伺服器 Minecraft 啟動器"
 authors = ["RiceChen_"]
 publish = false
@@ -36,6 +36,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 dirs = "5"
 anyhow = "1"
 rand = "0.8"
+ring = "0.17"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation", "Win32_System_Threading", "Win32_Foundation"] }

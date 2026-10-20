@@ -1,16 +1,42 @@
 import { api, fileSrc, pickFiles } from '../api.js';
-import { $, clear, confirm, dialog, fail, h, toast, guard } from '../ui.js';
+import { $, clear, confirm, dialog, dismissDialog, fail, h, toast, guard } from '../ui.js';
 import { icon } from '../icons.js';
 import { avatarUrl, emit, loadAccounts, on, refreshAvatar, selectedAccount, store } from '../store.js';
 
 const profiles = new Map();
 
-export async function loginMicrosoft() {
+export async function loginMicrosoft(mode) {
+    const browser = mode !== false;
     let account;
+    let waiting = browser;
+    let switchToWindow = false;
+    if (browser) {
+        dialog({
+            title: '在瀏覽器登入微軟帳號',
+            content: h('div', {},
+                h('p', {}, '已經用你的預設瀏覽器打開微軟登入頁。瀏覽器若已登入過微軟帳號，點一下帳號就好；也可以用密碼、手機驗證、指紋、Windows Hello 或通行金鑰登入。'),
+                h('p', { class: 'hint' }, '完成後會自動回到啟動器，不用複製任何東西。沒看到瀏覽器跳出來的話，可以改用內嵌視窗登入。')),
+            buttons: [{ label: '取消', value: 'cancel' }, { label: '改用內嵌視窗登入', value: 'window' }]
+        }).then((value) => {
+            if (!waiting) return;
+            waiting = false;
+            switchToWindow = value === 'window';
+            api.cancel_login().catch(() => {});
+        });
+    }
     try {
-        account = await api.login_microsoft();
+        account = await api.login_microsoft({ browser });
     } catch (error) {
+        if (switchToWindow) return loginMicrosoft(false);
+        if (waiting) {
+            waiting = false;
+            dismissDialog(null);
+        }
         return String(error?.message ?? error).includes('已取消登入') ? toast('已取消登入', 'warn') : fail(error);
+    }
+    if (waiting) {
+        waiting = false;
+        dismissDialog(null);
     }
     await loadAccounts();
     emit('settings');
