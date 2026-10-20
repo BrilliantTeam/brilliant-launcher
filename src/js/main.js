@@ -1,4 +1,4 @@
-import { api, appVersion, appWindow, openUrl, setZoom } from './api.js';
+import { api, appVersion, appWindow, listen, openUrl, setZoom } from './api.js';
 import { icon } from './icons.js';
 import { $, $$, dialog, fail, h, rangeFill, toast, guard } from './ui.js';
 import { emit, loadAccounts, loadInstances, loadSettings, on, store } from './store.js';
@@ -159,34 +159,83 @@ export function newerVersion(latest, current) {
 }
 
 let pendingUpdate = null;
+const updater = { version: '', path: null, downloading: false };
+
+const canSelfUpdate = (latest) => !!latest.sha256 && navigator.userAgent.includes('Windows');
+
+function updateChip() {
+    const latest = pendingUpdate?.latest;
+    if (!latest) return;
+    const chip = $('#update-chip');
+    chip.hidden = false;
+    chip.classList.toggle('ready', !!updater.path);
+    if (!updater.downloading) $('#update-label').textContent = updater.path ? `重新啟動以更新 v${latest.version}` : `更新 v${latest.version}`;
+}
+
+async function downloadUpdate() {
+    const latest = pendingUpdate?.latest;
+    if (!latest || !canSelfUpdate(latest) || updater.downloading || (updater.path && updater.version === latest.version)) return;
+    updater.downloading = true;
+    updater.version = latest.version;
+    updater.path = null;
+    $('#update-label').textContent = '下載更新 0%';
+    try {
+        updater.path = await api.download_update({ url: latest.url, file: latest.file, sha256: latest.sha256 });
+        notifyOnce(`launcher-ready:${latest.version}`, `輝煌啟動器 v${latest.version} 已準備好`, '點右上角「重新啟動以更新」，幾秒內就會完成並重新開啟。');
+    } catch {
+        updater.path = null;
+    } finally {
+        updater.downloading = false;
+        updateChip();
+    }
+}
+
+async function applyUpdate() {
+    if (store.running.length) return toast('遊戲還在執行中，關閉遊戲後再更新', 'warn');
+    toast('正在更新，啟動器會自動重新開啟⋯');
+    await api.apply_update({ path: updater.path }).catch((error) => {
+        updater.path = null;
+        updateChip();
+        fail(error);
+    });
+}
 
 async function checkUpdate() {
     const [info, current] = await Promise.all([api.launcher_info().catch(() => null), appVersion().catch(() => '')]);
     const latest = info?.launcher;
     if (!latest || !current || !newerVersion(latest.version, current)) return;
-    notifyOnce(`launcher:${latest.version}`, `輝煌啟動器 v${latest.version} 已推出`, '打開啟動器，點右上角的更新按鈕即可升級。');
-    const chip = $('#update-chip');
-    $('#update-label').textContent = `更新 v${latest.version}`;
-    chip.hidden = false;
     const first = !pendingUpdate;
     pendingUpdate = { latest, current };
+    updateChip();
+    if (canSelfUpdate(latest)) downloadUpdate();
+    else notifyOnce(`launcher:${latest.version}`, `輝煌啟動器 v${latest.version} 已推出`, '打開啟動器，點右上角的更新按鈕前往下載。');
     if (!first) return;
-    chip.addEventListener('click', guard(async () => {
+    listen('launcher://update-progress', ({ done, total }) => {
+        if (updater.downloading && total) $('#update-label').textContent = `下載更新 ${Math.floor((done * 100) / total)}%`;
+    });
+    $('#update-chip').addEventListener('click', guard(async () => {
         const { latest, current } = pendingUpdate;
+        const self = canSelfUpdate(latest);
+        const ready = !!updater.path;
+        const status = !self ? '這個平台需要到官網下載新版。'
+            : ready ? '新版已下載完成。按「重新啟動並更新」，啟動器會在背景完成安裝並自動重新開啟，不會出現安裝精靈，設定與遊戲資料都會保留。'
+            : updater.downloading ? '正在背景下載新版，完成後右上角會變成「重新啟動以更新」。'
+            : '下載失敗了，可以再試一次，或到官網手動下載。';
+        const buttons = !self ? [{ label: '稍後', value: null }, { label: '前往官網下載', value: 'web' }]
+            : ready ? [{ label: '稍後', value: null }, { label: '重新啟動並更新', value: 'apply' }]
+            : updater.downloading ? [{ label: '關閉', value: null }]
+            : [{ label: '前往官網', value: 'web' }, { label: '重新下載', value: 'retry' }];
         const go = await dialog({
             title: `輝煌啟動器 v${latest.version}`,
             content: h('div', {},
                 h('p', { class: 'hint' }, `目前版本 v${current}`),
-                h('p', { style: 'white-space:pre-wrap' }, latest.notes || '有新版本可以更新。')),
-            buttons: [{ label: '稍後', value: false }, { label: '立即更新', value: true }]
+                h('p', { style: 'white-space:pre-wrap' }, latest.notes || '有新版本可以更新。'),
+                h('p', { class: 'hint' }, status)),
+            buttons
         });
-        if (go !== true) return;
-        if (!latest.sha256 || !navigator.userAgent.includes('Windows')) return openUrl(latest.page);
-        toast('正在下載新版本，完成後會自動開啟安裝程式⋯');
-        await api.install_update({ url: latest.url, file: latest.file, sha256: latest.sha256 }).catch((error) => {
-            fail(error);
-            openUrl(latest.page);
-        });
+        if (go === 'apply') await applyUpdate();
+        else if (go === 'retry') downloadUpdate();
+        else if (go === 'web') openUrl(latest.page);
     }));
 }
 

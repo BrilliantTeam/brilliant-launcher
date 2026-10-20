@@ -7,7 +7,7 @@ use crate::{auth, fabric, instance, launch, modinject, modrinth, paths, ping};
 use crate::bail;
 use anyhow::Context;
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 const SITE: &str = "https://www.brilliantw.net";
 
@@ -360,25 +360,70 @@ pub async fn launcher_info() -> R<modinject::LauncherInfo> {
     modinject::info().await
 }
 
+fn update_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join("BrilliantLauncher-update")
+}
+
+fn update_file_ok(file: &str) -> bool {
+    modinject::safe_file_name(file, "BrilliantLauncher_", "_x64-setup.exe")
+}
+
+#[derive(serde::Serialize, Clone)]
+struct UpdateProgress {
+    done: u64,
+    total: u64,
+}
+
 #[tauri::command]
-pub async fn install_update(app: AppHandle, url: String, file: String, sha256: String) -> R<()> {
+pub async fn download_update(app: AppHandle, url: String, file: String, sha256: String) -> R<String> {
     if !cfg!(target_os = "windows") {
         bail!("請到官網下載新版");
     }
-    if !url.starts_with(&format!("{SITE}/api/launcher/download/"))
-        || !modinject::safe_file_name(&file, "BrilliantLauncher_", "_x64-setup.exe")
-        || sha256.len() != 64
-    {
+    if !url.starts_with(&format!("{SITE}/api/launcher/download/")) || !update_file_ok(&file) || sha256.len() != 64 {
         bail!("更新資訊不正確，請到官網手動下載新版");
     }
-    let bytes = crate::net::get_bytes(&url, false).await?;
+    let path = update_dir().join(&file);
+    if let Ok(existing) = tokio::fs::read(&path).await {
+        if modinject::sha256_hex(&existing).eq_ignore_ascii_case(&sha256) {
+            return Ok(path.to_string_lossy().to_string());
+        }
+    }
+    let mut res = crate::net::client().get(&url).send().await?.error_for_status()?;
+    let total = res.content_length().unwrap_or(0);
+    let mut bytes: Vec<u8> = Vec::with_capacity(total as usize);
+    let mut reported = 0u64;
+    while let Some(chunk) = res.chunk().await? {
+        bytes.extend_from_slice(&chunk);
+        let done = bytes.len() as u64;
+        if total == 0 || done - reported >= total / 100 || done == total {
+            reported = done;
+            let _ = app.emit("launcher://update-progress", UpdateProgress { done, total });
+        }
+    }
     let got = modinject::sha256_hex(&bytes);
     if !got.eq_ignore_ascii_case(&sha256) {
-        bail!("下載的安裝檔 SHA-256 不符，已取消更新");
+        bail!("下載的更新檔 SHA-256 不符，已取消更新");
     }
-    let path = std::env::temp_dir().join("BrilliantLauncher-update").join(&file);
+    if let Ok(mut entries) = tokio::fs::read_dir(update_dir()).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let _ = tokio::fs::remove_file(entry.path()).await;
+        }
+    }
     crate::net::write_file(&path, &bytes, false).await?;
-    std::process::Command::new(&path).spawn().with_context(|| format!("無法執行安裝檔：{}", path.display()))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn apply_update(app: AppHandle, path: String) -> R<()> {
+    let path = std::path::PathBuf::from(path);
+    let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    if path.parent() != Some(update_dir().as_path()) || !update_file_ok(&name) || !path.is_file() {
+        bail!("找不到已下載的更新檔，請重新下載");
+    }
+    std::process::Command::new(&path)
+        .args(["/S", "/UPDATE", "/R"])
+        .spawn()
+        .with_context(|| format!("無法執行更新：{}", path.display()))?;
     app.exit(0);
     Ok(())
 }
