@@ -291,9 +291,9 @@ pub async fn repair(app: &AppHandle, instance_id: &str) -> R<()> {
 
 pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) -> R<Vec<String>> {
     let state = app.state::<AppState>();
-    if state.is_running(instance_id).await {
-        bail!("這個實例已經在執行中了");
-    }
+    let Some(_claim) = state.claim(instance_id).await else {
+        bail!("這個實例已經在執行中或正在準備啟動，同一個實例一次只能開一個遊戲");
+    };
 
     let mut settings = crate::config::load_settings().await;
     if let Some(host) = join {
@@ -427,12 +427,11 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         .lock()
         .await
         .insert(instance_id.to_string(), RunningGame { started_at: started, stop: Some(stop_tx) });
+    if let Some(pid) = child.id() {
+        save_record(instance_id, &RunRecord { pid, started, game_dir: game_dir.to_string_lossy().to_string() });
+    }
 
     let app_handle = app.clone();
-    let id = instance_id.to_string();
-    let post_exit = settings.post_exit_cmd.trim().to_string();
-    let notify_crash = settings.notifications;
-    let instance_name = instance.name.clone();
     let hook_instance = instance.clone();
     tokio::spawn(async move {
         let mut asked_to_stop = false;
@@ -443,28 +442,235 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         if asked_to_stop {
             let _ = child.kill().await;
         }
-        let seconds = now_secs() - started;
-        let state = app_handle.state::<AppState>();
-        state.running.lock().await.remove(&id);
-
-        if let Ok(mut inst) = crate::instance::get(&id).await {
-            inst.play_seconds += seconds.max(0);
-            inst.last_played = now_secs();
-            let _ = crate::instance::save(&inst).await;
-        }
-        crate::insight::record_session(crate::insight::Session { instance: id.clone(), name: instance_name.clone(), start: started, seconds, code }).await;
-        if code != 0 && !asked_to_stop && notify_crash {
-            crate::boost::notify(&app_handle, "遊戲異常結束", &format!("「{instance_name}」結束代碼 {code}，打開啟動器查看可能的原因。"));
-        }
-        if !post_exit.is_empty() {
-            let _ = crate::extras::hook_command(&post_exit, &hook_instance).env("EXIT_CODE", code.to_string()).spawn();
-        }
-        let _ = app_handle.emit("launcher://exit", ExitInfo { instance: id, code, seconds });
+        finish_game(&app_handle, &hook_instance, started, code, asked_to_stop).await;
     });
 
     instance.last_played = started;
     crate::instance::save(&instance).await?;
     Ok(notes)
+}
+
+async fn finish_game(app: &AppHandle, instance: &Instance, started: i64, code: i32, asked_to_stop: bool) {
+    let id = instance.id.clone();
+    let settings = crate::config::load_settings().await;
+    let seconds = now_secs() - started;
+    app.state::<AppState>().running.lock().await.remove(&id);
+    drop_record(&id);
+    if let Ok(mut inst) = crate::instance::get(&id).await {
+        inst.play_seconds += seconds.max(0);
+        inst.last_played = now_secs();
+        let _ = crate::instance::save(&inst).await;
+    }
+    crate::insight::record_session(crate::insight::Session { instance: id.clone(), name: instance.name.clone(), start: started, seconds, code }).await;
+    if code != 0 && !asked_to_stop && settings.notifications {
+        crate::boost::notify(app, "遊戲異常結束", &format!("「{}」結束代碼 {code}，打開啟動器查看可能的原因。", instance.name));
+    }
+    let post_exit = settings.post_exit_cmd.trim().to_string();
+    if !post_exit.is_empty() {
+        let _ = crate::extras::hook_command(&post_exit, instance).env("EXIT_CODE", code.to_string()).spawn();
+    }
+    let _ = app.emit("launcher://exit", ExitInfo { instance: id, code, seconds });
+}
+
+#[derive(Serialize, serde::Deserialize)]
+struct RunRecord {
+    pid: u32,
+    started: i64,
+    game_dir: String,
+}
+
+fn record_path(id: &str) -> PathBuf {
+    paths::root().join("running").join(format!("{id}.json"))
+}
+
+fn save_record(id: &str, record: &RunRecord) {
+    let path = record_path(id);
+    let _ = std::fs::create_dir_all(path.parent().unwrap_or(&path));
+    if let Ok(json) = serde_json::to_string(record) {
+        let _ = std::fs::write(path, json);
+    }
+}
+
+fn drop_record(id: &str) {
+    let _ = std::fs::remove_file(record_path(id));
+}
+
+#[cfg(windows)]
+mod proc {
+    use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, STILL_ACTIVE, WAIT_OBJECT_0};
+    use windows_sys::Win32::System::Threading::{
+        GetExitCodeProcess, GetProcessTimes, OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SYNCHRONIZE, PROCESS_TERMINATE,
+    };
+
+    pub struct Handle(isize);
+
+    impl Drop for Handle {
+        fn drop(&mut self) {
+            unsafe { CloseHandle(self.0 as _) };
+        }
+    }
+
+    pub fn open(pid: u32, started: i64, _game_dir: &str) -> Option<Handle> {
+        unsafe {
+            let raw = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_SYNCHRONIZE | PROCESS_TERMINATE, 0, pid);
+            if raw.is_null() {
+                return None;
+            }
+            let handle = Handle(raw as isize);
+            let mut code = 0u32;
+            let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
+            let (mut created, mut exited, mut kernel, mut user) = (zero, zero, zero, zero);
+            if GetExitCodeProcess(raw, &mut code) == 0 || code != STILL_ACTIVE as u32 || GetProcessTimes(raw, &mut created, &mut exited, &mut kernel, &mut user) == 0 {
+                return None;
+            }
+            let ticks = (u64::from(created.dwHighDateTime) << 32) | u64::from(created.dwLowDateTime);
+            let secs = (ticks / 10_000_000) as i64 - 11_644_473_600;
+            ((started - secs).abs() <= 120).then_some(handle)
+        }
+    }
+
+    pub fn wait(handle: &Handle, millis: u32) -> Option<i32> {
+        unsafe {
+            if WaitForSingleObject(handle.0 as _, millis) != WAIT_OBJECT_0 {
+                return None;
+            }
+            let mut code = 0u32;
+            GetExitCodeProcess(handle.0 as _, &mut code);
+            Some(code as i32)
+        }
+    }
+
+    pub fn kill(handle: &Handle) {
+        unsafe { TerminateProcess(handle.0 as _, 1) };
+    }
+}
+
+#[cfg(unix)]
+mod proc {
+    pub struct Handle {
+        pid: u32,
+        game_dir: String,
+    }
+
+    fn command_line(pid: u32) -> String {
+        if cfg!(target_os = "linux") {
+            std::fs::read(format!("/proc/{pid}/cmdline")).map(|b| String::from_utf8_lossy(&b).replace('\0', " ")).unwrap_or_default()
+        } else {
+            std::process::Command::new("ps")
+                .args(["-p", &pid.to_string(), "-o", "command="])
+                .output()
+                .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+                .unwrap_or_default()
+        }
+    }
+
+    pub fn open(pid: u32, _started: i64, game_dir: &str) -> Option<Handle> {
+        command_line(pid).contains(game_dir).then(|| Handle { pid, game_dir: game_dir.to_string() })
+    }
+
+    pub fn wait(handle: &Handle, millis: u32) -> Option<i32> {
+        if command_line(handle.pid).contains(&handle.game_dir) {
+            std::thread::sleep(std::time::Duration::from_millis(u64::from(millis)));
+            None
+        } else {
+            Some(0)
+        }
+    }
+
+    pub fn kill(handle: &Handle) {
+        let _ = std::process::Command::new("kill").arg(handle.pid.to_string()).status();
+    }
+}
+
+fn crashed_since(game_dir: &Path, started: i64) -> bool {
+    std::fs::read_dir(game_dir.join("crash-reports"))
+        .map(|d| {
+            d.flatten().any(|e| {
+                e.metadata()
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                    .is_some_and(|t| t.as_secs() as i64 >= started)
+            })
+        })
+        .unwrap_or(false)
+}
+
+async fn tail_latest_log(app: AppHandle, id: String, file: PathBuf, done: std::sync::Arc<std::sync::atomic::AtomicBool>) {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut offset = std::fs::metadata(&file).map(|m| m.len().saturating_sub(64 << 10)).unwrap_or(0);
+    let mut first = true;
+    let mut carry = String::new();
+    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    while !done.load(std::sync::atomic::Ordering::Relaxed) {
+        let len = std::fs::metadata(&file).map(|m| m.len()).unwrap_or(0);
+        if len < offset {
+            offset = 0;
+        }
+        if len > offset {
+            if let Ok(mut f) = std::fs::File::open(&file) {
+                let mut bytes = Vec::new();
+                if f.seek(SeekFrom::Start(offset)).is_ok() && f.take(len - offset).read_to_end(&mut bytes).is_ok() {
+                    offset += bytes.len() as u64;
+                    carry.push_str(&String::from_utf8_lossy(&bytes));
+                    let mut lines: Vec<String> = carry.split('\n').map(|l| l.trim_end_matches('\r').to_string()).collect();
+                    carry = lines.pop().unwrap_or_default();
+                    if first && offset > bytes.len() as u64 && !lines.is_empty() {
+                        lines.remove(0);
+                    }
+                    first = false;
+                    for line in lines {
+                        let _ = app.emit("launcher://log", LogLine { instance: id.clone(), line, stderr: false });
+                    }
+                }
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+}
+
+pub async fn adopt(app: AppHandle) {
+    let Ok(entries) = std::fs::read_dir(paths::root().join("running")) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(id) = path.file_stem().map(|s| s.to_string_lossy().to_string()) else { continue };
+        let record: Option<RunRecord> = std::fs::read_to_string(&path).ok().and_then(|s| serde_json::from_str(&s).ok());
+        let instance = crate::instance::get(&id).await.ok();
+        let (Some(record), Some(instance)) = (record, instance) else {
+            let _ = std::fs::remove_file(&path);
+            continue;
+        };
+        let Some(handle) = proc::open(record.pid, record.started, &record.game_dir) else {
+            let _ = std::fs::remove_file(&path);
+            continue;
+        };
+        let state = app.state::<AppState>();
+        let (stop_tx, mut stop_rx) = tokio::sync::oneshot::channel::<()>();
+        state.running.lock().await.insert(id.clone(), RunningGame { started_at: record.started, stop: Some(stop_tx) });
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let game_dir = PathBuf::from(&record.game_dir);
+        tokio::spawn(tail_latest_log(app.clone(), id.clone(), game_dir.join("logs").join("latest.log"), done.clone()));
+        let app_handle = app.clone();
+        tokio::spawn(async move {
+            let handle = std::sync::Arc::new(handle);
+            let mut asked_to_stop = false;
+            let code = loop {
+                let waiter = handle.clone();
+                let poll = tokio::task::spawn_blocking(move || proc::wait(&waiter, 1000));
+                if let Ok(Some(code)) = poll.await {
+                    break code;
+                }
+                if !asked_to_stop && stop_rx.try_recv().is_ok() {
+                    asked_to_stop = true;
+                    proc::kill(&handle);
+                }
+            };
+            done.store(true, std::sync::atomic::Ordering::Relaxed);
+            let code = if cfg!(unix) && code == 0 && crashed_since(&game_dir, record.started) { 1 } else { code };
+            finish_game(&app_handle, &instance, record.started, code, asked_to_stop).await;
+        });
+        let _ = app.emit("launcher://adopted", id);
+    }
 }
 
 pub async fn stop(app: &AppHandle, instance_id: &str) -> R<()> {
@@ -476,5 +682,26 @@ pub async fn stop(app: &AppHandle, instance_id: &str) -> R<()> {
             Ok(())
         }
         None => bail!("這個實例沒有在執行"),
+    }
+}
+
+#[cfg(all(test, windows))]
+mod adopt_tests {
+    use super::*;
+
+    #[test]
+    fn finds_live_process_and_exit_code() {
+        let mut child = std::process::Command::new("cmd").args(["/C", "ping -n 3 127.0.0.1 >NUL & exit 7"]).spawn().unwrap();
+        let pid = child.id();
+        assert!(proc::open(pid, now_secs() - 3600, "").is_none(), "建立時間對不上時不能認領");
+        let handle = proc::open(pid, now_secs(), "").expect("要認得剛啟動的程序");
+        let code = loop {
+            if let Some(code) = proc::wait(&handle, 500) {
+                break code;
+            }
+        };
+        assert_eq!(code, 7);
+        let _ = child.wait();
+        assert!(proc::open(pid, now_secs(), "").is_none(), "結束後不能再認領");
     }
 }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tokio::sync::{oneshot, Mutex};
 
 pub struct RunningGame {
@@ -11,11 +11,33 @@ pub struct AppState {
     pub running: Mutex<HashMap<String, RunningGame>>,
     pub accounts_lock: Mutex<()>,
     pub prep_lock: Mutex<()>,
+    pub launching: std::sync::Mutex<HashSet<String>>,
+}
+
+pub struct LaunchClaim<'a> {
+    state: &'a AppState,
+    id: String,
+}
+
+impl Drop for LaunchClaim<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut set) = self.state.launching.lock() {
+            set.remove(&self.id);
+        }
+    }
 }
 
 impl AppState {
     pub async fn is_running(&self, instance_id: &str) -> bool {
         self.running.lock().await.contains_key(instance_id)
+    }
+    pub async fn claim(&self, instance_id: &str) -> Option<LaunchClaim<'_>> {
+        let running = self.running.lock().await;
+        let mut launching = self.launching.lock().ok()?;
+        if running.contains_key(instance_id) || !launching.insert(instance_id.to_string()) {
+            return None;
+        }
+        Some(LaunchClaim { state: self, id: instance_id.to_string() })
     }
     pub async fn running_ids(&self) -> Vec<String> {
         self.running.lock().await.keys().cloned().collect()

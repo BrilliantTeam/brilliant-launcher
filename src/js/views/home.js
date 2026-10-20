@@ -66,7 +66,7 @@ async function sendReport(kind, instance, extra) {
         message: scrub(extra.message),
         findings: (extra.findings || []).map((f) => scrub(f)),
         exception: scrub(extra.exception),
-        log: recentLog().slice(-80).map((line) => scrub(line))
+        log: recentLog(instance?.id).slice(-80).map((line) => scrub(line))
     };
     try {
         await api.send_report({ body });
@@ -291,7 +291,7 @@ async function play(relogged = false, join = null) {
 仍要開始遊戲嗎？`, '仍要開始'))) return;
 
     busy = true;
-    clearRecentLog();
+    clearRecentLog(instance.id);
     renderPlayBar();
     setProgress({ label: '準備中⋯⋯', doneFiles: 0, totalFiles: 0, doneBytes: 0, totalBytes: 0 });
     try {
@@ -365,7 +365,7 @@ async function runFix(instance, fix) {
 
 async function showCrash(id, code, seconds) {
     const instance = store.instances.find((i) => i.id === id) ?? selectedInstance();
-    const lines = recentLog();
+    const lines = recentLog(instance.id);
     const [ctx, info] = await Promise.all([
         api.crash_context({ id: instance.id, since: Math.floor(Date.now() / 1000) - seconds - 5, lines: lines.slice(-400) }).catch(() => ({ report: '', native: '', mods: [] })),
         api.system_info().catch(() => ({}))
@@ -599,6 +599,11 @@ export function initHome() {
         await loadInstances().catch(() => {});
         if (error) toast(`捷徑啟動「${name}」失敗：${error}`, 'error');
         else toast(`已從捷徑啟動「${name}」`);
+    });
+    listen('launcher://adopted', async (id) => {
+        await loadInstances().catch(() => {});
+        const name = store.instances.find((i) => i.id === id)?.name;
+        if (name) toast(`已重新連上執行中的「${name}」，日誌會從遊戲的 latest.log 接續顯示`);
     });
     listen('launcher://exit', async ({ instance, code, seconds }) => {
         await api.show_window().catch(() => {});
