@@ -883,6 +883,34 @@ dialog .toolbar button.mc .ico { width: 16px; height: 16px; }
 .album-grid { max-height: none; overflow: visible; }
 .album-grid .shot { padding: 0; text-align: left; font: inherit; }
 .album-bar { margin-top: 18px; }
+.memories { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+.memory { position: relative; display: flex; align-items: flex-end; aspect-ratio: 4 / 5; padding: 0; border: 2px solid var(--bevel-down); background: var(--content-bg-sunken) center / cover no-repeat; color: #fff; text-align: left; font: inherit; cursor: pointer; overflow: hidden; }
+.memory::before { content: ''; position: absolute; inset: 0; background: linear-gradient(transparent 40%, rgba(0, 0, 0, 0.8)); }
+.memory:hover, .memory:focus-visible { border-color: var(--accent); }
+.memory-text { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 14px; }
+.memory-text b { font-size: 20px; line-height: 1.25; }
+.memory-text small { font-size: 12px; opacity: 0.85; }
+.memory-count { position: absolute; top: 8px; right: 8px; padding: 2px 8px; font-size: 12px; background: rgba(0, 0, 0, 0.55); }
+.album-year { grid-column: 1 / -1; margin-top: 18px; font-size: 32px; font-weight: bold; color: var(--accent); }
+.album-month { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 10px; margin-top: 10px; padding-bottom: 4px; border-bottom: 1px solid var(--bevel-down); }
+.album-month b { font-size: 22px; }
+.album-month span { font-size: 12px; color: var(--text-subtle); }
+.shot-caption { margin: 8px 0 0; text-align: center; }
+.story-stage { position: relative; overflow: hidden; background: #000; aspect-ratio: 16 / 9; }
+.story-stage img { width: 100%; height: 100%; object-fit: contain; }
+.story-stage img.kb { animation: ken-burns 4.2s ease-out both; }
+@keyframes ken-burns { from { opacity: 0; transform: scale(1.06); } 12% { opacity: 1; } to { transform: scale(1); } }
+:root[data-motion="off"] .story-stage img.kb { animation: none; }
+.story-nav { position: absolute; top: 50%; translate: 0 -50%; width: 44px; height: 64px; border: 0; font-size: 36px; color: #fff; background: rgba(0, 0, 0, 0.35); cursor: pointer; }
+.story-nav:hover { background: rgba(0, 0, 0, 0.6); }
+.story-nav.prev { left: 0; }
+.story-nav.next { right: 0; }
+.story-info { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; margin-top: 10px; }
+.story-info span { font-size: 13px; color: var(--text-subtle); }
+.story-bar { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.story-dots { display: flex; flex-wrap: wrap; gap: 4px; flex: 1; }
+.story-dots span { width: 8px; height: 8px; background: var(--text-subtle); opacity: 0.4; }
+.story-dots span.on { background: var(--accent); opacity: 1; }
 .album-bar h2 { margin: 0; }
 .shot-view { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto; }
 .recap { position: relative; padding: 18px 20px; overflow: hidden; background: var(--content-bg-sunken); }

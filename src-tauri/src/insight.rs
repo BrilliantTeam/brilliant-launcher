@@ -283,14 +283,21 @@ pub struct Shot {
     pub path: String,
     pub name: String,
     pub time: i64,
+    pub meta: Option<serde_json::Value>,
 }
 
 #[tauri::command]
 pub async fn list_all_screenshots() -> Vec<Shot> {
     let mut out = Vec::new();
     for instance in crate::instance::list().await {
+        let metas: serde_json::Map<String, serde_json::Value> = tokio::fs::read_to_string(paths::game_dir(&instance.id).join("config/brilliant-server-mod/screenshots.json"))
+            .await
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
         for shot in crate::extras::list_screenshots(instance.id.clone()).await {
-            out.push(Shot { instance: instance.id.clone(), instance_name: instance.name.clone(), path: shot.path, name: shot.name, time: shot.time });
+            let meta = metas.get(&shot.name).cloned();
+            out.push(Shot { instance: instance.id.clone(), instance_name: instance.name.clone(), path: shot.path, name: shot.name, time: shot.time, meta });
         }
     }
     out.sort_by_key(|s| std::cmp::Reverse(s.time));

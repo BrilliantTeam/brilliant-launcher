@@ -3,6 +3,7 @@ import { $, clear, confirm, dialog, fail, guard, h, toast } from '../ui.js';
 import { icon } from '../icons.js';
 import { on, saveSettings, selectedAccount, store } from '../store.js';
 import { shareScreenshot } from './instances.js';
+import { byMonth, caption, fmtDate, memories } from '../memories.js';
 
 const DAY = 86400;
 const SNAP_KEY = 'recapSnapshots';
@@ -150,12 +151,60 @@ async function saveRecapImage(r, delta) {
     api.open_path({ path: path.replace(/[\\/][^\\/]+$/, '') }).catch(() => {});
 }
 
+function memoryCard(memory) {
+    return h('button', { type: 'button', class: 'memory', style: `background-image:url("${fileSrc(memory.cover.path)}")`, onclick: () => playMemory(memory) },
+        h('span', { class: 'memory-count' }, `${memory.shots.length} 張`),
+        h('span', { class: 'memory-text' }, h('b', {}, memory.title), h('small', {}, memory.subtitle)));
+}
+
+async function playMemory(memory) {
+    let index = 0;
+    let timer = null;
+    const many = memory.shots.length > 1;
+    const img = h('img', { alt: '' });
+    const info = h('div', { class: 'story-info' });
+    const dots = h('div', { class: 'story-dots' }, ...memory.shots.map(() => h('span')));
+    const playBtn = h('button', { type: 'button', class: 'mc', onclick: () => (timer ? stop() : start()) });
+    const show = (i) => {
+        index = (i + memory.shots.length) % memory.shots.length;
+        const shot = memory.shots[index];
+        img.classList.remove('kb');
+        img.src = fileSrc(shot.path);
+        void img.offsetWidth;
+        img.classList.add('kb');
+        clear(info).append(h('b', {}, fmtDate(shot.time)), h('span', {}, [shot.instanceName, caption(shot)].filter(Boolean).join('｜')));
+        [...dots.children].forEach((d, n) => d.classList.toggle('on', n === index));
+    };
+    const start = () => { timer = setInterval(() => show(index + 1), 4000); playBtn.replaceChildren(icon('close'), '暫停'); };
+    const stop = () => { clearInterval(timer); timer = null; playBtn.replaceChildren(icon('play'), '自動播放'); };
+    const step = (n) => { stop(); show(index + n); };
+    const key = (e) => {
+        if (e.key === 'ArrowRight') step(1);
+        if (e.key === 'ArrowLeft') step(-1);
+    };
+    show(0);
+    if (many) start(); else stop();
+    addEventListener('keydown', key);
+    await dialog({
+        title: memory.title,
+        wide: true,
+        content: h('div', { class: 'story' },
+            h('div', { class: 'story-stage' }, img,
+                many ? h('button', { type: 'button', class: 'story-nav prev', 'aria-label': '上一張', onclick: () => step(-1) }, '‹') : '',
+                many ? h('button', { type: 'button', class: 'story-nav next', 'aria-label': '下一張', onclick: () => step(1) }, '›') : ''),
+            info,
+            many ? h('div', { class: 'story-bar' }, dots, playBtn) : '')
+    });
+    clearInterval(timer);
+    removeEventListener('keydown', key);
+}
+
 async function viewShot(shot) {
     const instance = store.instances.find((i) => i.id === shot.instance);
     const value = await dialog({
         title: `${shot.instanceName}｜${new Date(shot.time * 1000).toLocaleString('zh-TW', { hour12: false })}`,
         wide: true,
-        content: h('img', { class: 'shot-view', src: fileSrc(shot.path), alt: shot.name }),
+        content: h('div', {}, h('img', { class: 'shot-view', src: fileSrc(shot.path), alt: shot.name }), caption(shot) ? h('p', { class: 'hint shot-caption' }, caption(shot)) : ''),
         buttons: [
             { label: '投稿到玩家足跡', value: 'share' },
             { label: '設為啟動器背景', value: 'bg' },
@@ -178,10 +227,20 @@ async function viewShot(shot) {
 
 function renderGrid() {
     const list = shots.filter((s) => !filter || s.instance === filter);
+    const thisYear = new Date().getFullYear();
+    let year = thisYear;
     clear($('#album-grid')).append(...(list.length
-        ? list.map((shot) => h('button', { type: 'button', class: 'shot shot-open', title: `${shot.instanceName}\n${shot.name}`, onclick: () => viewShot(shot) },
-            h('img', { src: fileSrc(shot.path), alt: shot.name, loading: 'lazy' }),
-            h('div', { class: 'shot-foot' }, h('span', {}, shot.instanceName), new Date(shot.time * 1000).toLocaleDateString('zh-TW'))))
+        ? byMonth(list).flatMap((group) => {
+            const head = [];
+            if (group.year !== year) {
+                year = group.year;
+                head.push(h('div', { class: 'album-year' }, `${group.year}`));
+            }
+            head.push(h('div', { class: 'album-month' }, h('b', {}, `${group.month} 月`), h('span', {}, `${group.year === thisYear ? '' : `${group.year} 年・`}${group.shots.length} 張`)));
+            return [...head, ...group.shots.map((shot) => h('button', { type: 'button', class: 'shot shot-open', title: `${shot.instanceName}\n${shot.name}`, onclick: () => viewShot(shot) },
+                h('img', { src: fileSrc(shot.path), alt: shot.name, loading: 'lazy' }),
+                h('div', { class: 'shot-foot' }, h('span', {}, shot.instanceName), `${new Date(shot.time * 1000).getDate()} 日`)))];
+        })
         : [h('div', { class: 'empty-state' }, '還沒有截圖。遊戲中按 F2 就能截圖，所有實例的截圖都會出現在這裡。')]));
 }
 
@@ -191,6 +250,9 @@ async function render() {
     shots = list;
     const recap = weekRecap(sessions, shots, now);
     clear($('#album-recap')).append(recapCard(recap, []));
+    const picks = memories(shots, now);
+    $('#album-memories').hidden = !picks.length;
+    clear($('#album-memories-list')).append(...picks.map(memoryCard));
     brilliantDelta(now).then((delta) => {
         if (delta.length) clear($('#album-recap')).append(recapCard(recap, delta));
     });
