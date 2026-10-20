@@ -290,15 +290,54 @@ function presetState(preset) {
     return { missing, running: preset.items.some(([kind, id]) => busy.has(`${kind}:${id}`)) };
 }
 
-async function installPreset(preset) {
-    const { missing } = presetState(preset);
+async function installItems(preset, items) {
     const failed = [];
-    for (const [kind, id, title] of missing) {
+    for (const [kind, id, title] of items) {
         if (!(await install(kind, id, title, true))) failed.push(title);
     }
-    const ok = missing.length - failed.length;
+    const ok = items.length - failed.length;
     if (!failed.length) toast(`「${preset.title}」安裝完成（${ok} 個）`);
-    else toast(`「${preset.title}」已安裝 ${ok} 個；${failed.join('、')} 目前還沒有支援 Minecraft ${selectedInstance()?.mcVersion} 的版本，之後再按一次一鍵安裝就會補上。`, 'warn');
+    else toast(`「${preset.title}」已安裝 ${ok} 個；${failed.join('、')} 目前還沒有支援 Minecraft ${selectedInstance()?.mcVersion} 的版本，之後再安裝一次就會補上。`, 'warn');
+}
+
+async function installPreset(preset) {
+    await installItems(preset, presetState(preset).missing);
+}
+
+async function customizePreset(preset) {
+    const rows = preset.items.map((item) => {
+        const [kind, id, title] = item;
+        const have = !!installedEntry(kind, id);
+        const input = h('input', { type: 'checkbox', checked: !have, disabled: have });
+        const el = h('label', { class: `pick-row ${have ? 'have' : ''}` }, input, h('span', { class: 'grow' }, title), have ? h('span', { class: 'pick-tag' }, icon('check'), '已安裝') : null);
+        return { item, have, input, el };
+    });
+    const count = h('span', { class: 'pick-count' });
+    const update = () => {
+        count.textContent = `已選 ${rows.filter((r) => !r.have && r.input.checked).length} 個`;
+    };
+    const setAll = (value) => {
+        for (const r of rows) if (!r.have) r.input.checked = value;
+        update();
+    };
+    for (const r of rows) r.input.addEventListener('change', update);
+    update();
+    const content = h('div', { class: 'pick' },
+        h('p', { class: 'hint' }, `${preset.desc}\n勾選想要的模組再安裝；需要的前置模組會自動一起裝好，已安裝的不會重複下載。`),
+        h('div', { class: 'pick-tools' },
+            h('button', { type: 'button', class: 'mc', onclick: () => setAll(true) }, '全選'),
+            h('button', { type: 'button', class: 'mc', onclick: () => setAll(false) }, '全不選'),
+            count),
+        h('div', { class: 'pick-list' }, ...rows.map((r) => r.el)));
+    const value = await dialog({
+        title: `自選安裝：${preset.title}`,
+        content,
+        buttons: [{ label: '取消', value: null }, { label: '安裝所選', value: 'install' }]
+    });
+    if (value !== 'install') return;
+    const chosen = rows.filter((r) => !r.have && r.input.checked).map((r) => r.item);
+    if (!chosen.length) return toast('沒有選擇任何模組', 'warn');
+    await installItems(preset, chosen);
 }
 
 function renderPresets() {
@@ -313,12 +352,20 @@ function renderPresets() {
             h('div', { class: 'preset-desc' }, preset.desc),
             h('div', { class: 'preset-items' }, ...preset.items.map(([kind, id, title]) =>
                 h('span', { class: installedEntry(kind, id) ? 'have' : '' }, installedEntry(kind, id) ? icon('check') : '', title))),
-            h('button', {
-                type: 'button',
-                class: `mc ${done ? '' : 'primary'}`,
-                disabled: done || running,
-                onclick: () => installPreset(preset)
-            }, running ? '安裝中⋯' : done ? '已全部安裝' : `一鍵安裝（${missing.length} 個）`));
+            h('div', { class: 'preset-actions' },
+                h('button', {
+                    type: 'button',
+                    class: `mc ${done ? '' : 'primary'}`,
+                    disabled: done || running,
+                    onclick: () => installPreset(preset)
+                }, running ? '安裝中⋯' : done ? '已全部安裝' : `一鍵安裝（${missing.length} 個）`),
+                done ? null : h('button', {
+                    type: 'button',
+                    class: 'mc',
+                    disabled: running,
+                    title: '勾選只想安裝的部分模組',
+                    onclick: () => customizePreset(preset)
+                }, icon('sliders'), '自選')));
     }));
 }
 

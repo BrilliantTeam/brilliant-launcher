@@ -631,7 +631,15 @@ button.mc.icon-btn.danger:hover { color: var(--danger); }
 .preset-items { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 4px; }
 .preset-items span { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; font-size: 11px; color: var(--text-subtle); background: var(--content-bg-sunken); }
 .preset-items span.have { color: var(--success); }
-.preset button { align-self: flex-start; margin-top: auto; }
+.preset-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.pick .hint { white-space: pre-line; }
+.pick-tools { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+.pick-count { margin-left: auto; font-size: 12px; color: var(--text-subtle); }
+.pick-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px; max-height: 50vh; overflow: auto; }
+.pick-row { gap: 8px; padding: 6px 8px; background: var(--content-bg-sunken); }
+.pick-row:hover { background: var(--content-bg-alt); }
+.pick-row.have { color: var(--text-subtle); cursor: default; }
+.pick-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--success); }
 
 .store-search { display: flex; gap: 8px; margin-bottom: 8px; }
 .store-search input { flex: 1 1 auto; }
