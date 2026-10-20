@@ -101,6 +101,20 @@ async fn prune(dir: &Path, prefixes: &[&str], keep: &str) -> R<()> {
     Ok(())
 }
 
+fn stale_cache(names: &[String], mc: &str, keep: &str) -> Vec<String> {
+    let suffix = format!("+{mc}.jar");
+    names.iter().filter(|n| n.starts_with(MOD_PREFIX) && n.ends_with(&suffix) && n.as_str() != keep).cloned().collect()
+}
+
+async fn prune_cache(mc: &str, keep: &str) {
+    let names: Vec<String> = std::fs::read_dir(cache_dir())
+        .map(|d| d.flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect())
+        .unwrap_or_default();
+    for name in stale_cache(&names, mc, keep) {
+        let _ = tokio::fs::remove_file(cache_dir().join(name)).await;
+    }
+}
+
 fn cached_for(mc: &str) -> Option<PathBuf> {
     let suffix = format!("+{mc}.jar");
     std::fs::read_dir(cache_dir())
@@ -133,6 +147,7 @@ async fn brilliant_mod(mc: &str) -> R<PathBuf> {
         }
         net::write_file(&path, &bytes, false).await?;
     }
+    prune_cache(mc, &latest.file).await;
     Ok(path)
 }
 
@@ -165,11 +180,16 @@ pub fn forget_sync() {
     }
 }
 
+fn exactly_one_each(names: &[String]) -> bool {
+    names.iter().filter(|n| n.starts_with(MOD_PREFIX) || n.starts_with(LEGACY_PREFIX)).count() == 1
+        && names.iter().filter(|n| n.starts_with(API_PREFIX)).count() == 1
+}
+
 fn has_both(mods_dir: &Path) -> bool {
     let names: Vec<String> = std::fs::read_dir(mods_dir)
         .map(|d| d.flatten().map(|e| e.file_name().to_string_lossy().to_string()).collect())
         .unwrap_or_default();
-    names.iter().any(|n| n.starts_with(MOD_PREFIX)) && names.iter().any(|n| n.starts_with(API_PREFIX))
+    exactly_one_each(&names)
 }
 
 pub async fn inject(app: &AppHandle, instance: &Instance) -> R<Vec<String>> {
@@ -229,6 +249,21 @@ pub async fn inject(app: &AppHandle, instance: &Instance) -> R<Vec<String>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stale_versions_are_detected() {
+        let names: Vec<String> = ["brilliant-server-mod-1.1.46+26.3.jar", "brilliant-server-mod-1.1.47+26.3.jar", "brilliant-server-mod-1.1.40+26.2.jar", "fabric-api-0.164.0+26.3.jar"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        assert_eq!(stale_cache(&names, "26.3", "brilliant-server-mod-1.1.47+26.3.jar"), vec!["brilliant-server-mod-1.1.46+26.3.jar".to_string()]);
+        assert!(stale_cache(&names, "26.2", "brilliant-server-mod-1.1.40+26.2.jar").is_empty());
+        assert!(!exactly_one_each(&names));
+        let clean: Vec<String> = ["brilliant-server-mod-1.1.47+26.3.jar", "fabric-api-0.164.0+26.3.jar", "sodium.jar"].iter().map(|s| s.to_string()).collect();
+        assert!(exactly_one_each(&clean));
+        let old_and_new: Vec<String> = ["brilliant-server-mod-1.1.47+26.3.jar", "brilliant-server-discord-rich-presence-1.0.jar", "fabric-api-0.164.0+26.3.jar"].iter().map(|s| s.to_string()).collect();
+        assert!(!exactly_one_each(&old_and_new));
+    }
 
     #[test]
     fn file_names_are_checked() {

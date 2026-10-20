@@ -220,6 +220,7 @@ async fn prepare(
     args.push("-Dfile.encoding=UTF-8".into());
     args.push("-Dstdout.encoding=UTF-8".into());
     args.push("-Dstderr.encoding=UTF-8".into());
+    args.push(format!("-Dbrilliant.launcher={}", env!("CARGO_PKG_VERSION")));
     if cfg!(target_os = "macos") {
         args.push("-XstartOnFirstThread".into());
     }
