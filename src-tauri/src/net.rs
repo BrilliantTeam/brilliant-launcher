@@ -238,10 +238,12 @@ pub async fn download_all(app: &AppHandle, stage: &str, files: Vec<DlFile>, mirr
         },
     );
 
+    let last_emit = Arc::new(AtomicU64::new(0));
+    let started = std::time::Instant::now();
     let mut stream = futures::stream::iter(files.into_iter().map(|f| {
         let app = app.clone();
         let stage = stage.to_string();
-        let (df, db) = (done_files.clone(), done_bytes.clone());
+        let (df, db, last) = (done_files.clone(), done_bytes.clone(), last_emit.clone());
         async move {
             if !already_good(&f.path, f.sha1.as_deref(), f.size).await {
                 let bytes = get_bytes(&f.url, mirror).await?;
@@ -255,6 +257,11 @@ pub async fn download_all(app: &AppHandle, stage: &str, files: Vec<DlFile>, mirr
             }
             let n = df.fetch_add(1, Ordering::Relaxed) + 1;
             let b = db.fetch_add(f.size, Ordering::Relaxed) + f.size;
+            let now = started.elapsed().as_millis() as u64;
+            let previous = last.load(Ordering::Relaxed);
+            if n != total_files && (now < previous + 80 || last.compare_exchange(previous, now, Ordering::Relaxed, Ordering::Relaxed).is_err()) {
+                return Ok(());
+            }
             let name = f
                 .path
                 .file_name()

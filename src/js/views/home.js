@@ -612,7 +612,8 @@ export function initHome() {
     renderPlayBar();
     renderShards();
     refreshShards().catch(() => {});
-    setInterval(() => refreshShards().catch(() => {}), PING_INTERVAL_MS);
+    setInterval(() => { if (!document.hidden) refreshShards().catch(() => {}); }, PING_INTERVAL_MS);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshShards().catch(() => {}); });
     initNews();
     api.site_json({ path: '/api/launcher/restarts' }).then((data) => { restarts = data?.schedule || {}; renderShards(); }, () => {});
     refreshEvents();

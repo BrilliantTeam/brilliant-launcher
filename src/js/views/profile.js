@@ -105,12 +105,14 @@ async function render() {
 }
 
 export function initProfile() {
-    on('accounts', render);
-    on('settings', () => { if (document.body.dataset.view === 'profile') render(); });
+    const visible = () => location.hash === '#profile';
+    on('accounts', () => { if (visible()) render(); });
+    on('settings', () => { if (visible()) render(); });
+    addEventListener('hashchange', () => { if (visible()) render(); });
     $('#btn-profile-refresh').addEventListener('click', guard(() => {
         loaded.clear();
         linkState.clear();
         render();
     }));
-    render();
+    if (visible()) render();
 }

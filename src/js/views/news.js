@@ -1,5 +1,5 @@
 import { api, fileSrc, openUrl } from '../api.js';
-import { on, store } from '../store.js';
+import { idle, on, store } from '../store.js';
 import { $, clear, dialog, h } from '../ui.js';
 
 const BOARDS = [
@@ -189,7 +189,7 @@ async function showImage(url, credit) {
 }
 
 function nextSlide() {
-    if (!slides?.length) return;
+    if (!slides?.length || idle()) return;
     const slide = slides[slideIndex++ % slides.length];
     return showImage(slide.image, [slide.description, slide.author && `攝影：${slide.author}`].filter(Boolean).join('｜'));
 }
@@ -224,9 +224,18 @@ async function applyBackground() {
     if (seconds > 0 && slides.length > 1) slideTimer = setInterval(nextSlide, seconds * 1000);
 }
 
+function syncVideo() {
+    const video = $('#bg-video');
+    if (!video.getAttribute('src')) return;
+    if (idle()) video.pause();
+    else video.play().catch(() => {});
+}
+
 export function initNews() {
     $('.news').classList.add('glass');
     select(board);
     applyBackground();
     on('settings', applyBackground);
+    on('instances', syncVideo);
+    document.addEventListener('visibilitychange', syncVideo);
 }

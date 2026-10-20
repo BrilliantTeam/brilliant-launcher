@@ -42,6 +42,8 @@ export async function loadAccounts() {
     emit('accounts');
 }
 
+export const idle = () => document.hidden || store.running.length > 0;
+
 export function selectedInstance() {
     const id = store.settings?.selectedInstance;
     return store.instances.find((i) => i.id === id) ?? store.instances[0] ?? null;

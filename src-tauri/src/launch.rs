@@ -77,11 +77,14 @@ fn split_host(target: &str) -> (String, u16) {
     }
 }
 
+async fn open_log(file: &Path) -> Option<tokio::fs::File> {
+    tokio::fs::OpenOptions::new().create(true).append(true).open(file).await.ok()
+}
+
 async fn append_log(file: &Path, line: &str) {
     use tokio::io::AsyncWriteExt;
-    if let Ok(mut f) = tokio::fs::OpenOptions::new().create(true).append(true).open(file).await {
-        let _ = f.write_all(line.as_bytes()).await;
-        let _ = f.write_all(b"\n").await;
+    if let Some(mut f) = open_log(file).await {
+        let _ = f.write_all(format!("{line}\n").as_bytes()).await;
     }
 }
 
@@ -399,13 +402,20 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         let id = instance_id.to_string();
         let log_file = log_file.clone();
         tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
             let mut lines = BufReader::new(reader).lines();
+            let mut out = open_log(&log_file).await;
             while let Ok(Some(line)) = lines.next_line().await {
-                append_log(&log_file, &line).await;
+                if let Some(f) = out.as_mut() {
+                    let _ = f.write_all(format!("{line}\n").as_bytes()).await;
+                }
                 let _ = app.emit(
                     "launcher://log",
                     LogLine { instance: id.clone(), line, stderr: is_err },
                 );
+            }
+            if let Some(f) = out.as_mut() {
+                let _ = f.flush().await;
             }
         });
     }

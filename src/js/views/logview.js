@@ -11,13 +11,21 @@ export const clearRecentLog = () => { recent = []; };
 export function initLog() {
     const box = $('#console');
 
-    listen('launcher://log', ({ line, stderr }) => {
-        recent.push(line);
-        if (recent.length > RECENT_LINES) recent = recent.slice(-RECENT_LINES);
+    let pending = [];
+    const flush = () => {
         const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
-        box.append(h('div', { class: stderr ? 'err' : '' }, line));
-        while (box.childElementCount > MAX_LINES) box.firstElementChild.remove();
+        const fragment = document.createDocumentFragment();
+        for (const { line, stderr } of pending.slice(-MAX_LINES)) fragment.append(h('div', { class: stderr ? 'err' : '' }, line));
+        pending = [];
+        box.append(fragment);
+        for (let extra = box.childElementCount - MAX_LINES; extra > 0; extra--) box.firstElementChild.remove();
         if ($('#log-follow').checked && atBottom) box.scrollTop = box.scrollHeight;
+    };
+    listen('launcher://log', (entry) => {
+        recent.push(entry.line);
+        if (recent.length > RECENT_LINES * 2) recent = recent.slice(-RECENT_LINES);
+        if (!pending.length) requestAnimationFrame(flush);
+        pending.push(entry);
     });
 
     $('#btn-clear-log').addEventListener('click', () => box.replaceChildren());

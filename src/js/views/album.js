@@ -238,7 +238,7 @@ function renderGrid() {
             }
             head.push(h('div', { class: 'album-month' }, h('b', {}, `${group.month} 月`), h('span', {}, `${group.year === thisYear ? '' : `${group.year} 年・`}${group.shots.length} 張`)));
             return [...head, ...group.shots.map((shot) => h('button', { type: 'button', class: 'shot shot-open', title: `${shot.instanceName}\n${shot.name}`, onclick: () => viewShot(shot) },
-                h('img', { src: fileSrc(shot.path), alt: shot.name, loading: 'lazy' }),
+                h('img', { src: fileSrc(shot.path), alt: shot.name, loading: 'lazy', decoding: 'async' }),
                 h('div', { class: 'shot-foot' }, h('span', {}, shot.instanceName), `${new Date(shot.time * 1000).getDate()} 日`)))];
         })
         : [h('div', { class: 'empty-state' }, '還沒有截圖。遊戲中按 F2 就能截圖，所有實例的截圖都會出現在這裡。')]));

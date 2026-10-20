@@ -7,8 +7,45 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::SystemTime;
 use tauri::AppHandle;
+
+#[derive(Clone)]
+pub struct Digest {
+    pub sha1: String,
+    pub nested: Vec<String>,
+    pub size: u64,
+}
+
+type DigestCache = Mutex<HashMap<PathBuf, (u64, SystemTime, Digest)>>;
+
+fn digest_cache() -> &'static DigestCache {
+    static CACHE: OnceLock<DigestCache> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+pub async fn digest(path: &Path) -> Option<Digest> {
+    let meta = tokio::fs::metadata(path).await.ok()?;
+    let modified = meta.modified().ok()?;
+    if let Some((len, time, hit)) = digest_cache().lock().ok()?.get(path) {
+        if *len == meta.len() && *time == modified {
+            return Some(hit.clone());
+        }
+    }
+    let path_buf = path.to_path_buf();
+    let found = tokio::task::spawn_blocking(move || {
+        let bytes = std::fs::read(&path_buf).ok()?;
+        let name = path_buf.to_string_lossy().to_lowercase();
+        let nested = if name.ends_with(".jar") || name.ends_with(".jar.disabled") { nested_jars(&bytes) } else { Vec::new() };
+        Some(Digest { sha1: sha1_hex(&bytes), nested, size: bytes.len() as u64 })
+    })
+    .await
+    .ok()??;
+    digest_cache().lock().ok()?.insert(path.to_path_buf(), (meta.len(), modified, found.clone()));
+    Some(found)
+}
 
 const API: &str = "https://api.modrinth.com/v2";
 const CDN: &str = "https://cdn.modrinth.com/";
@@ -495,15 +532,15 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
             if !safe_file(&file, kind) || !entry.path().is_file() {
                 continue;
             }
-            let bytes = tokio::fs::read(entry.path()).await.unwrap_or_default();
-            hashes.push(sha1_hex(&bytes));
-            embedded.push(if kind == Kind::Mod { nested_jars(&bytes) } else { Vec::new() });
+            let Some(found) = digest(&entry.path()).await else { continue };
+            hashes.push(found.sha1);
+            embedded.push(if kind == Kind::Mod { found.nested } else { Vec::new() });
             let enabled = !file.ends_with(DISABLED_SUFFIX);
             let stem = file.trim_end_matches(DISABLED_SUFFIX).trim_end_matches(kind.extension()).to_string();
             out.push(Installed {
                 name: managed_name(&file).map(str::to_string).unwrap_or(stem),
                 managed: kind == Kind::Mod && crate::modinject::is_managed(&file),
-                size: bytes.len() as u64,
+                size: found.size,
                 enabled,
                 file,
                 project_id: None,
@@ -642,8 +679,8 @@ async fn installed_projects(dir: &std::path::Path, kind: Kind) -> HashSet<String
         while let Ok(Some(entry)) = entries.next_entry().await {
             let file = entry.file_name().to_string_lossy().to_string();
             if safe_file(&file, kind) && entry.path().is_file() {
-                if let Ok(bytes) = tokio::fs::read(entry.path()).await {
-                    hashes.push(sha1_hex(&bytes));
+                if let Some(found) = digest(&entry.path()).await {
+                    hashes.push(found.sha1);
                 }
             }
         }
@@ -774,6 +811,18 @@ mod tests {
         zip.finish().unwrap();
         assert_eq!(nested_jars(buf.get_ref()), vec!["placeholder-api-2.4.0+1.21.jar".to_string()]);
         assert!(nested_jars(b"not a zip").is_empty());
+    }
+
+    #[tokio::test]
+    async fn digest_cache_follows_changes() {
+        let path = std::env::temp_dir().join("brilliant-digest.jar");
+        std::fs::write(&path, b"first").unwrap();
+        let a = digest(&path).await.unwrap();
+        assert_eq!(a.sha1, sha1_hex(b"first"));
+        assert_eq!(digest(&path).await.unwrap().sha1, a.sha1);
+        std::fs::write(&path, b"second!").unwrap();
+        assert_eq!(digest(&path).await.unwrap().sha1, sha1_hex(b"second!"));
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

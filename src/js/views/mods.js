@@ -970,6 +970,7 @@ async function reloadInstalled() {
 }
 
 function onInstanceChange() {
+    if (location.hash !== '#mods') return;
     const instance = selectedInstance();
     const key = `${instance?.id}|${instance?.mcVersion}|${instance?.loader}`;
     if (key === onInstanceChange.last) return;
@@ -1029,6 +1030,7 @@ export function initMods() {
 
     on('instances', onInstanceChange);
     on('settings', onInstanceChange);
+    addEventListener('hashchange', onInstanceChange);
     renderCategories();
     onInstanceChange();
 }
