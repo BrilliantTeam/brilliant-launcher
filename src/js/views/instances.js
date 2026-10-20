@@ -5,6 +5,7 @@ import { icon, INSTANCE_ICONS, instanceIconName } from '../icons.js';
 import { importPack } from './mods.js';
 import { isPreparing, repairInstance } from './home.js';
 import { jvmPresetButtons } from './settings.js';
+import { perfCheck } from '../perf.js';
 
 export async function versionData() {
     if (!store.versions) store.versions = await api.list_versions();
@@ -377,7 +378,10 @@ export async function upgradeFlow(instance, target) {
     let plan = [];
     api.content_list({ id: instance.id, kind: 'mod', mc: target }).then((entries) => {
         plan = entries.map((entry) => ({ entry, action: planOf(entry) }));
-        clear(list).append(...(plan.length ? plan.map(({ entry, action }) => h('div', { class: 'row' },
+        const count = (a) => plan.filter((p) => p.action === a).length;
+        const summary = [['update', '個會更新'], ['keep', '個可直接使用'], ['disable', '個新版尚未支援（先停用）'], ['unknown', '個無法確認']]
+            .filter(([a]) => count(a)).map(([a, label]) => `${count(a)} ${label}`).join('、');
+        clear(list).append(...(summary ? [h('div', { class: 'hint' }, summary)] : []), ...(plan.length ? plan.map(({ entry, action }) => h('div', { class: 'row' },
             h('div', { class: 'grow' },
                 h('div', { class: 'name' }, entry.name),
                 h('div', { class: 'meta' }, action === 'update' ? `${entry.version ?? ''} → ${entry.update.version}` : entry.file)),
@@ -391,7 +395,12 @@ export async function upgradeFlow(instance, target) {
         title: `升級到 Minecraft ${target}`,
         wide: true,
         content: h('div', {},
-            h('p', { class: 'hint' }, `「${instance.name}」目前是 ${instance.mcVersion}。升級後 Fabric Loader 會換成最新穩定版，Brilliant-Server-Mod 與 Fabric API 會在下次啟動自動換成對應版本。`),
+            h('p', { class: 'hint' }, instance.loader === 'fabric'
+                ? `「${instance.name}」目前是 ${instance.mcVersion}。升級後 Fabric Loader 會換成最新穩定版，Brilliant-Server-Mod 與 Fabric API 會在下次啟動自動換成對應版本。`
+                : `「${instance.name}」目前是 ${instance.mcVersion}，升級後下次開始遊戲會自動下載新版本。`),
+            !instance.general && store.versions?.modVersions?.length && !store.versions.modVersions.includes(target)
+                ? h('p', { class: 'hint warn' }, `輝煌伺服器目前還不支援 ${target}，升級後可能無法連線輝煌。`)
+                : '',
             mode,
             list),
         buttons: [{ label: '取消', value: false }, { label: '開始升級', value: true }]
@@ -406,7 +415,7 @@ export async function upgradeFlow(instance, target) {
             await api.backup_now({ id: instance.id }).catch(() => {});
         }
         toast(`正在升級到 ${target}⋯`);
-        await api.update_instance({ updated: { ...targetInstance, mcVersion: target, loaderVersion: '', loader: 'fabric' } });
+        await api.update_instance({ updated: { ...targetInstance, mcVersion: target, loaderVersion: '' } });
         for (const { entry, action } of plan) {
             if (action === 'update') await api.content_update({ id: targetInstance.id, kind: 'mod', file: entry.file, update: entry.update }).catch(fail);
             if (action === 'disable') await api.set_mod_enabled({ id: targetInstance.id, file: entry.file, enabled: false }).catch(fail);
@@ -425,6 +434,26 @@ export async function upgradeFlow(instance, target) {
     } catch (error) {
         fail(error);
     }
+}
+
+async function pickUpgrade(instance) {
+    const data = await versionData().catch(() => null);
+    if (!data) return toast('暫時無法取得版本清單', 'warn');
+    const index = data.versions.findIndex((v) => v.id === instance.mcVersion);
+    const newer = data.versions.slice(0, index < 0 ? 0 : index).filter((v) => v.type === 'release');
+    if (!newer.length) return toast(`「${instance.name}」已經是最新的正式版 ${instance.mcVersion}`);
+    const supported = new Set(data.modVersions);
+    const select = h('select', {}, ...newer.map((v) => h('option', { value: v.id, selected: v.id === data.recommended },
+        `${v.id}${v.id === data.recommended ? '（輝煌推薦）' : supported.has(v.id) ? '（輝煌支援）' : ''}`)));
+    const go = await dialog({
+        title: `升級「${instance.name}」`,
+        content: h('div', { class: 'field' },
+            h('label', {}, `從 ${instance.mcVersion} 升級到`),
+            select,
+            h('div', { class: 'hint' }, '下一步會逐一檢查每個模組在新版本有沒有對應版本，再決定更新、保留或先停用。')),
+        buttons: [{ label: '取消', value: false }, { label: '檢查相容性', value: true }]
+    });
+    if (go === true) upgradeFlow(instance, select.value);
 }
 
 const PART_LABEL = {
@@ -665,7 +694,7 @@ async function manageBackups(instance) {
     await dialog({ title: `存檔備份｜${instance.name}`, content, wide: true });
 }
 
-async function shareScreenshot(instance, shot) {
+export async function shareScreenshot(instance, shot) {
     const input = h('input', { type: 'text', maxlength: 60, placeholder: '介紹一下這張截圖（選填，最多 60 字）' });
     const go = await dialog({
         title: '投稿到玩家足跡',
@@ -684,7 +713,6 @@ async function shareScreenshot(instance, shot) {
             }
         });
     }
-    showScreenshots(instance);
 }
 
 async function showScreenshots(instance) {
@@ -695,7 +723,7 @@ async function showScreenshots(instance) {
                 h('img', { src: fileSrc(shot.path), alt: shot.name, loading: 'lazy' })),
             h('div', { class: 'shot-foot' },
                 h('span', {}, new Date(shot.time * 1000).toLocaleString('zh-TW', { hour12: false })),
-                h('button', { type: 'button', class: 'mc', onclick: () => shareScreenshot(instance, shot) }, icon('heart'), '投稿'))))
+                h('button', { type: 'button', class: 'mc', onclick: () => shareScreenshot(instance, shot).then(() => showScreenshots(instance)) }, icon('heart'), '投稿'))))
             : [h('div', { class: 'empty-state' }, '還沒有截圖。遊戲中按 F2 就能截圖。')]));
     }).catch(fail);
     await dialog({
@@ -749,6 +777,8 @@ function moreMenu(instance) {
         item('map', '世界管理', () => showWorlds(instance)),
         item('save', '存檔備份', () => manageBackups(instance)),
         item('image', '截圖', () => showScreenshots(instance)),
+        item('zap', '效能健檢', () => perfCheck(instance)),
+        item('arrow-right', '升級版本⋯', () => pickUpgrade(instance)),
         item('folder', '開啟資料夾', () => openFolder(instance)),
         item('reload', '驗證並修復檔案', () => repairInstance(instance)),
         item('external-link', '建立桌面捷徑', () => createShortcut(instance)),

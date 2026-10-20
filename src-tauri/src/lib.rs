@@ -19,6 +19,7 @@ pub mod skins;
 pub mod state;
 pub mod worlds;
 pub mod advanced;
+pub mod insight;
 
 use tauri::{Listener, Manager};
 
@@ -143,6 +144,13 @@ pub fn run() {
             importer::import_sources,
             importer::import_into,
             importer::import_inspect,
+            insight::crash_context,
+            insight::perf_report,
+            insight::apply_perf,
+            insight::play_history,
+            insight::list_all_screenshots,
+            insight::delete_screenshot,
+            insight::save_png,
         ])
         .run(tauri::generate_context!())
         .expect("啟動 Tauri 失敗");

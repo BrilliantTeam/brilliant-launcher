@@ -442,6 +442,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
             inst.last_played = now_secs();
             let _ = crate::instance::save(&inst).await;
         }
+        crate::insight::record_session(crate::insight::Session { instance: id.clone(), name: instance_name.clone(), start: started, seconds, code }).await;
         if code != 0 && !asked_to_stop && notify_crash {
             crate::boost::notify(&app_handle, "遊戲異常結束", &format!("「{instance_name}」結束代碼 {code}，打開啟動器查看可能的原因。"));
         }

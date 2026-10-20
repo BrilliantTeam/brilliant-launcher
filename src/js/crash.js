@@ -59,3 +59,73 @@ export function diagnose(lines) {
     const exception = [...lines].reverse().find((line) => /\b[\w.]+(?:Exception|Error)\b/.test(line) && !/^\s*at /.test(line));
     return { findings, exception: exception ? exception.trim().slice(0, 200) : '' };
 }
+
+const NO_INSTALL = new Set(['minecraft', 'java', 'fabricloader', 'fabric']);
+const GPU_DLL = /ig\w*icd(?:32|64)|atio6axx|atioglxx|nvoglv(?:32|64)|amdxc64|libnvidia|iris_dri|radeonsi/i;
+const newer = (a, b) => b.version.localeCompare(a.version, undefined, { numeric: true });
+
+export function plan({ lines = [], report = '', native = '', mods = [], memoryMb = 0, totalMb = 0, recommendedMb = 4096, preferDgpu = false }) {
+    const all = [...report.split('\n'), ...lines];
+    const text = all.join('\n');
+    const { findings, exception } = diagnose(all);
+    const enabled = mods.filter((m) => m.enabled && m.id);
+    const byId = (id) => enabled.find((m) => m.id === id);
+    const fixes = [];
+    const add = (fix) => { if (!fixes.some((f) => f.kind === fix.kind && f.target === fix.target)) fixes.push(fix); };
+    const disable = (mod, why) => mod && !mod.managed && add({ kind: 'disable', target: mod.file, label: `停用「${mod.name}」${why}` });
+    const update = (mod) => mod && !mod.managed && add({ kind: 'update', target: mod.file, label: `更新「${mod.name}」到相容版本（找不到就停用）` });
+
+    if (/Could not reserve enough space|Invalid maximum heap size|Initial heap size set to a larger value/.test(text) && memoryMb > recommendedMb) {
+        add({ kind: 'memory', target: recommendedMb, label: `把記憶體上限調成建議的 ${recommendedMb} MB` });
+    } else if (/java\.lang\.OutOfMemoryError/.test(text)) {
+        const cap = totalMb ? Math.floor((totalMb * 0.6) / 512) * 512 : 8192;
+        const mb = Math.min(Math.max(memoryMb, 2048) + 2048, cap);
+        if (mb > memoryMb) add({ kind: 'memory', target: mb, label: `把記憶體上限調高到 ${mb} MB` });
+    }
+    const classVersion = /class file version (\d+)/.exec(text);
+    if (classVersion && /UnsupportedClassVersionError|more recent version of the Java Runtime/.test(text)) {
+        const major = Number(classVersion[1]) - 44;
+        add({ kind: 'java', target: major, label: `改用 Java ${major}（啟動器會自動下載）` });
+    }
+    for (const line of all) {
+        const req = /Mod '[^']*' \(([\w-]+)\)[^\n]*? requires (?:.+?) of (?:mod '[^']*' \()?([\w-]+)\)?,? (which is missing|but only the wrong version)/.exec(line);
+        if (req) {
+            const [, owner, dep, how] = req;
+            if (NO_INSTALL.has(dep)) update(byId(owner));
+            else if (how.startsWith('which') && !byId(dep)) add({ kind: 'install', target: dep, label: `安裝缺少的前置模組 ${dep}` });
+            else update(byId(dep));
+        }
+        const install = /^\s*-\s*Install ([\w-]+),/.exec(line);
+        if (install && !NO_INSTALL.has(install[1]) && !byId(install[1])) add({ kind: 'install', target: install[1], label: `安裝缺少的前置模組 ${install[1]}` });
+        const replace = /^\s*-\s*Replace mod '[^']*' \(([\w-]+)\)/.exec(line);
+        if (replace) update(byId(replace[1]));
+        const remove = /^\s*-\s*Remove mod '[^']*' \(([\w-]+)\)/.exec(line);
+        if (remove) disable(byId(remove[1]), '（與其他模組不相容）');
+        for (const m of line.matchAll(/Mixin apply for mod ([\w-]+) failed/g)) disable(byId(m[1]), '（與遊戲或其他模組衝突）');
+    }
+    const groups = Object.values(enabled.reduce((acc, m) => ((acc[m.id] ??= []).push(m), acc), {}));
+    const dupes = groups.filter((g) => g.length > 1);
+    for (const group of dupes) {
+        for (const mod of [...group].sort(newer).slice(1)) disable(mod, `（重複的舊版本 ${mod.version || mod.file}）`);
+    }
+    if (dupes.length && !findings.some((f) => f.title === '有重複的模組')) {
+        findings.push({ title: '有重複的模組', detail: `${dupes.map((g) => g[0].name).join('、')} 同時裝了不只一個版本，Fabric 會拒絕載入。一鍵修復會保留最新版、停用舊的。` });
+    }
+    if (report && !fixes.some((f) => ['disable', 'update', 'install'].includes(f.kind))) {
+        const suspect = enabled.filter((m) => m.blame > 0 && !m.managed).sort((a, b) => b.blame - a.blame)[0];
+        if (suspect) {
+            findings.push({ title: `當機報告指向「${suspect.name}」`, detail: `當機時的程式呼叫堆疊裡出現這個模組的程式碼，它很可能就是元兇。可以先停用它再試一次，確認沒問題後再到「模組」頁找更新版本。` });
+            disable(suspect, '（當機報告指向它）');
+        }
+    }
+    if (/ZipException|zip END header not found|invalid LOC header|error in opening zip file|Could not find or load main class|Failed to read accessWidener|Unable to read file|corrupt/i.test(text)) {
+        add({ kind: 'repair', target: '', label: '驗證並重新下載損壞的遊戲檔案' });
+    }
+    const gpu = GPU_DLL.exec(native);
+    if (gpu) findings.push({ title: '顯示卡驅動程式崩潰', detail: `Java 在顯示卡驅動（${gpu[0]}）裡當機了。請到顯示卡官網更新驅動程式；若使用光影，可先換成較輕量的光影或關閉。` });
+    else if (native && !findings.length) findings.push({ title: 'Java 虛擬機崩潰', detail: 'Java 本身意外結束，常見原因是驅動程式、防毒軟體或記憶體設定。請先更新顯示卡驅動、調低記憶體上限再試。' });
+    if ((gpu || /GLFW error 65542|WGL: The driver does not appear|Pixel format not accelerated|OpenGL [0-9.]+ is not supported/.test(text)) && !preferDgpu) {
+        add({ kind: 'dgpu', target: '', label: '改用獨立顯示卡執行遊戲' });
+    }
+    return { findings, exception, fixes };
+}

@@ -782,6 +782,8 @@ dialog .dlg-foot {
 
 .crash-item { padding: 8px 10px; margin-bottom: 8px; background: var(--content-bg-sunken); border-left: 4px solid var(--danger); }
 .crash-item p { margin: 2px 0 0; font-size: 13px; white-space: pre-wrap; }
+.crash-fixes { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 8px 10px; background: var(--content-bg-sunken); border-left: 4px solid var(--accent); }
+.crash-fixes label { display: flex; gap: 8px; align-items: center; font-size: 13px; }
 .crash-exception { margin: 6px 0 0; padding: 8px 10px; font-family: 'Consolas', 'Cascadia Mono', monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; background: var(--content-bg-sunken); }
 
 .toasts {
@@ -876,6 +878,25 @@ dialog .toolbar button.mc .ico { width: 16px; height: 16px; }
 .share-shot img { width: 100%; max-height: 46vh; object-fit: contain; background: var(--content-bg-sunken); border: 2px solid; border-color: var(--bevel-down); }
 .share-shot input { width: 100%; box-sizing: border-box; }
 .shots .empty-state, .shots + .empty-state { grid-column: 1 / -1; }
+.album-grid { max-height: none; overflow: visible; }
+.album-grid .shot { padding: 0; text-align: left; font: inherit; }
+.album-bar { margin-top: 18px; }
+.album-bar h2 { margin: 0; }
+.shot-view { display: block; max-width: 100%; max-height: 70vh; margin: 0 auto; }
+.recap { position: relative; padding: 18px 20px; overflow: hidden; background: var(--content-bg-sunken); }
+.recap::before { content: ''; position: absolute; inset: 0; background: var(--cover) center / cover no-repeat; opacity: 0.18; pointer-events: none; }
+.recap > * { position: relative; }
+.recap-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.recap-title { font-size: 22px; font-weight: bold; }
+.recap-stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 14px; }
+.recap-stat b { display: block; font-size: 22px; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recap-stat span { font-size: 12px; color: var(--text-subtle); }
+.hint.warn { color: var(--warning); }
+.perf-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
+.perf-stat { padding: 8px 10px; background: var(--content-bg-sunken); text-align: center; }
+.perf-stat b { display: block; font-size: 22px; color: var(--accent); }
+.perf-stat span { font-size: 12px; color: var(--text-subtle); }
+.crash-fixes small { display: block; color: var(--text-subtle); font-size: 12px; }
 .inst-more { display: flex; }
 .inst-more > button.mc.icon-btn { height: auto; align-self: stretch; }
 

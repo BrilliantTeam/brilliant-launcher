@@ -7,7 +7,8 @@ import { addOffline, loginMicrosoft } from './accounts.js';
 import { createGeneralInstance, quickCreate, upgradeFlow, versionData } from './instances.js';
 import { notifyOnce, ready, upgradeTarget } from '../services.js';
 import { clearRecentLog, recentLog } from './logview.js';
-import { diagnose } from '../crash.js';
+import { plan } from '../crash.js';
+import { perfAfterExit } from '../perf.js';
 
 export const SHARDS = [
     { host: 's1.brilliantw.net', label: '炒飯服' },
@@ -347,35 +348,79 @@ export async function repairInstance(instance) {
     }
 }
 
-function showCrash(code) {
+async function runFix(instance, fix) {
+    const id = instance.id;
+    if (fix.kind === 'disable') return api.set_mod_enabled({ id, file: fix.target, enabled: false });
+    if (fix.kind === 'install') return api.content_install({ id, kind: 'mod', project: fix.target });
+    if (fix.kind === 'memory') return api.apply_perf({ id, options: {}, memoryMb: fix.target });
+    if (fix.kind === 'java') return api.update_instance({ updated: { ...instance, javaMajor: fix.target } });
+    if (fix.kind === 'dgpu') return saveSettings({ preferDgpu: true });
+    if (fix.kind === 'repair') return repairInstance(instance);
+    if (fix.kind === 'update') {
+        const entry = (await api.content_list({ id, kind: 'mod', mc: instance.mcVersion })).find((e) => e.file === fix.target);
+        if (entry?.update) return api.content_update({ id, kind: 'mod', file: entry.file, update: entry.update });
+        return api.set_mod_enabled({ id, file: fix.target, enabled: false });
+    }
+}
+
+async function showCrash(id, code, seconds) {
+    const instance = store.instances.find((i) => i.id === id) ?? selectedInstance();
     const lines = recentLog();
-    const { findings, exception } = diagnose(lines);
+    const [ctx, info] = await Promise.all([
+        api.crash_context({ id: instance.id, since: Math.floor(Date.now() / 1000) - seconds - 5, lines: lines.slice(-400) }).catch(() => ({ report: '', native: '', mods: [] })),
+        api.system_info().catch(() => ({}))
+    ]);
+    const { findings, exception, fixes } = plan({
+        lines, ...ctx,
+        memoryMb: instance.memoryMb || store.settings?.memoryMb || 0,
+        totalMb: info.memoryMb, recommendedMb: info.recommendedMb,
+        preferDgpu: store.settings?.preferDgpu
+    });
+    const boxes = fixes.map((fix) => ({ fix, input: h('input', { type: 'checkbox', checked: true }) }));
     const content = h('div', { class: 'crash' },
         findings.length
             ? h('div', {}, ...findings.map((f) => h('div', { class: 'crash-item' }, h('b', {}, f.title), h('p', {}, f.detail))))
-            : h('p', {}, '沒有找到常見的原因。請按「複製日誌」，貼到輝煌 Discord 的問題回報頻道，管理員會協助查看。'),
-        exception ? h('pre', { class: 'crash-exception' }, exception) : '');
-    dialog({
-        title: `遊戲異常結束（代碼 ${code}）`,
+            : h('p', {}, '沒有找到常見的原因。請按「回報給管理員」或「複製日誌」，貼到輝煌 Discord 的問題回報頻道，管理員會協助查看。'),
+        exception ? h('pre', { class: 'crash-exception' }, exception) : '',
+        boxes.length ? h('div', { class: 'crash-fixes' },
+            h('b', {}, '一鍵修復會做這些事：'),
+            ...boxes.map(({ fix, input }) => h('label', {}, input, fix.label))) : '');
+    const value = await dialog({
+        title: `「${instance.name}」異常結束（代碼 ${code}）`,
         content,
         buttons: [
+            ...(boxes.length ? [{ label: '一鍵修復', value: 'fix' }] : [{ label: '修復遊戲檔案', value: 'repair' }]),
             { label: '回報給管理員', value: 'report' },
-            { label: '修復遊戲檔案', value: 'repair' },
             { label: '複製日誌', value: 'copy' },
             { label: '查看日誌', value: 'log' },
             { label: '關閉', value: null }
         ]
-    }).then(async (value) => {
-        if (value === 'copy') {
-            await navigator.clipboard.writeText(lines.join('\n')).then(() => toast('已複製日誌'), fail);
-        } else if (value === 'log') {
-            location.hash = '#log';
-        } else if (value === 'repair') {
-            repairInstance(selectedInstance());
-        } else if (value === 'report') {
-            sendReport('crash', selectedInstance(), { code, findings: findings.map((f) => f.title), exception });
-        }
     });
+    if (value === 'copy') {
+        await navigator.clipboard.writeText([ctx.report, ...lines].filter(Boolean).join('\n')).then(() => toast('已複製日誌'), fail);
+    } else if (value === 'log') {
+        location.hash = '#log';
+    } else if (value === 'repair') {
+        repairInstance(instance);
+    } else if (value === 'report') {
+        sendReport('crash', instance, { code, findings: findings.map((f) => f.title), exception });
+    } else if (value === 'fix') {
+        const chosen = boxes.filter((b) => b.input.checked).map((b) => b.fix);
+        let done = 0;
+        for (const fix of chosen) {
+            await runFix(instance, fix).then(() => { done += 1; }, fail);
+        }
+        await loadInstances().catch(() => {});
+        if (!done) return;
+        if (await confirm(`已完成 ${done} 項修復。要現在重新開始遊戲嗎？`, '開始遊戲')) {
+            if (selectedInstance()?.id !== instance.id) {
+                await api.select_instance({ id: instance.id });
+                store.settings.selectedInstance = instance.id;
+                emit('settings');
+            }
+            play();
+        }
+    }
 }
 
 function shardTile(shard, status) {
@@ -555,11 +600,13 @@ export function initHome() {
         if (error) toast(`捷徑啟動「${name}」失敗：${error}`, 'error');
         else toast(`已從捷徑啟動「${name}」`);
     });
-    listen('launcher://exit', async ({ code, seconds }) => {
+    listen('launcher://exit', async ({ instance, code, seconds }) => {
         await api.show_window().catch(() => {});
         await loadInstances().catch(() => {});
-        if (code === 0) toast(`遊戲已結束（遊玩 ${Math.round(seconds / 60)} 分鐘）`);
-        else showCrash(code);
+        if (code === 0) {
+            toast(`遊戲已結束（遊玩 ${Math.round(seconds / 60)} 分鐘）`);
+            perfAfterExit(instance, seconds);
+        } else showCrash(instance, code, seconds);
     });
 
     renderPlayBar();

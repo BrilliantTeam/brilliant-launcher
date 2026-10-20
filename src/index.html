@@ -39,6 +39,7 @@
 <nav class="rail">
         <a href="#home" data-view="home" title="首頁"><i data-icon="home"></i><span>首頁</span></a>
         <a href="#profile" data-view="profile" title="我的輝煌"><i data-icon="trophy"></i><span>我的</span></a>
+        <a href="#album" data-view="album" title="相簿與回顧"><i data-icon="image"></i><span>相簿</span></a>
         <a href="#instances" data-view="instances" title="實例"><i data-icon="gamepad"></i><span>實例</span></a>
         <a href="#mods" data-view="mods" title="模組與資源"><i data-icon="zap"></i><span>模組</span></a>
         <a href="#explore" data-view="explore" title="探索"><i data-icon="map"></i><span>探索</span></a>
@@ -120,6 +121,20 @@
                     <button type="button" class="mc" id="btn-profile-refresh"><i data-icon="reload"></i>重新整理</button>
                 </div>
                 <div id="profile-body"></div>
+            </section>
+
+            <section class="view" id="view-album">
+                <div class="settings-head">
+                    <h1>相簿與回顧</h1>
+                    <button type="button" class="mc" id="btn-album-refresh"><i data-icon="reload"></i>重新整理</button>
+                </div>
+                <div id="album-recap"></div>
+                <div class="toolbar album-bar">
+                    <h2>所有截圖</h2>
+                    <span class="spacer"></span>
+                    <select id="album-filter" aria-label="篩選實例"></select>
+                </div>
+                <div class="shots album-grid" id="album-grid"></div>
             </section>
 
             <section class="view" id="view-instances">

@@ -8,12 +8,14 @@ import { initMods } from './views/mods.js';
 import { initAccounts } from './views/accounts.js';
 import { initSettings } from './views/settings.js';
 import { initProfile } from './views/profile.js';
+import { initAlbum } from './views/album.js';
 import { initExplore } from './views/explore.js';
 import { notifyOnce, startServices } from './services.js';
 import { initLog } from './views/logview.js';
 
 const TITLES = {
     profile: '我的輝煌',
+    album: '相簿與回顧',
     home: '首頁',
     instances: '實例管理',
     mods: '模組與資源',
@@ -259,6 +261,7 @@ async function boot() {
     initAccounts();
     initSettings();
     initProfile();
+    initAlbum();
     initExplore();
     initLog();
 
