@@ -21,8 +21,9 @@ static CLIENT: std::sync::RwLock<Option<reqwest::Client>> = std::sync::RwLock::n
 fn build_client(proxy: &str) -> crate::err::R<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
         .user_agent(format!("BrilliantLauncher/{} ({})", env!("CARGO_PKG_VERSION"), std::env::consts::OS))
-        .connect_timeout(std::time::Duration::from_secs(15))
-        .timeout(std::time::Duration::from_secs(300));
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .read_timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(600));
     let proxy = proxy.trim();
     if !proxy.is_empty() {
         if !valid_proxy(proxy) {
@@ -46,6 +47,27 @@ pub fn set_proxy(proxy: &str) -> crate::err::R<()> {
     let client = build_client(proxy)?;
     *CLIENT.write().unwrap_or_else(|e| e.into_inner()) = Some(client);
     Ok(())
+}
+
+pub fn is_offline(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause.downcast_ref::<reqwest::Error>().is_some_and(|e| e.is_connect() || e.is_timeout())
+            || cause.downcast_ref::<std::io::Error>().is_some_and(|e| {
+                matches!(e.kind(), std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::TimedOut | std::io::ErrorKind::NotConnected | std::io::ErrorKind::HostUnreachable | std::io::ErrorKind::NetworkUnreachable | std::io::ErrorKind::NetworkDown)
+            })
+    })
+}
+
+pub async fn reachable() -> bool {
+    let attempts = ["www.brilliantw.net:443", "piston-meta.mojang.com:443", "1.1.1.1:443"].map(|host| {
+        Box::pin(async move {
+            match tokio::time::timeout(std::time::Duration::from_secs(4), tokio::net::TcpStream::connect(host)).await {
+                Ok(Ok(_)) => Ok(()),
+                _ => Err(()),
+            }
+        })
+    });
+    futures::future::select_ok(attempts).await.is_ok()
 }
 
 pub fn client() -> reqwest::Client {
@@ -304,3 +326,16 @@ mod deep_verify_tests {
         let _ = std::fs::remove_file(path);
     }
 }
+
+#[cfg(test)]
+mod offline_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn detects_connection_failures() {
+        let err = client().get("http://127.0.0.1:1/").send().await.unwrap_err();
+        assert!(is_offline(&anyhow::Error::from(err).context("下載失敗")));
+        assert!(!is_offline(&anyhow!("HTTP 404")));
+    }
+}
+

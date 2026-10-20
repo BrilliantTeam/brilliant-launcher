@@ -6,6 +6,10 @@ import { avatarUrl, emit, loadAccounts, on, refreshAvatar, selectedAccount, stor
 const profiles = new Map();
 
 export async function loginMicrosoft(mode) {
+    if (store.online === false) {
+        toast('目前沒有網路連線，連上網路後才能登入微軟帳號', 'warn');
+        return;
+    }
     const browser = mode !== false;
     let account;
     let waiting = browser;

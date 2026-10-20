@@ -1,6 +1,6 @@
 import { api, listen, openUrl } from '../api.js';
 import { $, clear, confirm, dialog, fail, fmtBytes, h, toast } from '../ui.js';
-import { avatarUrl, emit, isRunning, loadInstances, on, selectedAccount, selectedInstance, store, saveSettings } from '../store.js';
+import { avatarUrl, emit, isRunning, loadAccounts, loadInstances, on, selectedAccount, selectedInstance, store, saveSettings } from '../store.js';
 import { initNews } from './news.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
 import { addOffline, loginMicrosoft } from './accounts.js';
@@ -619,6 +619,12 @@ export function initHome() {
     refreshShards().catch(() => {});
     setInterval(() => { if (!document.hidden) refreshShards().catch(() => {}); }, PING_INTERVAL_MS);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshShards().catch(() => {}); });
+    on('network', () => {
+        if (store.online === false) return;
+        refreshShards().catch(() => {});
+        refreshEvents();
+        loadAccounts().catch(() => {});
+    });
     initNews();
     api.site_json({ path: '/api/launcher/restarts' }).then((data) => { restarts = data?.schedule || {}; renderShards(); }, () => {});
     refreshEvents();

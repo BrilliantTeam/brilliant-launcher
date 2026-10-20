@@ -224,6 +224,10 @@ pub async fn inject(app: &AppHandle, instance: &Instance) -> R<Vec<String>> {
     let keep = crate::config::load_settings().await.mod_update == "keep";
     let jar = match brilliant_mod(mc, keep).await {
         Ok(jar) => jar,
+        Err(e) if net::is_offline(&e.0) => {
+            notes.push("目前連不上官網，沿用已安裝的 Brilliant-Server-Mod，網路恢復後會自動更新。".into());
+            return Ok(notes);
+        }
         Err(e) => {
             prune(&mods_dir, &[MOD_PREFIX, LEGACY_PREFIX], "").await?;
             notes.push(format!("Brilliant-Server-Mod 目前不支援 Minecraft {mc}，或暫時連不上官網（{:#}），本次啟動不安裝。", e.0));

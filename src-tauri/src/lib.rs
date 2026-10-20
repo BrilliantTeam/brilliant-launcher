@@ -24,8 +24,25 @@ pub mod trust;
 
 use tauri::{Listener, Manager};
 
+fn install_panic_log() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let place = info.location().map(|l| format!("{}:{}", l.file(), l.line())).unwrap_or_default();
+        let message = info.payload().downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| info.payload().downcast_ref::<String>().cloned()).unwrap_or_default();
+        let thread = std::thread::current().name().unwrap_or("unnamed").to_string();
+        let line = format!("[{}] v{} {} thread={thread} at {place}: {message}\n", config::now_secs(), env!("CARGO_PKG_VERSION"), std::env::consts::OS);
+        let _ = std::fs::create_dir_all(paths::logs());
+        if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(paths::logs().join("panic.log")) {
+            use std::io::Write;
+            let _ = f.write_all(line.as_bytes());
+        }
+        default(info);
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    install_panic_log();
     #[cfg(target_os = "linux")]
     if std::path::Path::new("/proc/driver/nvidia").exists() && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
@@ -117,6 +134,7 @@ pub fn run() {
             commands::download_update,
             commands::apply_update,
             commands::update_platform,
+            commands::net_status,
             commands::check_update,
             commands::open_path,
             commands::open_instance_folder,

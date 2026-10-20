@@ -732,7 +732,18 @@ pub async fn launch_game(app: AppHandle, id: String, join: Option<String>) -> R<
             bail!("伺服器位址不正確");
         }
     }
-    launch::launch(&app, &id, join).await
+    launch::launch(&app, &id, join).await.map_err(|e| {
+        if crate::net::is_offline(&e.0) {
+            anyhow::anyhow!("目前沒有網路連線，而這個實例還有遊戲檔案沒下載完成，所以無法開始遊戲。\n請連上網路後再試一次；已經完整下載過的實例，離線時也能直接開始單人遊戲。\n（詳細原因：{:#}）", e.0).into()
+        } else {
+            e
+        }
+    })
+}
+
+#[tauri::command]
+pub async fn net_status() -> bool {
+    crate::net::reachable().await
 }
 
 #[tauri::command]

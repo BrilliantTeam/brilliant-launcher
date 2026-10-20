@@ -281,6 +281,7 @@ async function boot() {
     checkUpdate();
     setInterval(() => checkUpdate(), 30 * 60 * 1000);
     on('check-update', () => checkUpdate(true).catch(fail));
+    on('network', () => { if (store.online !== false) checkUpdate(); });
     $('#about-update-link').addEventListener('click', (e) => {
         e.preventDefault();
         location.hash = '#settings';

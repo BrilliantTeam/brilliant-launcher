@@ -1,5 +1,5 @@
 import { api, fileSrc } from './api.js';
-import { toast } from './ui.js';
+import { dialog, h, toast } from './ui.js';
 import { refreshSessions } from './views/accounts.js';
 import { emit, on, saveSettings, selectedInstance, store } from './store.js';
 
@@ -116,7 +116,56 @@ function applyMusic() {
     });
 }
 
+function setOnline(value) {
+    if (store.online === value) return;
+    const first = store.online === undefined;
+    store.online = value;
+    document.getElementById('net-chip').hidden = value;
+    emit('network');
+    if (first && value) return;
+    toast(value ? '網路已恢復連線，正在更新伺服器與公告資訊' : '目前沒有網路連線：已下載過的實例仍可開始單人遊戲，登入、下載與更新會在恢復後自動繼續', value ? '' : 'warn');
+}
+
+let probing = null;
+
+function probeNetwork() {
+    probing ??= api.net_status()
+        .catch(() => navigator.onLine)
+        .then((up) => setOnline(up !== false))
+        .finally(() => { probing = null; });
+    return probing;
+}
+
 export function startServices() {
+    addEventListener('offline', () => setOnline(false));
+    addEventListener('online', () => probeNetwork());
+    addEventListener('brilliant:net-error', () => probeNetwork());
+    document.getElementById('net-chip').addEventListener('click', async () => {
+        const list = (items) => h('ul', {}, ...items.map((t) => h('li', {}, t)));
+        const go = await dialog({
+            title: '離線模式',
+            content: h('div', {},
+                h('p', {}, '啟動器目前連不上網路。'),
+                h('b', {}, '還能做的事'),
+                list(['開始已經完整下載過的實例，玩單人遊戲', '管理實例、存檔、截圖與相簿', '調整設定、啟用或停用已安裝的模組']),
+                h('b', {}, '暫停中，網路恢復後自動繼續'),
+                list(['微軟帳號登入與權杖續期（連線伺服器需要）', '下載遊戲檔案、模組與更新', '分流人數、公告、活動與我的輝煌']),
+                h('p', { class: 'hint' }, '請確認網路線、Wi-Fi 或代理伺服器設定。啟動器每 15 秒會自動檢查一次，恢復後這個標籤就會消失。')),
+            buttons: [{ label: '關閉', value: null }, { label: '重新檢查連線', value: 'retry' }]
+        });
+        if (go !== 'retry') return;
+        await probeNetwork();
+        if (store.online === false) toast('還是連不上網路，請檢查網路設定後再試', 'warn');
+    });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) probeNetwork(); });
+    probeNetwork();
+    setInterval(() => { if (!document.hidden || store.online === false) probeNetwork(); }, 15_000);
+    on('network', () => {
+        if (store.online === false) return;
+        schedulePrefetch(3000);
+        checkNews().catch(() => {});
+        checkUpgrade().catch(() => {});
+    });
     refreshSessions();
     setInterval(refreshSessions, 30 * 60 * 1000);
     applyMusic();

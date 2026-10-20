@@ -301,6 +301,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     }
     let mut instance = crate::instance::get(instance_id).await?;
     let account = crate::commands::active_account(&settings).await?;
+    let stale_login = account.kind == "msa" && account.expires_at <= now_secs();
 
     if settings.backup_on_launch {
         net::emit_stage(app, "backup", "備份存檔");
@@ -311,6 +312,9 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     }
 
     let mut early_notes = Vec::new();
+    if stale_login {
+        early_notes.push("目前沒有網路，用上次的登入狀態開始遊戲：單人遊戲可以正常玩，連線伺服器要等網路恢復。".to_string());
+    }
     if settings.auto_update_mods && !instance.freeze_mods && instance.loader == "fabric" {
         net::emit_stage(app, "mods", "檢查模組更新");
         let mods_kind = crate::modrinth::Kind::Mod;

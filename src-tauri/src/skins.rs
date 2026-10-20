@@ -82,6 +82,7 @@ pub async fn fresh(account: Account, ahead: i64) -> R<Account> {
             store_account(&refreshed).await?;
             Ok(refreshed)
         }
+        Err(e) if crate::net::is_offline(&e.0) => Ok(account),
         Err(e) => {
             let mut marked = account.clone();
             marked.session_error = format!("{:#}", e.0);
