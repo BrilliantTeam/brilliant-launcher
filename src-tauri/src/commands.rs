@@ -411,19 +411,23 @@ mod update_tests {
             assert!(!update_file_ok("BrilliantLauncher_1.0.27_universal.app.tar.gz"));
             assert!(!update_file_ok("BrilliantLauncher_../x64-setup.exe"));
         }
+        assert!(stale_update("BrilliantLauncher_1.0.27_universal.app.tar.gz", "1.0.28"));
+        assert!(stale_update("BrilliantLauncher_1.0.28_x64-setup.exe", "1.0.28"));
+        assert!(!stale_update("BrilliantLauncher_1.0.29_amd64.AppImage", "1.0.28"));
+        assert!(!stale_update("BrilliantLauncher_1.1.0_x64-setup.exe", "1.0.28"));
+        assert!(stale_update("old-1790000000.app", "1.0.28"));
     }
 }
 
 #[cfg(unix)]
-fn relaunch_after_exit(target: &std::path::Path, cleanup: &[std::path::PathBuf]) -> R<()> {
+fn relaunch_after_exit(target: &std::path::Path) -> R<()> {
     let opener = if cfg!(target_os = "macos") { "open \"$1\"" } else { "nohup \"$1\" >/dev/null 2>&1 &" };
-    let script = format!("while kill -0 {} 2>/dev/null; do sleep 0.2; done; {opener}; shift; rm -rf \"$@\"", std::process::id());
+    let script = format!("while kill -0 {} 2>/dev/null; do sleep 0.2; done; {opener}", std::process::id());
     std::process::Command::new("sh")
         .arg("-c")
         .arg(script)
         .arg("sh")
         .arg(target)
-        .args(cleanup)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -458,15 +462,23 @@ fn install_update(archive: &std::path::Path) -> R<()> {
         let _ = std::fs::remove_dir_all(&staging);
         bail!("更新檔內容不完整，請到官網下載新版");
     };
-    let old = parent.join(".brilliant-old.app");
-    let _ = std::fs::remove_dir_all(&old);
-    std::fs::rename(&bundle, &old).context("沒有權限更新「應用程式」裡的輝煌啟動器，請到官網下載新版")?;
+    std::fs::create_dir_all(update_dir())?;
+    let old = update_dir().join(format!("old-{}.app", crate::config::now_secs()));
+    let old = if std::fs::rename(&bundle, &old).is_ok() {
+        old
+    } else {
+        let sibling = parent.join(".brilliant-old.app");
+        let _ = std::fs::remove_dir_all(&sibling);
+        std::fs::rename(&bundle, &sibling).context("沒有權限更新「應用程式」裡的輝煌啟動器，請到官網下載新版")?;
+        sibling
+    };
     if let Err(e) = std::fs::rename(&fresh, &bundle) {
         let _ = std::fs::rename(&old, &bundle);
         let _ = std::fs::remove_dir_all(&staging);
         bail!("替換啟動器失敗：{e}");
     }
-    relaunch_after_exit(&bundle, &[old, staging])
+    let _ = std::fs::remove_dir_all(&staging);
+    relaunch_after_exit(&bundle)
 }
 
 #[cfg(target_os = "linux")]
@@ -480,7 +492,39 @@ fn install_update(file: &std::path::Path) -> R<()> {
         let _ = std::fs::remove_file(&staging);
         bail!("替換 AppImage 失敗：{e}");
     }
-    relaunch_after_exit(&target, &[])
+    relaunch_after_exit(&target)
+}
+
+fn version_of(text: &str) -> Option<(u32, u32, u32)> {
+    let mut parts = text.split('.').map(|p| p.parse::<u32>().ok());
+    Some((parts.next()??, parts.next()??, parts.next()??))
+}
+
+pub fn stale_update(name: &str, current: &str) -> bool {
+    let version = name.strip_prefix("BrilliantLauncher_").and_then(|rest| rest.split('_').next()).and_then(version_of);
+    match (version, version_of(current)) {
+        (Some(file), Some(running)) => file <= running,
+        _ => true,
+    }
+}
+
+pub fn cleanup_updates() {
+    let current = env!("CARGO_PKG_VERSION");
+    for entry in std::fs::read_dir(update_dir()).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
+        if stale_update(&entry.file_name().to_string_lossy(), current) {
+            let path = entry.path();
+            let _ = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+        }
+    }
+    #[cfg(target_os = "macos")]
+    if let Some(parent) = std::env::current_exe().ok().and_then(|exe| exe.ancestors().nth(4).map(std::path::Path::to_path_buf)) {
+        let _ = std::fs::remove_dir_all(parent.join(".brilliant-old.app"));
+        let _ = std::fs::remove_dir_all(parent.join(".brilliant-update"));
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(image) = std::env::var_os("APPIMAGE") {
+        let _ = std::fs::remove_file(std::path::PathBuf::from(image).with_extension("update"));
+    }
 }
 
 #[cfg(target_os = "windows")]
