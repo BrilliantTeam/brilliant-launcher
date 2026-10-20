@@ -859,7 +859,9 @@ details.advanced textarea { min-height: 60px; }
     animation: rise-in 0.16s ease;
 }
 .inst-menu[hidden] { display: none; }
-.inst-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; font: inherit; font-size: 13px; text-align: left; color: var(--text); background: none; border: 0; cursor: pointer; }
+.inst-menu.down { top: calc(100% + 6px); bottom: auto; }
+.inst-menu { overflow-y: auto; overscroll-behavior: contain; }
+.inst-menu button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 5px 10px; font: inherit; font-size: 13px; text-align: left; color: var(--text); background: none; border: 0; cursor: pointer; }
 .inst-menu button:hover { color: var(--accent-ink); background: var(--accent); }
 .inst-menu button.danger:hover { color: #fff; background: var(--danger); }
 .inst-menu .ico { width: 16px; height: 16px; }

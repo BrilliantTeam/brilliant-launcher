@@ -796,9 +796,21 @@ function moreMenu(instance) {
             const open = menu.hidden;
             closeMenus();
             menu.hidden = !open;
+            if (open) placeMenu(menu, toggle);
         }
     }, icon('more-horizontal'));
     return h('div', { class: 'inst-more' }, toggle, menu);
+}
+
+function placeMenu(menu, anchor) {
+    const bounds = (anchor.closest('.page-wrap') ?? document.body).getBoundingClientRect();
+    const rect = anchor.getBoundingClientRect();
+    const above = rect.top - bounds.top - 12;
+    const below = bounds.bottom - rect.bottom - 12;
+    menu.style.maxHeight = '';
+    const down = menu.scrollHeight > above && below > above;
+    menu.classList.toggle('down', down);
+    menu.style.maxHeight = `${Math.max(160, down ? below : above)}px`;
 }
 
 function closeMenus() {
