@@ -258,6 +258,7 @@ export function initSettings() {
             emit('settings');
             await loadInstances().catch(() => {});
             toast(`匯入完成：${result.settings ? '已套用啟動器設定，' : ''}新增 ${result.added} 個實例${result.skipped ? `，略過 ${result.skipped} 個已存在的實例` : ''}`);
+            for (const note of result.notes ?? []) toast(note, 'warn');
         } catch (error) {
             fail(error);
         }

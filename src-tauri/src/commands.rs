@@ -458,12 +458,13 @@ pub struct ImportSummary {
     added: usize,
     skipped: usize,
     settings: bool,
+    notes: Vec<String>,
 }
 
 #[tauri::command]
 pub async fn import_config(path: String) -> R<ImportSummary> {
-    let (added, skipped, settings) = crate::advanced::import_config(&path).await?;
-    Ok(ImportSummary { added, skipped, settings })
+    let (added, skipped, settings, notes) = crate::advanced::import_config(&path).await?;
+    Ok(ImportSummary { added, skipped, settings, notes })
 }
 
 #[tauri::command]

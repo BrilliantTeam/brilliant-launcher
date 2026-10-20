@@ -46,6 +46,9 @@ pub fn run() {
             }
             advanced::handle_cli(app.handle(), &std::env::args().collect::<Vec<_>>());
             extras::setup_tray(app)?;
+            if let Err(e) = app.asset_protocol_scope().allow_directory(paths::root(), true) {
+                eprintln!("[setup] 開放資料夾給介面讀取失敗：{e}");
+            }
             for dir in [paths::instances(), paths::shared(), paths::logs()] {
                 if let Err(e) = std::fs::create_dir_all(&dir) {
                     eprintln!("[setup] 建立 {} 失敗：{e}", dir.display());

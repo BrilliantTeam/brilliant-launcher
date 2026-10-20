@@ -228,12 +228,14 @@ async fn install_mojang_runtime(app: &AppHandle, component: &str, mirror: bool) 
     let all: BTreeMap<String, BTreeMap<String, Vec<RuntimeEntry>>> =
         net::get_json(ALL_RUNTIMES, mirror).await?;
 
-    let platform = java_platform();
-    let entry = all
-        .get(platform)
-        .and_then(|c| c.get(component))
-        .and_then(|list| list.first())
-        .with_context(|| format!("Mojang 沒有提供 {platform} 的 {component}"))?;
+    let native = java_platform();
+    let pick = |p: &str| all.get(p).and_then(|c| c.get(component)).and_then(|list| list.first()).cloned().map(|e| (p.to_string(), e));
+    let (platform, entry) = pick(native)
+        .or_else(|| emulated_platform(native).and_then(pick))
+        .with_context(|| format!("Mojang 沒有提供 {native} 的 {component}"))?;
+    if platform != native {
+        net::emit_stage(app, "java", &format!("這台電腦的晶片沒有 {component}，改用相容模式的 Java"));
+    }
 
     let manifest: RuntimeManifest = net::get_json(&entry.manifest.url, mirror).await?;
     let dir = component_dir(component);
@@ -281,7 +283,18 @@ async fn install_mojang_runtime(app: &AppHandle, component: &str, mirror: bool) 
     if !exe.is_file() {
         bail!("{component} 安裝後找不到 {}", exe.display());
     }
+    if platform == "mac-os" && native == "mac-os-arm64" && probe(&exe).await.is_none() {
+        bail!("這個版本需要 Intel 版的 Java，請先安裝 Rosetta 2：打開「終端機」執行 softwareupdate --install-rosetta，完成後再開始遊戲");
+    }
     Ok(exe)
+}
+
+pub fn emulated_platform(native: &str) -> Option<&'static str> {
+    match native {
+        "mac-os-arm64" => Some("mac-os"),
+        "windows-arm64" => Some("windows-x64"),
+        _ => None,
+    }
 }
 
 pub async fn ensure(

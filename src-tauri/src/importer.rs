@@ -215,9 +215,10 @@ fn prism(r: &Roots) -> Vec<Source> {
 }
 
 fn curseforge(r: &Roots) -> Vec<Source> {
-    subdirs(&r.home.join("curseforge").join("minecraft").join("Instances"))
+    [r.home.join("curseforge"), r.home.join("Documents").join("curseforge")]
         .iter()
-        .filter_map(|d| inspect_instance(d))
+        .flat_map(|base| subdirs(&base.join("minecraft").join("Instances")))
+        .filter_map(|d| inspect_instance(&d))
         .collect()
 }
 

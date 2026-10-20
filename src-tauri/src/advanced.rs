@@ -335,6 +335,7 @@ pub async fn export_config() -> R<PathBuf> {
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("輝煌啟動器設定-{}.zip", crate::config::now_secs()));
     let mut zip = zip::ZipWriter::new(std::fs::File::create(&path)?);
+    add_text(&mut zip, &format!("{CONFIG_ROOT}/meta.json"), &serde_json::json!({ "os": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION") }).to_string())?;
     add_text(&mut zip, &format!("{CONFIG_ROOT}/config.json"), &serde_json::to_string_pretty(&settings)?)?;
     for instance in &instances {
         add_text(&mut zip, &format!("{CONFIG_ROOT}/instances/{}/instance.json", instance.id), &serde_json::to_string_pretty(instance)?)?;
@@ -347,10 +348,19 @@ fn valid_instance_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 80 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
-pub async fn import_config(path: &str) -> R<(usize, usize, bool)> {
+pub fn fit_memory(mb: u32, total_mb: u64) -> u32 {
+    if total_mb == 0 || u64::from(mb) * 10 <= total_mb * 7 {
+        mb
+    } else {
+        crate::boost::recommended_memory(total_mb)
+    }
+}
+
+pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
     let file = std::fs::File::open(path).with_context(|| format!("無法開啟 {path}"))?;
     let mut archive = zip::ZipArchive::new(file).context("這不是輝煌啟動器匯出的設定檔")?;
     let mut settings_json: Option<String> = None;
+    let mut source_os: Option<String> = None;
     let mut instances: Vec<(String, String)> = Vec::new();
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
@@ -364,6 +374,8 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool)> {
         }
         if name == format!("{CONFIG_ROOT}/config.json") {
             settings_json = Some(text);
+        } else if name == format!("{CONFIG_ROOT}/meta.json") {
+            source_os = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v| v.get("os")?.as_str().map(str::to_string));
         } else if let Some(rest) = name.strip_prefix(&format!("{CONFIG_ROOT}/instances/")) {
             if let Some((id, "instance.json")) = rest.split_once('/') {
                 if valid_instance_id(id) {
@@ -375,11 +387,34 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool)> {
     if settings_json.is_none() && instances.is_empty() {
         bail!("這不是輝煌啟動器匯出的設定檔");
     }
+    let same_os = source_os.as_deref() == Some(std::env::consts::OS);
+    let total_mb = crate::boost::system_info().memory_mb;
+    let mut notes = Vec::new();
     let mut applied_settings = false;
     if let Some(json) = settings_json {
         let mut imported: Settings = serde_json::from_str(&json).context("設定內容損毀")?;
         let current = crate::config::load_settings().await;
         imported.selected_account = current.selected_account;
+        imported.autostart = current.autostart;
+        imported.hardware_tuned = current.hardware_tuned;
+        let fitted = fit_memory(imported.memory_mb, total_mb);
+        if fitted != imported.memory_mb {
+            notes.push(format!("記憶體上限 {} MB 超過這台電腦能負荷的量，已改為 {fitted} MB", imported.memory_mb));
+            imported.memory_mb = fitted;
+        }
+        if !same_os {
+            let cleared: Vec<&str> = [("啟動包裝指令", &mut imported.wrapper), ("啟動前指令", &mut imported.pre_launch_cmd), ("結束後指令", &mut imported.post_exit_cmd)]
+                .into_iter()
+                .filter(|(_, v)| !v.trim().is_empty())
+                .map(|(label, v)| {
+                    v.clear();
+                    label
+                })
+                .collect();
+            if !cleared.is_empty() {
+                notes.push(format!("設定來自其他作業系統，已清除不適用的{}", cleared.join("、")));
+            }
+        }
         if !imported.background.is_empty() && !Path::new(&imported.background).is_file() {
             imported.background = String::new();
         }
@@ -406,6 +441,11 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool)> {
         };
         instance.id = id;
         instance.image = String::new();
+        instance.memory_mb = if instance.memory_mb > 0 { fit_memory(instance.memory_mb, total_mb) } else { 0 };
+        if !same_os && !instance.wrapper.trim().is_empty() {
+            instance.wrapper.clear();
+            notes.push(format!("「{}」的啟動包裝指令來自其他作業系統，已清除", instance.name));
+        }
         if !instance.java_path.is_empty() && !Path::new(&instance.java_path).is_file() {
             instance.java_path = String::new();
         }
@@ -413,7 +453,7 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool)> {
         crate::instance::save(&instance).await?;
         added += 1;
     }
-    Ok((added, skipped, applied_settings))
+    Ok((added, skipped, applied_settings, notes))
 }
 
 pub fn parse_cli(args: &[String]) -> Option<(String, Option<String>)> {
@@ -580,6 +620,16 @@ mod tests {
     fn components_map_known_majors() {
         assert_eq!(java_component(21), "java-runtime-delta");
         assert_eq!(java_component(25), "java-25");
+    }
+
+    #[test]
+    fn fits_memory_to_machine() {
+        assert_eq!(fit_memory(8192, 16384), 8192);
+        assert_eq!(fit_memory(12288, 16384), 4096);
+        assert_eq!(fit_memory(6144, 0), 6144);
+        assert_eq!(crate::mc::java::emulated_platform("mac-os-arm64"), Some("mac-os"));
+        assert_eq!(crate::mc::java::emulated_platform("windows-arm64"), Some("windows-x64"));
+        assert_eq!(crate::mc::java::emulated_platform("linux"), None);
     }
 
     #[test]
