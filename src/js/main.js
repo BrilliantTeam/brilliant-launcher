@@ -202,6 +202,7 @@ async function boot() {
     on('settings', applyTheme);
 
     await Promise.all([loadInstances().catch(fail), loadAccounts().catch(fail)]);
+    window.addEventListener('focus', () => loadAccounts().catch(() => {}));
 
     initHome();
     initInstances();
