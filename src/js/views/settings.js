@@ -23,6 +23,7 @@ const FIELDS = {
     slideSeconds: '#set-slide',
     uiScale: '#set-scale',
     reduceMotion: '#set-motion',
+    walkers: '#set-walkers',
     closeToTray: '#set-tray',
     autostart: '#set-autostart',
     downloadThreads: '#set-threads',

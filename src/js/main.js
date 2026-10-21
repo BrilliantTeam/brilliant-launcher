@@ -1,7 +1,7 @@
 import { api, appVersion, appWindow, listen, openUrl, setZoom } from './api.js';
 import { icon } from './icons.js';
 import { $, $$, dialog, fail, h, rangeFill, toast, guard } from './ui.js';
-import { emit, loadAccounts, loadInstances, loadSettings, on, saveSettings, store } from './store.js';
+import { emit, loadAccounts, loadInstances, loadSettings, on, saveSettings, selectedAccount, store } from './store.js';
 import { initHome } from './views/home.js';
 import { initInstances } from './views/instances.js';
 import { initMods } from './views/mods.js';
@@ -49,6 +49,40 @@ const THEMES = {
 };
 
 let appliedScale = 1;
+
+let walkersOn = false;
+let walkersLoading = false;
+
+async function applyWalkers() {
+    const want = Boolean(store.settings?.walkers);
+    const toggle = $('#walker-toggle');
+    const label = want ? '關閉虛擬夥伴' : '開啟虛擬夥伴';
+    toggle.setAttribute('aria-pressed', String(want));
+    toggle.title = label;
+    toggle.setAttribute('aria-label', label);
+    if (want === walkersOn || walkersLoading) return;
+    walkersOn = want;
+    if (window.toggleWalkers) return window.toggleWalkers();
+    if (!want) return;
+    walkersLoading = true;
+    try { localStorage.setItem('walkers', 'on'); } catch {}
+    window.walkerFetch = (url, options) => fetch(url, { ...options, cache: 'reload', credentials: 'omit' });
+    window.walkerMe = () => Promise.resolve({ ok: true, json: () => (selectedAccount()?.name ? { name: selectedAccount().name } : {}) });
+    const online = await api.site_json({ path: '/api/online' }).catch(() => ({}));
+    document.head.append(h('link', { rel: 'stylesheet', href: 'vendor/walkers.css' }));
+    $('.stage').append(
+        h('div', { class: 'walkers', id: 'walkers', 'data-players': JSON.stringify(online.players || []), 'data-guilds': JSON.stringify(online.guilds || {}), 'data-info': JSON.stringify(online.info || {}), 'data-frames': '37', 'aria-hidden': 'true' }),
+        h('div', { class: 'walker-layer', id: 'walker-layer', 'aria-hidden': 'true' }));
+    const load = (src, attrs = {}) => new Promise((done) => document.body.append(h('script', { src, onload: done, onerror: done, ...attrs })));
+    await load('vendor/gramophone.js', { 'data-base': 'https://www.brilliantw.net/gramophone/sound/' });
+    await load('vendor/walkers.js');
+    walkersLoading = false;
+    if (!store.settings?.walkers) return applyWalkers();
+    setInterval(() => {
+        if (!walkersOn || store.online === false) return;
+        api.site_json({ path: '/api/online' }).then((d) => window.syncWalkers?.(d.players || [], d.guilds || {}, d.info || {})).catch(() => {});
+    }, 60_000);
+}
 
 function applyTheme() {
     const root = document.documentElement;
@@ -135,6 +169,8 @@ function initChrome() {
         else applyTheme();
         await api.save_settings({ settings: store.settings }).catch(fail);
     });
+
+    $('#walker-toggle').addEventListener('click', () => saveSettings({ walkers: !store.settings?.walkers }).catch(fail));
 
     $('#font-toggle').addEventListener('click', async () => {
         store.settings.font = store.settings.font === 'system' ? 'pixel' : 'system';
@@ -273,6 +309,8 @@ async function boot() {
     applyTheme();
     initChrome();
     on('settings', applyTheme);
+    applyWalkers();
+    on('settings', applyWalkers);
 
     await Promise.all([loadInstances().catch(fail), loadAccounts().catch(fail)]);
     window.addEventListener('focus', () => loadAccounts().catch(() => {}));

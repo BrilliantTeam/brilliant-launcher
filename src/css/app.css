@@ -222,6 +222,7 @@ body:not([data-view="home"]) .bg-shade {
     cursor: pointer;
 }
 .tool { width: 32px; height: 28px; }
+.tool[aria-pressed="true"] { color: var(--accent); }
 .win { width: 46px; height: 100%; }
 .tool:hover, .win:hover { background: var(--chrome-hover-strong); }
 .win.close:hover { color: #fff; background: #e81123; }
@@ -1236,6 +1237,7 @@ button[data-pending] { opacity: 0.6; }
 .link-hint > .ico { width: 28px; height: 28px; flex: 0 0 auto; color: #5865f2; }
 .link-hint .grow { flex: 1 1 auto; display: grid; gap: 2px; }
 
+.stage > .walkers { position: absolute; left: 0; right: 0; bottom: 0; height: 0; margin: 0; padding: 0; border: 0; }
 .my-report { margin-bottom: 8px; padding: 8px 12px; background: var(--content-bg-sunken); }
 .my-report summary { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; cursor: pointer; }
 .my-report summary b { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
