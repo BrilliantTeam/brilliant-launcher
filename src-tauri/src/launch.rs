@@ -130,42 +130,47 @@ async fn prepare(
     } else if !client_jar.is_file() {
         bail!("{} 沒有提供 client.jar 下載位址", resolved.base_id);
     }
-    net::download_all(app, "libraries", jobs, mirror).await?;
-
-    let index = assets::ensure_index(&resolved, mirror).await?;
-    net::download_all(app, "assets", assets::jobs(&index), mirror).await?;
     let asset_index_id = resolved.asset_index.as_ref().map(|a| a.id.clone()).unwrap_or_default();
-    let legacy_dir =
-        assets::materialise_legacy(app, &index, &asset_index_id, &game_dir).await?;
-
     let natives_dir = paths::natives(&resolved.id);
-    tokio::fs::create_dir_all(&natives_dir).await?;
-    for (jar, exclude) in &plan.natives {
-        let stamp = natives_dir.join(format!(".{}.ok", jar.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
-        if stamp.is_file() && !net::DEEP_VERIFY.load(std::sync::atomic::Ordering::Relaxed) {
-            continue;
+    let files = async {
+        net::download_all(app, "libraries", jobs, mirror).await?;
+        let index = assets::ensure_index(&resolved, mirror).await?;
+        net::download_all(app, "assets", assets::jobs(&index), mirror).await?;
+        let legacy_dir = assets::materialise_legacy(app, &index, &asset_index_id, &game_dir).await?;
+        tokio::fs::create_dir_all(&natives_dir).await?;
+        for (jar, exclude) in &plan.natives {
+            let stamp = natives_dir.join(format!(".{}.ok", jar.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
+            if stamp.is_file() && !net::DEEP_VERIFY.load(std::sync::atomic::Ordering::Relaxed) {
+                continue;
+            }
+            libs::extract_natives(jar, &natives_dir, exclude)?;
+            let _ = std::fs::write(stamp, b"");
         }
-        libs::extract_natives(jar, &natives_dir, exclude)?;
-        let _ = std::fs::write(stamp, b"");
-    }
+        Ok::<_, crate::err::Error>(legacy_dir)
+    };
 
     let (java_component, java_major) = if instance.java_major > 0 && instance.java_major != resolved.java_version.major_version {
         (crate::advanced::java_component(instance.java_major), instance.java_major)
     } else {
         (resolved.java_version.component.clone(), resolved.java_version.major_version)
     };
-    let java_exe = java::ensure(app, &java_component, java_major, instance.java(settings), mirror).await?;
-
-    let mut notes = Vec::new();
-    if instance.wants_rich_presence(settings) {
-        net::emit_stage(app, "mods", "同步內建模組");
-        notes.extend(modinject::inject(app, instance).await?);
-    }
-    if crate::boost::wants_packs(instance, settings) {
-        if let Err(e) = crate::boost::sync_server_packs(app, instance).await {
-            eprintln!("[respack] 預先下載伺服器資源包失敗：{:#}", e.0);
+    let java = java::ensure(app, &java_component, java_major, instance.java(settings), mirror);
+    let mods = async {
+        if !instance.wants_rich_presence(settings) {
+            return Ok(Vec::new());
         }
-    }
+        net::emit_stage(app, "mods", "同步內建模組");
+        modinject::inject(app, instance).await
+    };
+    let packs = async {
+        if crate::boost::wants_packs(instance, settings) {
+            if let Err(e) = crate::boost::sync_server_packs(app, instance).await {
+                eprintln!("[respack] 預先下載伺服器資源包失敗：{:#}", e.0);
+            }
+        }
+        Ok::<_, crate::err::Error>(())
+    };
+    let (legacy_dir, java_exe, notes, ()) = tokio::try_join!(files, java, mods, packs)?;
     let Some(account) = account else {
         return Ok(None);
     };
@@ -299,6 +304,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     if let Some(host) = join {
         settings.quick_join = host;
     }
+    let started = std::time::Instant::now();
     let mut instance = crate::instance::get(instance_id).await?;
     let account = crate::commands::active_account(&settings).await?;
     let stale_login = account.kind == "msa" && account.expires_at <= now_secs();
@@ -366,6 +372,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     let log_file = paths::logs().join(format!("{instance_id}-{}.log", now_secs()));
     tokio::fs::create_dir_all(paths::logs()).await?;
     let wrapper = instance.wrapper_cmd(&settings);
+    append_log(&log_file, &format!("[輝煌啟動器] 啟動前準備耗時 {} 毫秒", started.elapsed().as_millis())).await;
     append_log(&log_file, &crate::advanced::redact(&format!("$ {} {} {}", wrapper.join(" "), java_exe.display(), args.join(" ")))).await;
 
     let mut cmd = match wrapper.split_first() {

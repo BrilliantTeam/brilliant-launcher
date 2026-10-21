@@ -48,6 +48,10 @@ fn received_packs(game_dir: &Path) -> Vec<String> {
 }
 
 pub async fn sync_server_packs(app: &AppHandle, instance: &Instance) -> R<()> {
+    let key = format!("packs:{}", instance.id);
+    if crate::modinject::synced_recently(&key) {
+        return Ok(());
+    }
     let index: PackIndex = net::get_json(PACK_INDEX, false).await?;
     let game_dir = paths::game_dir(&instance.id);
     let mut wanted = received_packs(&game_dir);
@@ -66,6 +70,7 @@ pub async fn sync_server_packs(app: &AppHandle, instance: &Instance) -> R<()> {
     if !jobs.is_empty() {
         net::download_all(app, "respack", jobs, false).await?;
     }
+    crate::modinject::mark_synced(key);
     Ok(())
 }
 

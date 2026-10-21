@@ -193,6 +193,17 @@ async fn fabric_api(mc: &str) -> R<MrFile> {
 static SYNCED: std::sync::Mutex<Vec<(String, std::time::Instant)>> = std::sync::Mutex::new(Vec::new());
 const SYNC_TTL: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 
+pub fn synced_recently(key: &str) -> bool {
+    SYNCED.lock().map(|s| s.iter().any(|(k, at)| k == key && at.elapsed() < SYNC_TTL)).unwrap_or(false)
+}
+
+pub fn mark_synced(key: String) {
+    if let Ok(mut synced) = SYNCED.lock() {
+        synced.retain(|(k, _)| *k != key);
+        synced.push((key, std::time::Instant::now()));
+    }
+}
+
 pub fn forget_sync() {
     if let Ok(mut synced) = SYNCED.lock() {
         synced.clear();
@@ -217,13 +228,13 @@ pub async fn inject(app: &AppHandle, instance: &Instance) -> R<Vec<String>> {
     let mc = instance.mc_version.as_str();
     let mut notes = Vec::new();
     let key = instance.id.clone();
-    let fresh = SYNCED.lock().map(|s| s.iter().any(|(k, at)| *k == key && at.elapsed() < SYNC_TTL)).unwrap_or(false);
-    if fresh && has_both(&mods_dir) {
+    if synced_recently(&key) && has_both(&mods_dir) {
         return Ok(notes);
     }
 
     let keep = crate::config::load_settings().await.mod_update == "keep";
-    let jar = match brilliant_mod(mc, keep).await {
+    let (jar, api) = tokio::join!(brilliant_mod(mc, keep), fabric_api(mc));
+    let jar = match jar {
         Ok(jar) => jar,
         Err(e) if net::is_offline(&e.0) => {
             notes.push("目前連不上官網，沿用已安裝的 Brilliant-Server-Mod，網路恢復後會自動更新。".into());
@@ -245,7 +256,7 @@ pub async fn inject(app: &AppHandle, instance: &Instance) -> R<Vec<String>> {
             .with_context(|| format!("複製 Brilliant-Server-Mod 失敗：{}", jar.display()))?;
     }
 
-    match fabric_api(mc).await {
+    match api {
         Ok(file) => {
             prune(&mods_dir, &[API_PREFIX], &file.filename).await?;
             let mut dl = DlFile::new(file.url, mods_dir.join(&file.filename)).sha1(Some(file.hashes.sha1));
@@ -262,10 +273,7 @@ pub async fn inject(app: &AppHandle, instance: &Instance) -> R<Vec<String>> {
         }
     }
     if notes.is_empty() {
-        if let Ok(mut synced) = SYNCED.lock() {
-            synced.retain(|(k, _)| *k != key);
-            synced.push((key, std::time::Instant::now()));
-        }
+        mark_synced(key);
     }
     Ok(notes)
 }

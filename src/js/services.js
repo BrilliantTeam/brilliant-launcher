@@ -4,7 +4,7 @@ import { refreshSessions } from './views/accounts.js';
 import { emit, on, saveSettings, selectedInstance, store } from './store.js';
 
 const PREFETCH_DELAY_MS = 12_000;
-const PREFETCH_EVERY_MS = 2 * 60 * 60 * 1000;
+const PREFETCH_EVERY_MS = 14 * 60 * 1000;
 const NEWS_EVERY_MS = 10 * 60 * 1000;
 const BOARDS = ['general', 'event', 'update'];
 
