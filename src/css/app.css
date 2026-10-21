@@ -528,6 +528,7 @@ body:has(.progress:not([hidden])) .dock { bottom: 64px; }
     transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
 .inst-card:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25); }
+.inst-card:has(.inst-menu:not([hidden])) { position: relative; z-index: 20; transform: none; }
 .inst-card.selected { outline: 3px solid var(--accent); outline-offset: -1px; }
 .inst-banner {
     position: relative;
