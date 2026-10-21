@@ -9,6 +9,7 @@ import { notifyOnce, ready, upgradeTarget } from '../services.js';
 import { clearRecentLog, recentLog } from './logview.js';
 import { plan } from '../crash.js';
 import { perfAfterExit } from '../perf.js';
+import { reportDialog } from '../report.js';
 
 export const SHARDS = [
     { host: 's1.brilliantw.net', label: '炒飯服' },
@@ -44,38 +45,6 @@ export function restartOf(label, now = taipeiNow(), schedule = restarts) {
     return { next, recent };
 }
 
-export function scrub(text, accounts = store.accounts || []) {
-    let out = String(text ?? '');
-    for (const account of accounts) {
-        for (const secret of [account.name, account.uuid, account.uuid?.replace(/-/g, '')].filter((v) => v && v.length > 2)) out = out.split(secret).join('<player>');
-    }
-    return out
-        .replace(/([A-Za-z]:[\\/]+Users[\\/]+)[^\\/\s"']+/gi, '$1<user>')
-        .replace(/\/home\/[^/\s"']+/g, '/home/<user>')
-        .replace(/eyJ[\w-]+\.[\w-]+\.[\w-]+/g, '<token>')
-        .replace(/(--accessToken\s+)\S+/g, '$1<token>');
-}
-
-async function sendReport(kind, instance, extra) {
-    const body = {
-        kind,
-        mc: instance?.mcVersion || '',
-        loader: instance ? `${instance.loader} ${instance.loaderVersion || ''}`.trim() : '',
-        general: !!instance?.general,
-        code: extra.code ?? null,
-        message: scrub(extra.message),
-        findings: (extra.findings || []).map((f) => scrub(f)),
-        exception: scrub(extra.exception),
-        log: recentLog(instance?.id).slice(-80).map((line) => scrub(line))
-    };
-    try {
-        await api.send_report({ body });
-        toast('已回報給管理員，謝謝你！');
-    } catch (error) {
-        fail(error);
-    }
-}
-
 async function showLaunchError(instance, error) {
     const message = String(error?.message ?? error);
     const value = await dialog({
@@ -83,7 +52,7 @@ async function showLaunchError(instance, error) {
         content: h('p', { style: 'white-space:pre-wrap' }, message),
         buttons: [{ label: '回報給管理員', value: 'report' }, { label: '關閉', value: null }]
     });
-    if (value === 'report') sendReport('launch', instance, { message });
+    if (value === 'report') reportDialog('launch', instance, { message });
 }
 
 const reminders = () => {
@@ -403,7 +372,7 @@ async function showCrash(id, code, seconds) {
     } else if (value === 'repair') {
         repairInstance(instance);
     } else if (value === 'report') {
-        sendReport('crash', instance, { code, findings: findings.map((f) => f.title), exception });
+        reportDialog('crash', instance, { code, findings: findings.map((f) => f.title), exception, since: Math.floor(Date.now() / 1000) - seconds - 5 });
     } else if (value === 'fix') {
         const chosen = boxes.filter((b) => b.input.checked).map((b) => b.fix);
         let done = 0;

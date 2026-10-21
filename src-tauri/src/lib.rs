@@ -172,6 +172,7 @@ pub fn run() {
             importer::import_into,
             importer::import_inspect,
             insight::crash_context,
+            insight::collect_report,
             insight::perf_report,
             insight::apply_perf,
             insight::play_history,

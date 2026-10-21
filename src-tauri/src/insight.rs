@@ -138,6 +138,114 @@ fn read_head(path: Option<PathBuf>, limit: u64) -> String {
     out
 }
 
+#[derive(Serialize)]
+pub struct ReportSection {
+    pub key: String,
+    pub title: String,
+    pub text: String,
+}
+
+fn tail(path: &Path, limit: u64) -> String {
+    use std::io::{Seek, SeekFrom};
+    let Ok(mut file) = std::fs::File::open(path) else { return String::new() };
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let cut = len > limit;
+    if cut && file.seek(SeekFrom::Start(len - limit)).is_err() {
+        return String::new();
+    }
+    let mut bytes = Vec::new();
+    let _ = file.take(limit).read_to_end(&mut bytes);
+    let text = String::from_utf8_lossy(&bytes).to_string();
+    if cut {
+        let rest = text.split_once('\n').map(|(_, r)| r).unwrap_or(&text);
+        format!("（檔案較大，只保留最後 {} KB）\n{rest}", limit / 1024)
+    } else {
+        text
+    }
+}
+
+pub fn scrub_report(text: &str) -> String {
+    let mut out: String = text.lines().map(crate::advanced::redact).collect::<Vec<_>>().join("\n");
+    if let Some(home) = dirs::home_dir() {
+        let plain = home.to_string_lossy().to_string();
+        for form in [plain.clone(), plain.replace('\\', "/"), plain.replace('\\', "\\\\")] {
+            if form.len() > 3 {
+                out = out.replace(&form, "~");
+            }
+        }
+    }
+    out
+}
+
+fn strip_secrets(value: &mut serde_json::Value) {
+    let Some(map) = value.as_object_mut() else { return };
+    for key in ["selectedAccount", "notified", "lastAnnouncement", "image"] {
+        map.remove(key);
+    }
+    if let Some(serde_json::Value::String(env)) = map.get_mut("envVars") {
+        *env = env.lines().filter_map(|l| l.split_once('=').map(|(k, _)| format!("{}=<已隱藏>", k.trim()))).collect::<Vec<_>>().join("\n");
+    }
+    if let Some(serde_json::Value::String(proxy)) = map.get_mut("proxy") {
+        if let Some((scheme, rest)) = proxy.split_once("://") {
+            *proxy = format!("{scheme}://{}", rest.rsplit_once('@').map(|(_, host)| host).unwrap_or(rest));
+        }
+    }
+}
+
+fn system_text(settings: &config::Settings, instance: Option<&crate::instance::Instance>) -> String {
+    let info = crate::boost::system_info();
+    let mut lines = vec![
+        format!("輝煌啟動器 v{}（{} 通道）", env!("CARGO_PKG_VERSION"), config::channel_of(settings)),
+        format!("作業系統：{} {}", std::env::consts::OS, std::env::consts::ARCH),
+        format!("記憶體：{} MB，CPU {} 核心", info.memory_mb, info.cpus),
+    ];
+    if let Some(i) = instance {
+        lines.push(format!("實例：Minecraft {} {} {}", i.mc_version, i.loader, i.loader_version));
+        lines.push(format!("記憶體上限：{} MB", i.memory(settings)));
+        lines.push(format!("Java：{}", if i.java(settings).is_empty() { "自動" } else { i.java(settings) }));
+        lines.push(format!("JVM 參數：{}", i.jvm(settings)));
+    }
+    lines.join("\n")
+}
+
+#[tauri::command]
+pub async fn collect_report(id: String, items: Vec<String>, since: i64) -> R<Vec<ReportSection>> {
+    let settings = config::load_settings().await;
+    let instance = crate::instance::get(&id).await.ok();
+    tokio::task::spawn_blocking(move || {
+        let game = paths::game_dir(&id);
+        let mut out = Vec::new();
+        for key in items {
+            let (title, text) = match key.as_str() {
+                "game_log" => ("完整遊戲日誌", tail(&game.join("logs").join("latest.log"), 1 << 20)),
+                "crash_report" => ("當機報告", read_head(newest_since(&game.join("crash-reports"), "crash-", ".txt", since), 256 << 10)),
+                "mods" => ("模組清單", mod_index(&id, "").iter().map(|m| format!("{}｜{} {}｜{}", m.file, m.id, m.version, if m.enabled { "啟用" } else { "停用" })).collect::<Vec<_>>().join("\n")),
+                "system" => ("系統資訊", system_text(&settings, instance.as_ref())),
+                "launcher_log" => ("啟動器日誌", newest_since(&paths::logs(), &format!("{id}-"), ".log", 0).map(|p| tail(&p, 1 << 20)).unwrap_or_default()),
+                "panic" => ("啟動器錯誤紀錄", tail(&paths::logs().join("panic.log"), 64 << 10)),
+                "native" => ("Java 崩潰紀錄", read_head(newest_since(&game, "hs_err_pid", ".log", since), 256 << 10)),
+                "perf" => ("效能紀錄", std::fs::read_to_string(game.join("config/brilliant-server-mod/perf.json")).unwrap_or_default()),
+                "settings" => {
+                    let mut launcher = serde_json::to_value(&settings).unwrap_or_default();
+                    strip_secrets(&mut launcher);
+                    let mut inst = instance.as_ref().and_then(|i| serde_json::to_value(i).ok()).unwrap_or_default();
+                    strip_secrets(&mut inst);
+                    ("啟動器與實例設定", format!("【啟動器】\n{}\n\n【實例】\n{}", serde_json::to_string_pretty(&launcher).unwrap_or_default(), serde_json::to_string_pretty(&inst).unwrap_or_default()))
+                }
+                _ => continue,
+            };
+            let text = scrub_report(&text);
+            if !text.trim().is_empty() {
+                out.push(ReportSection { key, title: title.to_string(), text });
+            }
+        }
+        out
+    })
+    .await
+    .context("收集回報資料中斷")
+    .map_err(Into::into)
+}
+
 #[tauri::command]
 pub async fn crash_context(id: String, since: i64, lines: Vec<String>) -> R<CrashContext> {
     tokio::task::spawn_blocking(move || {
@@ -338,6 +446,22 @@ pub async fn save_png(name: String, data: String) -> R<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn report_text_is_scrubbed() {
+        let home = dirs::home_dir().unwrap().to_string_lossy().to_string();
+        let raw = format!("{home}\\AppData\\x.log\n--accessToken abc.def\nok");
+        let out = scrub_report(&raw);
+        assert!(!out.contains(&home) && out.contains("~") && !out.contains("abc.def") && out.ends_with("ok"));
+        let mut value = serde_json::json!({ "selectedAccount": "a", "envVars": "TOKEN=secret\nA=1", "proxy": "http://user:pass@127.0.0.1:8080" });
+        strip_secrets(&mut value);
+        assert_eq!(value, serde_json::json!({ "envVars": "TOKEN=<已隱藏>\nA=<已隱藏>", "proxy": "http://127.0.0.1:8080" }));
+        let path = std::env::temp_dir().join("brilliant-tail.log");
+        std::fs::write(&path, "first line\nsecond\nthird").unwrap();
+        assert_eq!(tail(&path, 100), "first line\nsecond\nthird");
+        assert!(tail(&path, 10).ends_with("third") && !tail(&path, 10).contains("first"));
+        let _ = std::fs::remove_file(&path);
+    }
 
     #[test]
     fn hints_and_options() {

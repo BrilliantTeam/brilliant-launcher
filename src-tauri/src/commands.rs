@@ -769,9 +769,8 @@ pub async fn ping_server(host: String) -> R<ping::ServerStatus> {
 }
 
 #[tauri::command]
-pub async fn send_report(body: serde_json::Value) -> R<()> {
-    let _: serde_json::Value = crate::net::post_json(&format!("{SITE}/api/launcher/report"), &body).await?;
-    Ok(())
+pub async fn send_report(body: serde_json::Value) -> R<serde_json::Value> {
+    crate::net::post_json(&format!("{SITE}/api/launcher/report"), &body).await
 }
 
 #[tauri::command]
