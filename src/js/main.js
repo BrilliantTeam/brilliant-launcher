@@ -137,23 +137,26 @@ function initChrome() {
     $('#win-close').addEventListener('click', () => (store.settings?.closeToTray ? win.hide() : win.close()));
 
     const views = $$('.rail a[data-view]').map((a) => a.dataset.view);
+    const mac = navigator.userAgent.includes('Mac');
+    if (mac) $$('kbd.mod-key').forEach((k) => { k.textContent = '⌘'; });
     document.addEventListener('keydown', (e) => {
-        if (!e.ctrlKey || e.altKey || e.metaKey) return;
-        if (e.key === 'Enter') {
+        if (e.isComposing || e.keyCode === 229 || e.altKey || (mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey)) return;
+        const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
+        if (e.code === 'Enter' || e.code === 'NumpadEnter') {
             e.preventDefault();
             location.hash = '#home';
             emit('launch');
-        } else if (/^[1-9]$/.test(e.key) && views[e.key - 1]) {
+        } else if (digit && views[digit - 1]) {
             e.preventDefault();
-            location.hash = `#${views[e.key - 1]}`;
-        } else if (e.key === ',') {
+            location.hash = `#${views[digit - 1]}`;
+        } else if (e.code === 'Comma') {
             e.preventDefault();
             location.hash = '#settings';
-        } else if (e.key.toLowerCase() === 'f') {
+        } else if (e.code === 'KeyF') {
             e.preventDefault();
             location.hash = '#mods';
             setTimeout(() => $('#mod-search').focus(), 50);
-        } else if (e.key.toLowerCase() === 'r' || e.key === 'p') {
+        } else if (e.code === 'KeyR' || e.code === 'KeyP') {
             e.preventDefault();
         }
     });
