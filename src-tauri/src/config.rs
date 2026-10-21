@@ -56,6 +56,8 @@ pub struct Settings {
     pub open_log_on_launch: bool,
     pub launcher_update: String,
     pub mod_update: String,
+    pub update_channel: String,
+    pub alpha_unlocked: bool,
 }
 
 impl Default for Settings {
@@ -109,6 +111,8 @@ impl Default for Settings {
             open_log_on_launch: false,
             launcher_update: "auto".into(),
             mod_update: "auto".into(),
+            update_channel: "stable".into(),
+            alpha_unlocked: false,
         }
     }
 }
@@ -157,6 +161,14 @@ async fn read_json<T: serde::de::DeserializeOwned + Default>(path: &Path) -> T {
 async fn write_json<T: Serialize>(path: &Path, value: &T) -> R<()> {
     let bytes = serde_json::to_vec_pretty(value)?;
     crate::net::write_file(path, &bytes, false).await
+}
+
+pub fn channel_of(settings: &Settings) -> &'static str {
+    match settings.update_channel.as_str() {
+        "beta" => "beta",
+        "alpha" if settings.alpha_unlocked => "alpha",
+        _ => "stable",
+    }
 }
 
 pub async fn load_settings() -> Settings {

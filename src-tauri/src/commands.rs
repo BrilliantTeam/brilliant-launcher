@@ -490,6 +490,10 @@ mod update_tests {
         assert!(!stale_update("BrilliantLauncher_1.0.29_amd64.AppImage", "1.0.28"));
         assert!(!stale_update("BrilliantLauncher_1.1.0_x64-setup.exe", "1.0.28"));
         assert!(stale_update("old-1790000000.app", "1.0.28"));
+        assert!(!stale_update("BrilliantLauncher_1.1.0-beta.1_x64-setup.exe", "1.1.0-alpha.9"));
+        assert!(stale_update("BrilliantLauncher_1.1.0-beta.1_x64-setup.exe", "1.1.0"));
+        assert!(!stale_update("BrilliantLauncher_1.1.0-alpha.10_x64-setup.exe", "1.1.0-alpha.9"));
+        assert!(version_of("1.1.0-beta.2") > version_of("1.1.0-alpha.7") && version_of("1.1.0") > version_of("1.1.0-beta.2") && version_of("1.1.0-rc.1").is_none());
     }
 }
 
@@ -569,9 +573,17 @@ fn install_update(file: &std::path::Path) -> R<()> {
     relaunch_after_exit(&target)
 }
 
-fn version_of(text: &str) -> Option<(u32, u32, u32)> {
-    let mut parts = text.split('.').map(|p| p.parse::<u32>().ok());
-    Some((parts.next()??, parts.next()??, parts.next()??))
+pub fn version_of(text: &str) -> Option<(u32, u32, u32, u32, u32)> {
+    let (core, pre) = text.split_once('-').unwrap_or((text, ""));
+    let mut parts = core.split('.').map(|p| p.parse::<u32>().ok());
+    let base = (parts.next()??, parts.next()??, parts.next()??);
+    let (rank, n) = match pre.split_once('.') {
+        None if pre.is_empty() => (2, 0),
+        Some(("beta", n)) => (1, n.parse().ok()?),
+        Some(("alpha", n)) => (0, n.parse().ok()?),
+        _ => return None,
+    };
+    Some((base.0, base.1, base.2, rank, n))
 }
 
 pub fn stale_update(name: &str, current: &str) -> bool {

@@ -1,7 +1,7 @@
 import { api, appVersion, appWindow, listen, openUrl, setZoom } from './api.js';
 import { icon } from './icons.js';
 import { $, $$, dialog, fail, h, rangeFill, toast, guard } from './ui.js';
-import { emit, loadAccounts, loadInstances, loadSettings, on, store } from './store.js';
+import { emit, loadAccounts, loadInstances, loadSettings, on, saveSettings, store } from './store.js';
 import { initHome } from './views/home.js';
 import { initInstances } from './views/instances.js';
 import { initMods } from './views/mods.js';
@@ -151,10 +151,20 @@ function initChrome() {
     addEventListener('hashchange', () => show(location.hash.slice(1)));
 }
 
+const RANK = { alpha: 0, beta: 1 };
+
+export function versionKey(version) {
+    const [core, pre = ''] = String(version).split('-');
+    const m = /^(alpha|beta)\.(\d+)$/.exec(pre);
+    return [...core.split('.').map(Number).concat([0, 0, 0]).slice(0, 3), m ? RANK[m[1]] : 2, m ? Number(m[2]) : 0];
+}
+
+export const channelOfVersion = (version) => (/-(alpha|beta)\./.exec(String(version)) || [])[1] || (newerVersion('1.1.0', version) ? 'alpha' : 'stable');
+
 export function newerVersion(latest, current) {
-    const a = String(latest).split('.').map(Number);
-    const b = String(current).split('.').map(Number);
-    for (let i = 0; i < 3; i++) {
+    const a = versionKey(latest);
+    const b = versionKey(current);
+    for (let i = 0; i < a.length; i++) {
         if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
     }
     return false;
@@ -281,6 +291,23 @@ async function boot() {
     checkUpdate();
     setInterval(() => checkUpdate(), 30 * 60 * 1000);
     on('check-update', () => checkUpdate(true).catch(fail));
+    appVersion().then((version) => {
+        const channel = channelOfVersion(version);
+        const chip = $('#channel-chip');
+        chip.hidden = channel === 'stable';
+        chip.textContent = channel === 'beta' ? 'Beta' : 'Alpha';
+        chip.classList.toggle('alpha', channel === 'alpha');
+        $('#about-version').textContent = `輝煌啟動器 v${version}（${channel === 'stable' ? '正式版' : channel === 'beta' ? 'Beta 搶先版' : 'Alpha 測試版'}）`;
+    }).catch(() => {});
+    let taps = 0;
+    let tapTimer = 0;
+    $('#about-version').addEventListener('click', () => {
+        clearTimeout(tapTimer);
+        tapTimer = setTimeout(() => { taps = 0; }, 1500);
+        if (++taps < 7 || store.settings?.alphaUnlocked) return;
+        taps = 0;
+        saveSettings({ alphaUnlocked: true }).then(() => toast('已開啟 Alpha 測試版選項，可以在「設定 → 更新與安全 → 更新通道」選擇'), fail);
+    });
     on('network', () => { if (store.online !== false) checkUpdate(); });
     $('#about-update-link').addEventListener('click', (e) => {
         e.preventDefault();

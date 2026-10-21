@@ -22,6 +22,7 @@
         <span data-tauri-drag-region>輝煌啟動器</span>
     </div>
     <div class="titlebar-tools">
+        <span class="channel-chip" id="channel-chip" hidden></span>
         <button type="button" class="net-chip" id="net-chip" hidden><i data-icon="warning-box"></i>離線模式</button>
         <button type="button" class="update-chip" id="update-chip" hidden><i data-icon="download"></i><span id="update-label">有新版本</span></button>
         <a class="account-chip" id="account-chip" href="#accounts" title="切換帳號">
@@ -408,6 +409,15 @@
                 </div>
 
                 <h2 id="set-update">更新與安全</h2>
+                <div class="field">
+                    <label for="set-update-channel">更新通道</label>
+                    <select id="set-update-channel">
+                        <option value="stable">正式版（推薦）</option>
+                        <option value="beta">Beta 搶先版：比較早拿到新功能，偶爾會有小問題</option>
+                        <option value="alpha" id="opt-alpha" hidden>Alpha 測試版：開發中的最新版本，可能不穩定</option>
+                    </select>
+                    <div class="hint" id="channel-hint">只影響輝煌啟動器本身，輝煌模組不分通道、一律使用最新版。正式版的每個版本都先經過 Beta 測試；從 Beta 換回正式版時，會在下一個正式版推出時自動換回，不會降級。還沒有正式版或 Beta 時，會先拿到最新的 Alpha。</div>
+                </div>
                 <div class="field-row">
                     <div class="field">
                         <label for="set-launcher-update">啟動器更新</label>
@@ -514,6 +524,8 @@
                     字型：Minecraft-Font、GNU Unifont、內海字體（SIL OFL 1.1）；3D 皮膚預覽：skinview3d（MIT）；圖示：Pixelarticons（MIT）。
                     資料處理方式請見 <a href="#" data-url="https://www.brilliantw.net/%E9%9A%B1%E7%A7%81%E6%94%BF%E7%AD%96/">隱私政策第七節</a>。
                 </p>
+                <h2>版本</h2>
+                <p><span id="about-version" class="about-version">輝煌啟動器</span></p>
                 <h2>更新與安全</h2>
                 <p>
                     啟動器與輝煌模組的更新檔都經過輝煌官方數位簽章驗證才會安裝。更新方式可以在

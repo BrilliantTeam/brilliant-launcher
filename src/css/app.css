@@ -177,6 +177,10 @@ body:not([data-view="home"]) .bg-shade {
 .net-chip { display: flex; align-items: center; gap: 6px; margin-right: 6px; padding: 3px 10px; font: inherit; font-size: 12px; font-weight: 700; color: #fff; background: var(--warning); border: 0; cursor: pointer; }
 .net-chip:hover { filter: brightness(1.1); }
 .net-chip[hidden] { display: none; }
+.channel-chip { margin-right: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--accent-ink); background: var(--accent); }
+.channel-chip.alpha { color: #fff; background: var(--danger); }
+.channel-chip[hidden] { display: none; }
+.about-version { cursor: default; user-select: none; }
 .net-chip .ico { width: 14px; height: 14px; }
 .jvm-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .jvm-presets button { font-size: 12px; padding: 3px 10px; }

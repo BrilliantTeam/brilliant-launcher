@@ -71,8 +71,9 @@ async fn install_id() -> Option<String> {
 }
 
 pub async fn info() -> R<LauncherInfo> {
-    let query = install_id().await.map(|id| format!("?id={id}")).unwrap_or_default();
-    net::get_json(&format!("{SITE}/api/launcher/info{query}"), false).await
+    let channel = crate::config::channel_of(&crate::config::load_settings().await);
+    let id = install_id().await.map(|id| format!("&id={id}")).unwrap_or_default();
+    net::get_json(&format!("{SITE}/api/launcher/info?channel={channel}{id}"), false).await
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {

@@ -40,6 +40,7 @@ const FIELDS = {
     debugMode: '#set-debug',
     openLogOnLaunch: '#set-open-log',
     launcherUpdate: '#set-launcher-update',
+    updateChannel: '#set-update-channel',
     modUpdate: '#set-mod-update'
 };
 
@@ -209,6 +210,17 @@ function renderUpdate() {
 
 export function initSettings() {
     on('update-status', renderUpdate);
+    const syncAlpha = () => { $('#opt-alpha').hidden = !store.settings?.alphaUnlocked && store.settings?.updateChannel !== 'alpha'; };
+    on('settings', syncAlpha);
+    syncAlpha();
+    let lastChannel = store.settings?.updateChannel || 'stable';
+    on('settings', () => {
+        const channel = store.settings?.updateChannel || 'stable';
+        if (channel === lastChannel) return;
+        lastChannel = channel;
+        toast(channel === 'stable' ? '已切到正式版通道，目前的版本會用到下一個正式版推出為止' : `已切到 ${channel === 'beta' ? 'Beta 搶先版' : 'Alpha 測試版'}通道，正在檢查更新`);
+        emit('check-update');
+    });
     on('settings', () => { if (!store.update) renderUpdate(); });
     $('#btn-check-update').addEventListener('click', () => {
         manualCheck = true;
