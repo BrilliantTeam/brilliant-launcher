@@ -174,6 +174,7 @@ pub fn run() {
             importer::import_inspect,
             insight::crash_context,
             insight::collect_report,
+            insight::mod_risks,
             insight::perf_report,
             insight::apply_perf,
             insight::play_history,

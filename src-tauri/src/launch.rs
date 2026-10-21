@@ -303,6 +303,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     let mut settings = crate::config::load_settings().await;
     if let Some(host) = join {
         settings.quick_join = host;
+        settings.clean();
     }
     let started = std::time::Instant::now();
     let mut instance = crate::instance::get(instance_id).await?;
@@ -339,6 +340,25 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
                 }
             }
             Err(e) => early_notes.push(format!("檢查模組更新失敗，這次照原本的版本啟動（{:#}）", e.0)),
+        }
+    }
+    if !instance.general {
+        let id = instance.id.clone();
+        let risky = tokio::task::spawn_blocking(move || crate::insight::risky_mods(&id, &[])).await.unwrap_or_default();
+        if !risky.is_empty() {
+            let body = serde_json::json!({
+                "name": account.name,
+                "uuid": account.uuid,
+                "offline": account.kind != "msa",
+                "mc": instance.mc_version,
+                "mods": risky.iter().map(|m| serde_json::json!({ "id": m.id, "name": m.name, "version": m.version })).collect::<Vec<_>>(),
+            });
+            tokio::spawn(async move {
+                let _: R<serde_json::Value> = net::post_json("https://www.brilliantw.net/api/launcher/risky", &body).await;
+            });
+        }
+        for m in risky {
+            early_notes.push(format!("「{}」可能違反輝煌服規 1-1（{}），在輝煌伺服器使用可能會被停權。", m.name, m.reason));
         }
     }
     {

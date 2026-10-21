@@ -121,6 +121,87 @@ impl Default for Settings {
     }
 }
 
+pub const MEMORY_RANGE: (u32, u32) = (1024, 32768);
+pub const WIDTH_RANGE: (u32, u32) = (320, 7680);
+pub const HEIGHT_RANGE: (u32, u32) = (240, 4320);
+
+pub fn clean_line(value: &mut String, max: usize) {
+    *value = value.chars().filter(|c| !c.is_control()).take(max).collect::<String>().trim().to_string();
+}
+
+pub fn clean_text(value: &mut String, max: usize) {
+    *value = value.chars().filter(|c| *c == '\n' || !c.is_control()).take(max).collect();
+}
+
+pub fn clean_choice(value: &mut String, allowed: &[&str], fallback: &str) {
+    if !allowed.contains(&value.as_str()) {
+        *value = fallback.to_string();
+    }
+}
+
+pub fn clean_jvm_args(value: &mut String) {
+    *value = value.chars().take(4096).map(|c| if c.is_control() { ' ' } else { c }).collect::<String>();
+    *value = value.split_whitespace().filter(|t| t.starts_with('-') && t.len() > 1).collect::<Vec<_>>().join(" ");
+}
+
+pub fn clean_env_vars(value: &mut String) {
+    clean_text(value, 8192);
+    *value = value
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.starts_with('#') || l.split_once('=').is_some_and(|(k, _)| !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !k.starts_with(|c: char| c.is_ascii_digit())))
+        .collect::<Vec<_>>()
+        .join("\n");
+}
+
+pub fn clean_size(value: &mut u32, range: (u32, u32), allow_zero: bool) {
+    if !(allow_zero && *value == 0) {
+        *value = (*value).clamp(range.0, range.1);
+    }
+}
+
+fn valid_host(host: &str) -> bool {
+    let (name, port) = host.rsplit_once(':').map_or((host, None), |(n, p)| (n, Some(p)));
+    !name.is_empty()
+        && name.len() <= 253
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+        && port.is_none_or(|p| p.parse::<u16>().is_ok_and(|p| p > 0))
+}
+
+impl Settings {
+    pub fn clean(&mut self) {
+        clean_size(&mut self.memory_mb, MEMORY_RANGE, false);
+        self.memory_min_mb = self.memory_min_mb.min(self.memory_mb);
+        clean_size(&mut self.width, WIDTH_RANGE, false);
+        clean_size(&mut self.height, HEIGHT_RANGE, false);
+        self.backup_keep = self.backup_keep.clamp(1, 50);
+        self.download_threads = self.download_threads.clamp(1, 64);
+        self.slide_seconds = self.slide_seconds.min(60);
+        self.ui_scale = self.ui_scale.clamp(80, 125);
+        self.music_volume = self.music_volume.min(100);
+        clean_choice(&mut self.after_launch, &["hide", "keep", "exit"], "hide");
+        clean_choice(&mut self.theme, &["auto", "light", "dark"], "auto");
+        clean_choice(&mut self.font, &["pixel", "system"], "pixel");
+        clean_choice(&mut self.mod_channel, &["release", "beta", "alpha"], "release");
+        clean_choice(&mut self.launcher_update, &["auto", "notify", "off"], "auto");
+        clean_choice(&mut self.mod_update, &["auto", "keep"], "auto");
+        clean_choice(&mut self.update_channel, &["stable", "beta", "alpha"], "stable");
+        clean_jvm_args(&mut self.jvm_args);
+        clean_env_vars(&mut self.env_vars);
+        for (field, max) in [(&mut self.java_path, 1024), (&mut self.pre_launch_cmd, 1024), (&mut self.post_exit_cmd, 1024), (&mut self.wrapper, 1024), (&mut self.proxy, 512), (&mut self.background, 1024), (&mut self.music, 1024), (&mut self.quick_join, 260)] {
+            clean_line(field, max);
+        }
+        if !self.quick_join.is_empty() && !valid_host(&self.quick_join) {
+            self.quick_join.clear();
+        }
+        if !(self.accent.is_empty() || self.accent.len() == 7 && self.accent.starts_with('#') && self.accent[1..].chars().all(|c| c.is_ascii_hexdigit())) {
+            self.accent.clear();
+        }
+        self.shared_folders.retain(|f| crate::advanced::SHAREABLE.contains(&f.as_str()));
+        self.shared_folders.dedup();
+    }
+}
+
 pub const DEFAULT_JVM_ARGS: &str = "-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC \
 -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 \
 -XX:G1HeapRegionSize=32M -XX:-UseAdaptiveSizePolicy -XX:-OmitStackTraceInFastThrow";
@@ -176,11 +257,15 @@ pub fn channel_of(settings: &Settings) -> &'static str {
 }
 
 pub async fn load_settings() -> Settings {
-    read_json(&paths::config_file()).await
+    let mut settings: Settings = read_json(&paths::config_file()).await;
+    settings.clean();
+    settings
 }
 
 pub async fn save_settings(s: &Settings) -> R<()> {
-    write_json(&paths::config_file(), s).await
+    let mut s = s.clone();
+    s.clean();
+    write_json(&paths::config_file(), &s).await
 }
 
 pub async fn load_accounts() -> Vec<Account> {

@@ -790,7 +790,7 @@ dialog[open] { opacity: 1; transform: none; }
 dialog::backdrop { background: rgba(0, 0, 0, 0); transition: background-color 0.2s ease, overlay 0.2s allow-discrete, display 0.2s allow-discrete; }
 dialog[open]::backdrop { background: rgba(0, 0, 0, 0.55); }
 @starting-style { dialog[open]::backdrop { background: rgba(0, 0, 0, 0); } }
-dialog .dlg-body { padding: 18px 22px; max-height: 74vh; overflow-y: auto; }
+dialog .dlg-body { padding: 18px 22px; max-height: 74vh; overflow-y: auto; overflow-wrap: anywhere; }
 dialog h2 { margin-top: 0; }
 dialog .dlg-foot {
     display: flex;
@@ -819,6 +819,7 @@ dialog .dlg-foot {
     font-size: 13px;
     line-height: 1.6;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
     color: var(--text);
     background: var(--panel-face);
     border: 2px solid;

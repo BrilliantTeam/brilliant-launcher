@@ -277,7 +277,7 @@
                 </div>
                 <div class="field">
                     <label for="set-jvm">JVM 參數</label>
-                    <textarea id="set-jvm" spellcheck="false"></textarea>
+                    <textarea id="set-jvm" spellcheck="false" maxlength="4096"></textarea>
                     <div class="jvm-presets" id="jvm-presets"></div>
                     <div class="hint">留空會套用 Mojang 官方啟動器的 G1 GC 預設值。每個實例也可以在「實例 → 設定 → 進階」個別覆寫。</div>
                 </div>
@@ -317,11 +317,11 @@
                 </div>
                 <div class="field">
                     <label for="set-pre">啟動前執行指令</label>
-                    <input type="text" id="set-pre" spellcheck="false" placeholder="例如 start obs64.exe">
+                    <input type="text" id="set-pre" spellcheck="false" maxlength="1024" placeholder="例如 start obs64.exe">
                 </div>
                 <div class="field">
                     <label for="set-post">遊戲結束後執行指令</label>
-                    <input type="text" id="set-post" spellcheck="false" placeholder="例如 taskkill /im obs64.exe">
+                    <input type="text" id="set-post" spellcheck="false" maxlength="1024" placeholder="例如 taskkill /im obs64.exe">
                     <div class="hint">可使用環境變數 %INST_NAME%、%INST_DIR%、%INST_MC_VER%；結束指令另有 %EXIT_CODE%。啟動前指令失敗時會取消啟動。</div>
                 </div>
 
@@ -370,12 +370,12 @@
                 <h2 id="set-advanced">進階</h2>
                 <div class="field">
                     <label for="set-wrapper">啟動包裝指令</label>
-                    <input type="text" id="set-wrapper" spellcheck="false" placeholder="例如 gamemoderun mangohud（Linux）">
+                    <input type="text" id="set-wrapper" spellcheck="false" maxlength="1024" placeholder="例如 gamemoderun mangohud（Linux）">
                     <div class="hint">把遊戲交給這個指令來啟動，例如 Linux 的 gamemoderun、mangohud、prime-run。包含空格的路徑請用雙引號包起來。每個實例也可以個別覆寫。</div>
                 </div>
                 <div class="field">
                     <label for="set-env">環境變數</label>
-                    <textarea id="set-env" spellcheck="false" placeholder="每行一個，例如&#10;MESA_GL_VERSION_OVERRIDE=4.6&#10;# 以 # 開頭的行會被忽略"></textarea>
+                    <textarea id="set-env" spellcheck="false" maxlength="8192" placeholder="每行一個，例如&#10;MESA_GL_VERSION_OVERRIDE=4.6&#10;# 以 # 開頭的行會被忽略"></textarea>
                     <div class="hint">套用在所有實例；實例裡設定的同名變數會覆蓋這裡的值。</div>
                 </div>
                 <div class="field">
@@ -403,7 +403,7 @@
                 </div>
                 <div class="field">
                     <label for="set-proxy">代理伺服器</label>
-                    <input type="text" id="set-proxy" spellcheck="false" placeholder="例如 http://127.0.0.1:7890，留空為直接連線">
+                    <input type="text" id="set-proxy" spellcheck="false" maxlength="512" placeholder="例如 http://127.0.0.1:7890，留空為直接連線">
                     <div class="hint">學校或公司網路需要代理才能下載時使用，啟動器與遊戲內的連線都會走這個代理。目前支援 HTTP／HTTPS 代理；格式正確後才會自動儲存。</div>
                 </div>
                 <div class="field">

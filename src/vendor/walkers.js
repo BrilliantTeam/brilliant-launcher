@@ -563,7 +563,7 @@
     }
 
     function dropCake(x, y, coin, food) {
-        if (cakes.length >= (coin ? 8 : 5)) return;
+        if (disabled || cakes.length >= (coin ? 8 : 5)) return;
         var t = below(x, y);
         if (!t) return;
         var el = document.createElement('span');

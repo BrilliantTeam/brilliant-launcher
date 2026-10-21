@@ -93,6 +93,7 @@ async function install(kind, projectId, title, quiet = false) {
         const names = await api.content_install({ id: instance.id, kind, project: projectId });
         if (!quiet) toast(names.length ? `已安裝 ${title}${names.length > 1 ? `（含前置 ${names.length - 1} 個）` : ''}` : `${title} 已經安裝過了`);
         await loadInstalled(kind);
+        if (kind === 'mod') warnRisky(instance, names);
         return true;
     } catch (error) {
         if (!quiet) fail(error);
@@ -990,6 +991,25 @@ function onInstanceChange() {
     search();
 }
 
+async function warnRisky(instance, files) {
+    if (instance.general || !files?.length) return;
+    const risky = await api.mod_risks({ id: instance.id, files }).catch(() => []);
+    if (!risky.length) return;
+    const remove = await dialog({
+        title: '這個模組可能違反輝煌服規',
+        content: h('div', {},
+            h('ul', {}, ...risky.map((m) => h('li', {}, h('b', {}, m.name), `：${m.reason}`))),
+            h('p', {}, '輝煌服規 1-1：不允許修改遊戲數據或嚴重影響遊戲公平性的行為（例如加快挖礦、取消後搖、進食更快），違者會被停權。自動挖礦、釣魚、蓋房子這類自動腳本不受影響。'),
+            h('p', { class: 'hint' }, '只在單人遊戲或其他伺服器使用的話，可以保留；也可以改用「一般實例」安裝，就不會再提醒。')),
+        buttons: [{ label: '我了解，保留', value: null }, { label: '移除這些模組', value: 'remove' }]
+    });
+    if (remove !== 'remove') return;
+    for (const m of risky) await api.content_remove({ id: instance.id, kind: 'mod', file: m.file }).catch(fail);
+    toast(`已移除 ${risky.length} 個模組`);
+    await loadInstalled('mod');
+    renderAll();
+}
+
 async function installLocal(paths) {
     const instance = selectedInstance();
     if (!instance) return toast('請先選擇一個實例', 'error');
@@ -1000,6 +1020,7 @@ async function installLocal(paths) {
         toast(`已安裝 ${added.length} 個模組`);
         await loadInstalled('mod');
         renderAll();
+        await warnRisky(instance, added);
     } catch (error) {
         fail(error);
     }

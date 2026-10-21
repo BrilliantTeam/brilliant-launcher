@@ -22,6 +22,18 @@ export function guard(fn) {
     };
 }
 
+export function clampNumber(el, show = false) {
+    const min = el.min === '' ? -Infinity : Number(el.min);
+    const max = el.max === '' ? Infinity : Number(el.max);
+    const value = Math.min(max, Math.max(min, Math.round(Number(el.value) || 0)));
+    if (show && el.value !== '' && String(value) !== el.value) el.value = String(value);
+    return value;
+}
+
+addEventListener('change', (e) => {
+    if (e.target instanceof HTMLInputElement && e.target.type === 'number') clampNumber(e.target, true);
+}, true);
+
 export function h(tag, props = {}, ...children) {
     const el = document.createElement(tag);
     for (const [key, value] of Object.entries(props || {})) {

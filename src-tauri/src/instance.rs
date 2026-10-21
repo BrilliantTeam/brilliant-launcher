@@ -47,6 +47,32 @@ pub struct Instance {
 }
 
 impl Instance {
+    pub fn clean(&mut self) {
+        use crate::config::{clean_env_vars, clean_jvm_args, clean_line, clean_size, HEIGHT_RANGE, MEMORY_RANGE, WIDTH_RANGE};
+        clean_line(&mut self.name, 40);
+        if self.name.is_empty() {
+            self.name = "未命名實例".into();
+        }
+        clean_size(&mut self.memory_mb, MEMORY_RANGE, true);
+        clean_size(&mut self.width, WIDTH_RANGE, true);
+        clean_size(&mut self.height, HEIGHT_RANGE, true);
+        if self.width == 0 || self.height == 0 {
+            self.width = 0;
+            self.height = 0;
+        }
+        if ![0, 8, 16, 17, 21, 25].contains(&self.java_major) {
+            self.java_major = 0;
+        }
+        if !["", "release", "beta", "alpha"].contains(&self.mod_channel.as_str()) {
+            self.mod_channel.clear();
+        }
+        clean_jvm_args(&mut self.jvm_args);
+        clean_env_vars(&mut self.env_vars);
+        for (field, max) in [(&mut self.java_path, 1024), (&mut self.wrapper, 1024), (&mut self.image, 1024), (&mut self.icon, 64)] {
+            clean_line(field, max);
+        }
+    }
+
     pub fn memory(&self, s: &Settings) -> u32 {
         if self.memory_mb > 0 {
             self.memory_mb
@@ -117,7 +143,7 @@ pub async fn list() -> Vec<Instance> {
     while let Ok(Some(entry)) = entries.next_entry().await {
         let file = entry.path().join("instance.json");
         if let Ok(bytes) = tokio::fs::read(&file).await {
-            match serde_json::from_slice::<Instance>(&bytes) {
+            match serde_json::from_slice::<Instance>(&bytes).map(|mut i| { i.clean(); i }) {
                 Ok(i) => out.push(i),
                 Err(e) => eprintln!("[instance] {} 解析失敗：{e}", file.display()),
             }
@@ -131,11 +157,15 @@ pub async fn get(id: &str) -> R<Instance> {
     let bytes = tokio::fs::read(paths::instance_json(id))
         .await
         .with_context(|| format!("找不到實例 {id}"))?;
-    Ok(serde_json::from_slice(&bytes).with_context(|| format!("實例 {id} 設定檔損毀"))?)
+    let mut instance: Instance = serde_json::from_slice(&bytes).with_context(|| format!("實例 {id} 設定檔損毀"))?;
+    instance.clean();
+    Ok(instance)
 }
 
 pub async fn save(instance: &Instance) -> R<()> {
-    let bytes = serde_json::to_vec_pretty(instance)?;
+    let mut instance = instance.clone();
+    instance.clean();
+    let bytes = serde_json::to_vec_pretty(&instance)?;
     crate::net::write_file(&paths::instance_json(&instance.id), &bytes, false).await
 }
 
@@ -237,6 +267,34 @@ pub async fn add_mod(id: &str, source: &str) -> R<String> {
 #[cfg(test)]
 mod general_tests {
     use super::*;
+
+    #[test]
+    fn abnormal_input_is_clamped() {
+        let mut s = Settings { width: 1_000_000, height: 2000, memory_mb: 9_999_999, memory_min_mb: 99_999, ui_scale: 5, download_threads: 0, backup_keep: 0, music_volume: 900, ..Default::default() };
+        s.theme = "<script>".into();
+        s.after_launch = "rm -rf".into();
+        s.quick_join = "s1.brilliantw.net:99999".into();
+        s.accent = "red; background:url(x)".into();
+        s.jvm_args = "-Xss4m hello\0 -Dx=1\nabc".into();
+        s.env_vars = "# 註解\nGOOD=1\n1BAD=2\nA B=3\nNOEQ\n_OK=x".into();
+        s.shared_folders = vec!["saves".into(), "../../Windows".into()];
+        s.clean();
+        assert_eq!((s.width, s.height, s.memory_mb, s.memory_min_mb), (7680, 2000, 32768, 32768));
+        assert_eq!((s.ui_scale, s.download_threads, s.backup_keep, s.music_volume), (80, 1, 1, 100));
+        assert_eq!((s.theme.as_str(), s.after_launch.as_str(), s.quick_join.as_str(), s.accent.as_str()), ("auto", "hide", "", ""));
+        assert_eq!(s.jvm_args, "-Xss4m -Dx=1");
+        assert_eq!(s.env_vars, "# 註解\nGOOD=1\n_OK=x");
+        assert_eq!(s.shared_folders, vec!["saves".to_string()]);
+        let mut ok = Settings { quick_join: "s2.brilliantw.net:25565".into(), accent: "#ff9ac8".into(), ..Default::default() };
+        ok.clean();
+        assert_eq!((ok.quick_join.as_str(), ok.accent.as_str()), ("s2.brilliantw.net:25565", "#ff9ac8"));
+        let mut i = Instance { name: "\u{7}\u{7}".into(), width: 99_999, height: 0, memory_mb: 100, java_major: 3, mod_channel: "evil".into(), ..Default::default() };
+        i.clean();
+        assert_eq!((i.name.as_str(), i.width, i.height, i.memory_mb, i.java_major, i.mod_channel.as_str()), ("未命名實例", 0, 0, 1024, 0, ""));
+        let mut keep = Instance { name: "  我的世界  ".into(), memory_mb: 0, width: 1280, height: 720, java_major: 21, ..Default::default() };
+        keep.clean();
+        assert_eq!((keep.name.as_str(), keep.memory_mb, keep.width, keep.height, keep.java_major), ("我的世界", 0, 1280, 720, 21));
+    }
 
     #[test]
     fn general_instances_skip_brilliant_features() {

@@ -1,5 +1,5 @@
 import { api, openUrl, pickFiles } from '../api.js';
-import { $, clear, confirm, fail, fmtBytes, h, rangeFill, toast, guard } from '../ui.js';
+import { $, clampNumber, clear, confirm, fail, fmtBytes, h, rangeFill, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { gpuName, isIntegratedGpu } from '../services.js';
 
@@ -122,7 +122,7 @@ function read() {
         if (key === 'javaPath' && !javaReady) continue;
         if (key === 'proxy' && el.value.trim() && !PROXY_PATTERN.test(el.value.trim())) continue;
         if (el.type === 'checkbox') patch[key] = el.checked;
-        else if (el.type === 'number' || el.type === 'range') patch[key] = Number(el.value) || 0;
+        else if (el.type === 'number' || el.type === 'range') patch[key] = clampNumber(el);
         else patch[key] = el.value;
     }
     patch.backupKeep = Math.max(1, patch.backupKeep);

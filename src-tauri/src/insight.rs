@@ -117,6 +117,45 @@ pub fn mod_index(id: &str, text: &str) -> Vec<ModMeta> {
     out
 }
 
+const CHEAT: &str = "外掛客戶端，內含飛行、透視、自動攻擊等修改遊戲的功能";
+const FAST: &str = "取消挖掘或放置的延遲，等於加快挖礦、蓋方塊的速度，屬於修改遊戲數據";
+const RISKY: &[(&[&str], &str)] = &[
+    (&["wurst", "meteor-client", "liquidbounce", "thunderhack", "bleachhack", "aristois", "aoba", "lumina", "samsara", "schizoid", "meteorplus", "gemclient-core"], CHEAT),
+    (&["nobreakdelay", "fastblocks*", "fastplace", "fastplace_extras_remake"], FAST),
+    (&["tweakeroo"], "部分功能（例如快速放置、快速點擊、快速破壞、延長觸及距離）會修改遊戲行為，只要啟用這類功能就違反服規"),
+    (&["baritone"], "自動走路、挖礦屬於允許的自動腳本，但部分設定（例如瞬間轉向、超出正常節奏的動作）會修改遊戲行為，啟用這類設定就違反服規"),
+];
+
+pub fn risk_of(mod_id: &str) -> Option<&'static str> {
+    let id = mod_id.to_ascii_lowercase();
+    RISKY
+        .iter()
+        .find(|(ids, _)| ids.iter().any(|k| k.strip_suffix('*').map_or(id == *k, |prefix| id.starts_with(prefix))))
+        .map(|(_, reason)| *reason)
+}
+
+#[derive(Serialize)]
+pub struct RiskyMod {
+    pub file: String,
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub reason: String,
+}
+
+pub fn risky_mods(id: &str, only: &[String]) -> Vec<RiskyMod> {
+    mod_index(id, "")
+        .into_iter()
+        .filter(|m| m.enabled && (only.is_empty() || only.contains(&m.file)))
+        .filter_map(|m| risk_of(&m.id).map(|reason| RiskyMod { file: m.file, id: m.id, name: m.name, version: m.version, reason: reason.to_string() }))
+        .collect()
+}
+
+#[tauri::command]
+pub async fn mod_risks(id: String, files: Vec<String>) -> R<Vec<RiskyMod>> {
+    tokio::task::spawn_blocking(move || risky_mods(&id, &files)).await.context("檢查模組中斷").map_err(Into::into)
+}
+
 fn newest_since(dir: &Path, prefix: &str, ext: &str, since: i64) -> Option<PathBuf> {
     std::fs::read_dir(dir)
         .ok()?
@@ -446,6 +485,14 @@ pub async fn save_png(name: String, data: String) -> R<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn risky_mods_are_recognised() {
+        assert!(risk_of("wurst").is_some() && risk_of("Meteor-Client").is_some() && risk_of("tweakeroo").is_some());
+        assert!(risk_of("sodium").is_none() && risk_of("litematica").is_none() && risk_of("wurstmeal").is_none());
+        assert!(risk_of("xray").is_none() && risk_of("freecam").is_none());
+        assert!(risk_of("fastblocks26_3").is_some() && risk_of("nobreakdelay").is_some() && risk_of("baritone").is_some() && risk_of("lethal-camera").is_none() && risk_of("inertia").is_none());
+    }
 
     #[test]
     fn report_text_is_scrubbed() {
