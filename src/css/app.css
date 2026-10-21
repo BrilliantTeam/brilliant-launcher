@@ -177,7 +177,9 @@ body:not([data-view="home"]) .bg-shade {
 .net-chip { display: flex; align-items: center; gap: 6px; margin-right: 6px; padding: 3px 10px; font: inherit; font-size: 12px; font-weight: 700; color: #fff; background: var(--warning); border: 0; cursor: pointer; }
 .net-chip:hover { filter: brightness(1.1); }
 .net-chip[hidden] { display: none; }
-.channel-chip { margin-right: 6px; padding: 2px 8px; font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--accent-ink); background: var(--accent); }
+.channel-chip { margin-right: 6px; padding: 2px 8px; font: inherit; font-size: 11px; font-weight: 700; letter-spacing: .5px; color: var(--accent-ink); background: var(--accent); border: 0; cursor: pointer; }
+.channel-chip:hover { filter: brightness(1.1); }
+.channel-notes li { margin: 4px 0; line-height: 1.6; }
 .channel-chip.alpha { color: #fff; background: var(--danger); }
 .channel-chip[hidden] { display: none; }
 .about-version { cursor: default; user-select: none; }
@@ -1233,3 +1235,18 @@ button[data-pending] { opacity: 0.6; }
 .link-hint { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding: 12px 14px; font-size: 13px; background: var(--content-bg-sunken); border-left: 4px solid #5865f2; }
 .link-hint > .ico { width: 28px; height: 28px; flex: 0 0 auto; color: #5865f2; }
 .link-hint .grow { flex: 1 1 auto; display: grid; gap: 2px; }
+
+.my-report { margin-bottom: 8px; padding: 8px 12px; background: var(--content-bg-sunken); }
+.my-report summary { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; cursor: pointer; }
+.my-report summary b { flex: 1 1 200px; min-width: 0; overflow-wrap: anywhere; }
+.my-report summary small { color: var(--text-subtle); font-size: 12px; }
+.my-status { padding: 1px 8px; font-size: 12px; font-weight: 700; color: #fff; background: var(--text-subtle); }
+.my-status.new { background: #E74C3C; } .my-status.working { background: #E67E22; } .my-status.waiting { background: #3498DB; } .my-status.resolved { background: #27AE60; }
+.my-thread { list-style: none; margin: 10px 0; padding: 0; }
+.my-thread li { margin-bottom: 6px; padding: 6px 10px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--content-bg); border-left: 4px solid var(--border); }
+.my-thread li.admin { border-left-color: var(--accent); }
+.my-thread li.player { border-left-color: #3498DB; }
+.my-thread li.status { padding: 2px 10px; color: var(--text-subtle); background: none; }
+.my-thread small { display: block; font-size: 12px; color: var(--text-subtle); }
+.my-reply { display: flex; gap: 8px; align-items: flex-end; }
+.my-reply textarea { flex: 1; min-width: 0; }

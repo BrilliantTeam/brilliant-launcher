@@ -179,7 +179,7 @@ pub fn scrub_report(text: &str) -> String {
 
 fn strip_secrets(value: &mut serde_json::Value) {
     let Some(map) = value.as_object_mut() else { return };
-    for key in ["selectedAccount", "notified", "lastAnnouncement", "image"] {
+    for key in ["selectedAccount", "notified", "lastAnnouncement", "image", "myReports"] {
         map.remove(key);
     }
     if let Some(serde_json::Value::String(env)) = map.get_mut("envVars") {

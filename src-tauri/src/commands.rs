@@ -774,6 +774,16 @@ pub async fn send_report(body: serde_json::Value) -> R<serde_json::Value> {
 }
 
 #[tauri::command]
+pub async fn report_post(action: String, body: serde_json::Value) -> R<serde_json::Value> {
+    let path = match action.as_str() {
+        "status" => "reports/status",
+        "reply" => "report/reply",
+        _ => bail!("不支援的回報動作：{action}"),
+    };
+    crate::net::post_json(&format!("{SITE}/api/launcher/{path}"), &body).await
+}
+
+#[tauri::command]
 pub async fn site_json(path: String) -> R<serde_json::Value> {
     if !(path.starts_with("/api/") || path.starts_with("/mcstats/api/")) || path.contains("..") || path.contains("://") {
         bail!("不允許的官網路徑：{path}");

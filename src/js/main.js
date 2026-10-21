@@ -12,6 +12,7 @@ import { initAlbum } from './views/album.js';
 import { initExplore } from './views/explore.js';
 import { notifyOnce, startServices } from './services.js';
 import { initLog } from './views/logview.js';
+import { initReports } from './report.js';
 
 const TITLES = {
     profile: '我的輝煌',
@@ -285,6 +286,7 @@ async function boot() {
     initAlbum();
     initExplore();
     initLog();
+    initReports();
 
     emit('settings');
     show(location.hash.slice(1) || 'home');
@@ -307,6 +309,24 @@ async function boot() {
         if (++taps < 7 || store.settings?.alphaUnlocked) return;
         taps = 0;
         saveSettings({ alphaUnlocked: true }).then(() => toast('已開啟 Alpha 測試版選項，可以在「設定 → 更新與安全 → 更新通道」選擇'), fail);
+    });
+    $('#channel-chip').addEventListener('click', async () => {
+        const version = await appVersion().catch(() => '');
+        const channel = channelOfVersion(version);
+        const notes = {
+            alpha: ['最早拿到新功能，但也最可能遇到錯誤、閃退或需要重新設定', '功能可能隨時調整、改名或移除，不保證跟之後的版本相容', '遇到問題請用「回報給管理員」，附上越詳細的資料越好', '重要的存檔請先備份，或用另一個實例測試'],
+            beta: ['功能大致完成，正在做最後的測試與修正', '偶爾可能有小錯誤，通常不影響正常遊玩', '遇到問題歡迎回報，會在正式版前修好']
+        }[channel] || [];
+        const go = await dialog({
+            title: channel === 'beta' ? 'Beta 搶先版' : 'Alpha 測試版',
+            content: h('div', { class: 'channel-notes' },
+                h('p', {}, `你正在使用 v${version}，屬於${channel === 'beta' ? ' Beta 搶先版' : ' Alpha 測試版'}。`),
+                h('b', {}, '注意事項'),
+                h('ul', {}, ...notes.map((t) => h('li', {}, t))),
+                h('p', { class: 'hint' }, '正式版推出後，可以到「設定 → 更新與安全 → 更新通道」切換。更新通道只影響啟動器本身，輝煌模組不分通道。')),
+            buttons: [{ label: '關閉', value: null }, { label: '前往更新設定', value: 'go' }]
+        });
+        if (go === 'go') $('#about-update-link').click();
     });
     on('network', () => { if (store.online !== false) checkUpdate(); });
     $('#about-update-link').addEventListener('click', (e) => {

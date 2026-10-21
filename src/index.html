@@ -22,7 +22,7 @@
         <span data-tauri-drag-region>輝煌啟動器</span>
     </div>
     <div class="titlebar-tools">
-        <span class="channel-chip" id="channel-chip" hidden></span>
+        <button type="button" class="channel-chip" id="channel-chip" hidden></button>
         <button type="button" class="net-chip" id="net-chip" hidden><i data-icon="warning-box"></i>離線模式</button>
         <button type="button" class="update-chip" id="update-chip" hidden><i data-icon="download"></i><span id="update-label">有新版本</span></button>
         <a class="account-chip" id="account-chip" href="#accounts" title="切換帳號">
@@ -497,6 +497,7 @@
                     <select id="log-instance" aria-label="選擇實例" hidden></select>
                     <button type="button" class="mc" id="btn-clear-log">清空</button>
                     <button type="button" class="mc" id="btn-open-logs">開啟日誌資料夾</button>
+                    <button type="button" class="mc" id="btn-my-reports">我的回報</button>
                     <span class="spacer"></span>
                     <label style="margin:0"><input type="checkbox" id="log-follow" checked>自動捲到底</label>
                 </div>
