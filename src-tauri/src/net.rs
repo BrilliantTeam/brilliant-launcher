@@ -243,6 +243,14 @@ pub async fn write_file(path: &Path, bytes: &[u8], executable: bool) -> R<()> {
 }
 
 pub async fn download_all(app: &AppHandle, stage: &str, files: Vec<DlFile>, mirror: bool) -> R<()> {
+    let checks = futures::stream::iter(files.into_iter().map(|f| async move { (!already_good(&f.path, f.sha1.as_deref(), f.size).await).then_some(f) }))
+        .buffer_unordered(64)
+        .collect::<Vec<_>>()
+        .await;
+    let files: Vec<DlFile> = checks.into_iter().flatten().collect();
+    if files.is_empty() {
+        return Ok(());
+    }
     let total_files = files.len() as u64;
     let total_bytes: u64 = files.iter().map(|f| f.size).sum();
     let done_files = Arc::new(AtomicU64::new(0));
@@ -267,16 +275,14 @@ pub async fn download_all(app: &AppHandle, stage: &str, files: Vec<DlFile>, mirr
         let stage = stage.to_string();
         let (df, db, last) = (done_files.clone(), done_bytes.clone(), last_emit.clone());
         async move {
-            if !already_good(&f.path, f.sha1.as_deref(), f.size).await {
-                let bytes = get_bytes(&f.url, mirror).await?;
-                if let Some(want) = &f.sha1 {
-                    let got = sha1_hex(&bytes);
-                    if !got.eq_ignore_ascii_case(want) {
-                        bail!("SHA1 不符（{}）：預期 {want}，實得 {got}", f.url);
-                    }
+            let bytes = get_bytes(&f.url, mirror).await?;
+            if let Some(want) = &f.sha1 {
+                let got = sha1_hex(&bytes);
+                if !got.eq_ignore_ascii_case(want) {
+                    bail!("SHA1 不符（{}）：預期 {want}，實得 {got}", f.url);
                 }
-                write_file(&f.path, &bytes, f.executable).await?;
             }
+            write_file(&f.path, &bytes, f.executable).await?;
             let n = df.fetch_add(1, Ordering::Relaxed) + 1;
             let b = db.fetch_add(f.size, Ordering::Relaxed) + f.size;
             let now = started.elapsed().as_millis() as u64;

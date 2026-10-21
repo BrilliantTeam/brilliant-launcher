@@ -315,7 +315,7 @@ dependencies = [
 
 [[package]]
 name = "brilliant-launcher"
-version = "1.0.38"
+version = "1.0.39"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
