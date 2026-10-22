@@ -132,7 +132,7 @@ fn cached_for(mc: &str) -> Option<PathBuf> {
 }
 
 pub(crate) async fn brilliant_mod(mc: &str, keep: bool) -> R<PathBuf> {
-    if keep {
+    if keep && !net::DEEP_VERIFY.load(std::sync::atomic::Ordering::Relaxed) {
         if let Some(cached) = cached_for(mc) {
             return Ok(cached);
         }
@@ -250,10 +250,9 @@ pub async fn inject(app: &AppHandle, instance: &Instance) -> R<Vec<String>> {
     prune(&mods_dir, &[MOD_PREFIX, LEGACY_PREFIX], &name).await?;
     let dest = mods_dir.join(&name);
     let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).ok();
-    if size(&dest) != size(&jar) {
-        tokio::fs::copy(&jar, &dest)
-            .await
-            .with_context(|| format!("複製 Brilliant-Server-Mod 失敗：{}", jar.display()))?;
+    if net::DEEP_VERIFY.load(std::sync::atomic::Ordering::Relaxed) || size(&dest) != size(&jar) {
+        let bytes = tokio::fs::read(&jar).await.with_context(|| format!("讀取 Brilliant-Server-Mod 失敗：{}", jar.display()))?;
+        net::write_file(&dest, &bytes, false).await?;
     }
 
     match api {

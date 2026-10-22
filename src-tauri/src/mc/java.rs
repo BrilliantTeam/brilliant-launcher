@@ -79,6 +79,10 @@ fn component_dir(component: &str) -> PathBuf {
     paths::java_root().join(component)
 }
 
+fn stamp(dir: &Path) -> PathBuf {
+    dir.join(".brilliant-complete")
+}
+
 fn parse_major(text: &str) -> Option<u32> {
     let quoted = text.split('"').nth(1)?;
     let mut parts = quoted.split(['.', '_', '-', '+']);
@@ -220,6 +224,7 @@ async fn install_adoptium(app: &AppHandle, component: &str, major: u32) -> R<Pat
     let _ = std::fs::remove_dir_all(&staging);
     let exe = runtime_exe(&dir);
     probe(&exe).await.context("下載的 Java 無法執行")?;
+    let _ = std::fs::write(stamp(&dir), b"");
     Ok(exe)
 }
 
@@ -239,6 +244,7 @@ async fn install_mojang_runtime(app: &AppHandle, component: &str, mirror: bool) 
 
     let manifest: RuntimeManifest = net::get_json(&entry.manifest.url, mirror).await?;
     let dir = component_dir(component);
+    let _ = tokio::fs::remove_file(stamp(&dir)).await;
 
     let mut jobs = Vec::new();
     let mut links: Vec<(PathBuf, String)> = Vec::new();
@@ -268,24 +274,27 @@ async fn install_mojang_runtime(app: &AppHandle, component: &str, mirror: bool) 
     net::download_all(app, "java", jobs, mirror).await?;
 
     for (target, rel) in links {
-        if target.exists() {
+        let Some(parent) = target.parent() else { continue };
+        let source = parent.join(&rel);
+        let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).ok();
+        if !source.is_file() || size(&target) == size(&source) {
             continue;
         }
-        let Some(parent) = target.parent() else { continue };
         tokio::fs::create_dir_all(parent).await?;
-        let source = parent.join(&rel);
-        if source.is_file() {
-            let _ = tokio::fs::copy(&source, &target).await;
-        }
+        tokio::fs::copy(&source, &target).await.with_context(|| format!("複製 {} 失敗", target.display()))?;
     }
 
     let exe = runtime_exe(&dir);
     if !exe.is_file() {
         bail!("{component} 安裝後找不到 {}", exe.display());
     }
-    if platform == "mac-os" && native == "mac-os-arm64" && probe(&exe).await.is_none() {
-        bail!("這個版本需要 Intel 版的 Java，請先安裝 Rosetta 2：打開「終端機」執行 softwareupdate --install-rosetta，完成後再開始遊戲");
+    if probe(&exe).await.is_none() {
+        if platform == "mac-os" && native == "mac-os-arm64" {
+            bail!("這個版本需要 Intel 版的 Java，請先安裝 Rosetta 2：打開「終端機」執行 softwareupdate --install-rosetta，完成後再開始遊戲");
+        }
+        bail!("{component} 安裝後無法執行");
     }
+    let _ = tokio::fs::write(stamp(&dir), b"").await;
     Ok(exe)
 }
 
@@ -312,9 +321,20 @@ pub async fn ensure(
         eprintln!("[java] 設定的 Java 路徑已不存在（{}），改用自動安裝的 Java", path.display());
     }
 
-    let installed = runtime_exe(&component_dir(component));
+    let dir = component_dir(component);
+    let installed = runtime_exe(&dir);
     if installed.is_file() {
-        return Ok(installed);
+        if stamp(&dir).is_file() && !net::DEEP_VERIFY.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(installed);
+        }
+        match install_mojang_runtime(app, component, mirror).await {
+            Ok(exe) => return Ok(exe),
+            Err(e) if probe(&installed).await.is_some() => {
+                eprintln!("[java] 無法校驗 {component}，先沿用現有的 Java：{:#}", e.0);
+                return Ok(installed);
+            }
+            Err(e) => eprintln!("[java] {component} 不完整且修復失敗：{:#}", e.0),
+        }
     }
 
     if major > 0 {
