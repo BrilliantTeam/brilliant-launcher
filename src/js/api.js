@@ -25,3 +25,31 @@ export const fileSrc = (path) => tauri.core.convertFileSrc(path);
 export const setZoom = (scale) => tauri.webview.getCurrentWebview().setZoom(scale);
 
 export const appVersion = () => tauri.app.getVersion();
+
+export function watchFolders(subs, target, onChange) {
+    let key;
+    let last;
+    const check = async () => {
+        if (document.hidden) return;
+        const id = target();
+        if (id === undefined) {
+            key = undefined;
+            return;
+        }
+        const stamp = await api.dir_stamp({ subs, id }).catch(() => null);
+        if (stamp === null || target() !== id) return;
+        const changed = key === (id ?? '*') && last !== stamp;
+        key = id ?? '*';
+        last = stamp;
+        if (changed) onChange();
+    };
+    const timer = setInterval(check, 2000);
+    addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
+    check();
+    return () => {
+        clearInterval(timer);
+        removeEventListener('focus', check);
+        document.removeEventListener('visibilitychange', check);
+    };
+}

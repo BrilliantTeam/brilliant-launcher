@@ -1,4 +1,4 @@
-import { api, fileSrc, openUrl, pickFiles } from '../api.js';
+import { api, fileSrc, openUrl, pickFiles, watchFolders } from '../api.js';
 import { $, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard } from '../ui.js';
 import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, INSTANCE_ICONS, instanceIconName } from '../icons.js';
@@ -717,7 +717,7 @@ export async function shareScreenshot(instance, shot) {
 
 async function showScreenshots(instance) {
     const grid = h('div', { class: 'shots' }, h('div', { class: 'empty-state' }, '讀取中⋯'));
-    api.list_screenshots({ id: instance.id }).then((shots) => {
+    const fill = () => api.list_screenshots({ id: instance.id }).then((shots) => {
         clear(grid).append(...(shots.length ? shots.map((shot) => h('div', { class: 'shot' },
             h('button', { type: 'button', class: 'shot-open', title: shot.name, onclick: () => api.open_path({ path: shot.path }).catch(fail) },
                 h('img', { src: fileSrc(shot.path), alt: shot.name, loading: 'lazy' })),
@@ -726,16 +726,22 @@ async function showScreenshots(instance) {
                 h('button', { type: 'button', class: 'mc', onclick: () => shareScreenshot(instance, shot).then(() => showScreenshots(instance)) }, icon('heart'), '投稿'))))
             : [h('div', { class: 'empty-state' }, '還沒有截圖。遊戲中按 F2 就能截圖。')]));
     }).catch(fail);
-    await dialog({
-        title: `截圖｜${instance.name}`,
-        wide: true,
-        content: h('div', {},
-            h('div', { class: 'toolbar' },
-                h('span', { class: 'toolbar-label' }, '點一下用系統預設程式開啟'),
-                h('span', { class: 'spacer' }),
-                h('button', { type: 'button', class: 'mc', onclick: () => openFolder(instance, 'screenshots') }, icon('folder'), '開啟截圖資料夾')),
-            grid)
-    });
+    fill();
+    const stop = watchFolders(['screenshots'], () => instance.id, fill);
+    try {
+        await dialog({
+            title: `截圖｜${instance.name}`,
+            wide: true,
+            content: h('div', {},
+                h('div', { class: 'toolbar' },
+                    h('span', { class: 'toolbar-label' }, '點一下用系統預設程式開啟'),
+                    h('span', { class: 'spacer' }),
+                    h('button', { type: 'button', class: 'mc', onclick: () => openFolder(instance, 'screenshots') }, icon('folder'), '開啟截圖資料夾')),
+                grid)
+        });
+    } finally {
+        stop();
+    }
 }
 
 async function createShortcut(instance) {

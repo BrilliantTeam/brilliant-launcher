@@ -177,6 +177,36 @@ pub async fn list_screenshots(id: String) -> Vec<Screenshot> {
     out
 }
 
+const WATCHED: [&str; 4] = ["mods", "resourcepacks", "shaderpacks", "screenshots"];
+
+#[tauri::command]
+pub async fn dir_stamp(subs: Vec<String>, id: Option<String>) -> R<String> {
+    if subs.is_empty() || subs.iter().any(|s| !WATCHED.contains(&s.as_str())) {
+        bail!("資料夾不正確");
+    }
+    let ids: Vec<String> = match id {
+        Some(id) => vec![crate::instance::get(&id).await?.id],
+        None => crate::instance::list().await.into_iter().map(|i| i.id).collect(),
+    };
+    tokio::task::spawn_blocking(move || {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for id in &ids {
+            for sub in &subs {
+                let mut entries: Vec<_> = std::fs::read_dir(paths::game_dir(id).join(sub))
+                    .map(|d| d.flatten().filter_map(|e| e.metadata().ok().map(|m| (e.file_name(), m.len(), m.modified().ok()))).collect())
+                    .unwrap_or_default();
+                entries.sort();
+                (id, sub, entries).hash(&mut hasher);
+            }
+        }
+        hasher.finish().to_string()
+    })
+    .await
+    .context("讀取資料夾失敗")
+    .map_err(Into::into)
+}
+
 fn dir_size(path: &Path) -> u64 {
     std::fs::read_dir(path)
         .map(|d| d.flatten().map(|e| {

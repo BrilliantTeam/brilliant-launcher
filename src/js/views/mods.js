@@ -1,4 +1,4 @@
-import { api, listen, openUrl, pickFiles } from '../api.js';
+import { api, listen, openUrl, pickFiles, watchFolders } from '../api.js';
 import { $, $$, clear, confirm, dialog, fail, fmtBytes, h, toast, guard } from '../ui.js';
 import { emit, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
@@ -1067,6 +1067,7 @@ export function initMods() {
     on('instances', onInstanceChange);
     on('settings', onInstanceChange);
     addEventListener('hashchange', onInstanceChange);
+    watchFolders(['mods', 'resourcepacks', 'shaderpacks'], () => (location.hash === '#mods' ? selectedInstance()?.id : undefined), reloadInstalled);
     renderCategories();
     onInstanceChange();
 }

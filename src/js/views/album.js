@@ -1,4 +1,4 @@
-import { api, fileSrc } from '../api.js';
+import { api, fileSrc, watchFolders } from '../api.js';
 import { $, clear, confirm, dialog, fail, guard, h, toast } from '../ui.js';
 import { icon } from '../icons.js';
 import { on, saveSettings, selectedAccount, store } from '../store.js';
@@ -315,5 +315,6 @@ export function initAlbum() {
     $('#btn-album-refresh').addEventListener('click', guard(render));
     addEventListener('hashchange', () => { if (location.hash === '#album') render(); });
     on('instances', () => { if (document.body.dataset.view === 'album') render(); });
+    watchFolders(['screenshots'], () => (location.hash === '#album' ? null : undefined), render);
     if (location.hash === '#album') render();
 }
