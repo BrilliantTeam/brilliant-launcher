@@ -43,6 +43,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          shared-key: release
+          save-if: false
 
       - name: 設置 Node.js
         uses: actions/setup-node@v4
