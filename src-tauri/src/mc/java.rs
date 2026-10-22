@@ -5,6 +5,7 @@ use crate::paths;
 use crate::bail;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
@@ -192,11 +193,44 @@ pub async fn scan() -> Vec<JavaInfo> {
     found
 }
 
-async fn install_adoptium(app: &AppHandle, component: &str, major: u32) -> R<PathBuf> {
+#[derive(Deserialize)]
+struct AdoptiumRelease {
+    release_name: String,
+    binary: AdoptiumBinary,
+}
+
+#[derive(Deserialize)]
+struct AdoptiumBinary {
+    package: AdoptiumPackage,
+}
+
+#[derive(Deserialize)]
+struct AdoptiumPackage {
+    link: String,
+    checksum: String,
+}
+
+async fn latest_adoptium(major: u32) -> R<AdoptiumRelease> {
     let os = if cfg!(target_os = "windows") { "windows" } else if cfg!(target_os = "macos") { "mac" } else { "linux" };
     let arch = if cfg!(target_arch = "aarch64") { "aarch64" } else { "x64" };
-    net::emit_stage(app, "java", &format!("改從 Adoptium 下載 Java {major}"));
-    let bytes = net::get_bytes(&format!("https://api.adoptium.net/v3/binary/latest/{major}/ga/{os}/{arch}/jre/hotspot/normal/eclipse"), false).await?;
+    let list: Vec<AdoptiumRelease> = net::get_json(
+        &format!("https://api.adoptium.net/v3/assets/latest/{major}/hotspot?architecture={arch}&image_type=jre&os={os}&vendor=eclipse"),
+        false,
+    )
+    .await?;
+    Ok(list.into_iter().next().with_context(|| format!("Adoptium 沒有提供這台電腦可用的 Java {major}"))?)
+}
+
+fn installed_release(dir: &Path) -> String {
+    std::fs::read_to_string(stamp(dir)).unwrap_or_default().trim().to_string()
+}
+
+async fn install_adoptium(app: &AppHandle, component: &str, release: &AdoptiumRelease) -> R<PathBuf> {
+    net::emit_stage(app, "java", &format!("從 Adoptium 下載 Java {}", release.release_name));
+    let bytes = net::get_bytes(&release.binary.package.link, false).await?;
+    if !hex::encode(sha2::Sha256::digest(&bytes)).eq_ignore_ascii_case(release.binary.package.checksum.trim()) {
+        bail!("下載的 Java 校驗碼不符，可能已損毀或遭竄改");
+    }
     let dir = component_dir(component);
     let staging = dir.with_extension("download");
     let _ = std::fs::remove_dir_all(&staging);
@@ -224,7 +258,7 @@ async fn install_adoptium(app: &AppHandle, component: &str, major: u32) -> R<Pat
     let _ = std::fs::remove_dir_all(&staging);
     let exe = runtime_exe(&dir);
     probe(&exe).await.context("下載的 Java 無法執行")?;
-    let _ = std::fs::write(stamp(&dir), b"");
+    let _ = std::fs::write(stamp(&dir), &release.release_name);
     Ok(exe)
 }
 
@@ -312,6 +346,7 @@ pub async fn ensure(
     major: u32,
     override_path: &str,
     mirror: bool,
+    auto_update: bool,
 ) -> R<PathBuf> {
     if !override_path.trim().is_empty() {
         let path = PathBuf::from(override_path.trim());
@@ -323,6 +358,21 @@ pub async fn ensure(
 
     let dir = component_dir(component);
     let installed = runtime_exe(&dir);
+    if auto_update && major > 0 {
+        match latest_adoptium(major).await {
+            Ok(release) if installed.is_file()
+                && installed_release(&dir) == release.release_name
+                && !net::DEEP_VERIFY.load(std::sync::atomic::Ordering::Relaxed) =>
+            {
+                return Ok(installed);
+            }
+            Ok(release) => match install_adoptium(app, component, &release).await {
+                Ok(exe) => return Ok(exe),
+                Err(e) => eprintln!("[java] 更新到 Adoptium {} 失敗，沿用現有的 Java：{:#}", release.release_name, e.0),
+            },
+            Err(e) => eprintln!("[java] 無法檢查 Java {major} 的新版本，沿用現有的 Java：{:#}", e.0),
+        }
+    }
     if installed.is_file() {
         if stamp(&dir).is_file() && !net::DEEP_VERIFY.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(installed);
@@ -352,8 +402,11 @@ pub async fn ensure(
         return Ok(PathBuf::from(info.path));
     }
     if major > 0 {
-        match install_adoptium(app, component, major).await {
-            Ok(exe) => return Ok(exe),
+        match latest_adoptium(major).await {
+            Ok(release) => match install_adoptium(app, component, &release).await {
+                Ok(exe) => return Ok(exe),
+                Err(e) => eprintln!("[java] Adoptium 的 Java {major} 下載失敗：{:#}", e.0),
+            },
             Err(e) => eprintln!("[java] Adoptium 的 Java {major} 下載失敗：{:#}", e.0),
         }
     }

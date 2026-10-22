@@ -155,7 +155,7 @@ async fn prepare(
     } else {
         (resolved.java_version.component.clone(), resolved.java_version.major_version)
     };
-    let java = java::ensure(app, &java_component, java_major, instance.java(settings), mirror);
+    let java = java::ensure(app, &java_component, java_major, instance.java(settings), mirror, settings.java_auto_update);
     let mods = async {
         if files_only || !instance.wants_rich_presence(settings) {
             return Ok(Vec::new());

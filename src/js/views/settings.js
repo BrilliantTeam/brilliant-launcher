@@ -11,6 +11,7 @@ const FIELDS = {
     jvmArgs: '#set-jvm',
     quickJoin: '#set-quick-join',
     javaPath: '#set-java',
+    javaAutoUpdate: '#set-java-auto',
     useMirror: '#set-mirror',
     showSnapshots: '#set-snapshots',
     showOld: '#set-old',

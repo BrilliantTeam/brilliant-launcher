@@ -276,6 +276,10 @@
                     <div class="hint">選「自動」時，啟動器會依版本需求下載 Mojang 官方 JRE，或沿用系統上版本相符的 Java。</div>
                 </div>
                 <div class="field">
+                    <label><input type="checkbox" id="set-java-auto">自動偵測並更新 Java</label>
+                    <div class="hint">Mojang 內建的 Java 很少更新，可能缺少安全修補。開啟後，Java 選「自動」的實例每次開始遊戲前會檢查 Adoptium（Eclipse Temurin）有沒有新版，有的話自動下載並校驗後換上；檢查失敗或離線時沿用現有的 Java。</div>
+                </div>
+                <div class="field">
                     <label for="set-jvm">JVM 參數</label>
                     <textarea id="set-jvm" spellcheck="false" maxlength="4096"></textarea>
                     <div class="jvm-presets" id="jvm-presets"></div>
