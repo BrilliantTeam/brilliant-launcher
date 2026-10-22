@@ -64,6 +64,11 @@ export function initLog() {
     });
     on('instances', renderPicker);
 
+    const follow = $('#log-follow');
+    const toBottom = () => requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+    addEventListener('hashchange', () => { if (location.hash === '#log' && follow.checked) toBottom(); });
+    follow.addEventListener('change', () => { if (follow.checked) toBottom(); });
+
     $('#log-instance').addEventListener('change', (e) => showLog(e.target.value));
     $('#btn-clear-log').addEventListener('click', () => {
         if (shown !== null) logs.set(shown, []);
