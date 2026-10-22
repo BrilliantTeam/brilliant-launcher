@@ -317,6 +317,7 @@ impl DlFile {
 }
 
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct Progress {
     pub stage: String,
     pub label: String,
