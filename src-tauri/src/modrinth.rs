@@ -383,13 +383,24 @@ fn safe_file(name: &str, kind: Kind) -> bool {
     base.ends_with(kind.extension()) && !name.contains(['/', '\\']) && !name.contains("..") && !name.is_empty()
 }
 
-pub async fn search(kind: Kind, query: &str, mc: &str, category: &str, sort: &str, offset: u32) -> R<SearchResult> {
+fn side_facets(side: &str) -> R<&'static [&'static str]> {
+    Ok(match side {
+        "" => &[],
+        "client" => &["[\"client_side:required\",\"client_side:optional\"]", "[\"server_side:optional\",\"server_side:unsupported\"]"],
+        "server" => &["[\"server_side:required\",\"server_side:optional\"]", "[\"client_side:optional\",\"client_side:unsupported\"]"],
+        "both" => &["[\"client_side:required\"]", "[\"server_side:required\"]"],
+        _ => bail!("搜尋參數不正確"),
+    })
+}
+
+pub async fn search(kind: Kind, query: &str, mc: &str, category: &str, sort: &str, offset: u32, side: &str) -> R<SearchResult> {
     if !valid_mc(mc) || !valid_word(category) || !valid_word(sort) {
         bail!("搜尋參數不正確");
     }
     let mut facets = vec![format!("[\"project_type:{}\"]", kind.project_type()), format!("[\"versions:{mc}\"]")];
     if kind == Kind::Mod {
         facets.push("[\"categories:fabric\"]".into());
+        facets.extend(side_facets(side)?.iter().map(|f| f.to_string()));
     }
     if !category.is_empty() {
         facets.push(format!("[\"categories:{category}\"]"));

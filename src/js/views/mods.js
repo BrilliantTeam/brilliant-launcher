@@ -392,29 +392,37 @@ async function search(reset = true) {
     const more = $('#btn-more-mods');
     const instance = selectedInstance();
     const query = $('#mod-search').value.trim();
-    if (reset) {
-        state.offset = 0;
-        clear(box);
-    }
+    if (reset) state.offset = 0;
     more.hidden = true;
     const problem = instanceProblem();
     if (problem && state.kind === 'mod') {
-        box.append(h('div', { class: 'empty-state' }, problem));
+        clear(box).append(h('div', { class: 'empty-state' }, problem));
         return;
     }
     if (!instance) {
-        box.append(h('div', { class: 'empty-state' }, instanceProblem()));
+        clear(box).append(h('div', { class: 'empty-state' }, instanceProblem()));
         return;
     }
-    state.searchedFor = `${instance.id}|${instance.mcVersion}|${state.kind}|${state.category}|${$('#store-sort').value}|${query}`;
+    const side = state.kind === 'mod' ? $('#store-side').value : '';
+    state.searchedFor = `${instance.id}|${instance.mcVersion}|${state.kind}|${state.category}|${$('#store-sort').value}|${side}|${query}`;
     const seq = ++state.searchSeq;
-    if (reset) box.append(...Array.from({ length: 6 }, () => h('div', { class: 'mod-card skeleton' })));
+    if (reset && box.querySelector('.mod-card:not(.skeleton)')) {
+        box.classList.add('refreshing');
+    } else if (reset) {
+        clear(box).append(...Array.from({ length: 6 }, () => h('div', { class: 'mod-card skeleton' })));
+    }
     let result;
+    state.loadingMore = true;
     try {
-        result = await api.content_search({ id: instance.id, kind: state.kind, query, category: state.category, sort: $('#store-sort').value, offset: state.offset });
+        result = await api.content_search({ id: instance.id, kind: state.kind, query, category: state.category, sort: $('#store-sort').value, offset: state.offset, side });
     } catch {
         if (seq === state.searchSeq) clear(box).append(h('div', { class: 'empty-state' }, '暫時連不上 Modrinth，請稍後再試。'));
         return;
+    } finally {
+        if (seq === state.searchSeq) {
+            state.loadingMore = false;
+            box.classList.remove('refreshing');
+        }
     }
     if (seq !== state.searchSeq) return;
     if (reset) clear(box);
@@ -701,6 +709,11 @@ function startPackDrag(event, from, enabledCount) {
     row.addEventListener('pointercancel', end);
 }
 
+function packIcon(file) {
+    const url = (installed.resourcepack || []).find((e) => e.file === file)?.icon_url;
+    return url ? h('img', { class: 'pack-icon', src: url, alt: '' }) : h('span', { class: 'pack-icon' }, icon(KIND_ICON.resourcepack));
+}
+
 function packPanel() {
     if (state.kind !== 'resourcepack' || !state.packs?.length) return null;
     const enabledCount = state.packs.filter((p) => p.enabled).length;
@@ -714,6 +727,7 @@ function packPanel() {
         },
         h('span', { class: 'pack-grip', 'aria-hidden': 'true' }, '⋮⋮'),
         h('span', { class: 'pack-rank' }, pack.enabled ? String(index + 1) : '—'),
+        packIcon(pack.file),
         h('span', { class: 'pack-name', title: pack.file },
             h('input', {
                 type: 'checkbox',
@@ -865,10 +879,41 @@ function depBanner(list) {
         }, fixing ? '補齊中⋯' : `一鍵補齊（${needs.size}）`) : null);
 }
 
+function missingOf(kind, entry) {
+    const deps = entry.missing || [];
+    if (kind === 'mod') return deps;
+    return deps.filter((dep) => !(installed.mod || []).some((m) => m.project_id === dep.project_id && m.enabled));
+}
+
+async function installMissingMods(entry, deps) {
+    const problem = instanceProblem('mod');
+    if (problem) return toast(problem, 'warn');
+    const key = `deps:${entry.file}`;
+    busy.add(key);
+    renderAll();
+    const instance = selectedInstance();
+    let done = 0;
+    for (const dep of deps) {
+        const off = (installed.mod || []).find((m) => m.project_id === dep.project_id && !m.enabled);
+        try {
+            if (off) await api.set_mod_enabled({ id: instance.id, file: off.file, enabled: true });
+            else await api.content_install({ id: instance.id, kind: 'mod', project: dep.project_id });
+            done++;
+        } catch (error) {
+            fail(error);
+        }
+    }
+    busy.delete(key);
+    if (done) toast(`已安裝 ${deps.map((d) => d.title).join('、')}`);
+    await loadInstalled('mod');
+    renderAll();
+}
+
 function installedRow(entry) {
     const kind = state.kind;
     const updating = busy.has(`file:${entry.file}`);
-    const problems = (entry.missing?.length ? 1 : 0) + (entry.conflicts?.length ? 1 : 0);
+    const missing = missingOf(kind, entry);
+    const problems = (missing.length ? 1 : 0) + (entry.conflicts?.length ? 1 : 0);
     return h('div', { class: `row ${entry.enabled ? '' : 'off'} ${problems ? 'has-problem' : ''}` },
         entry.icon_url ? h('img', { class: 'row-icon', src: entry.icon_url, alt: '' }) : h('div', { class: 'row-icon' }, icon(KIND_ICON[kind])),
         h('div', entry.project_id && !entry.managed ? { class: 'grow clickable', title: '查看詳細介紹', onclick: () => showDetail(kind, { project_id: entry.project_id, title: entry.name }) } : { class: 'grow' },
@@ -877,10 +922,17 @@ function installedRow(entry) {
                 entry.managed ? h('span', { class: 'badge' }, '啟動器管理') : null,
                 !entry.enabled ? h('span', { class: 'badge grey' }, '已停用') : null,
                 entry.pinned ? h('span', { class: 'badge grey' }, '已鎖定版本') : null,
-                entry.missing?.length ? h('span', { class: 'badge warn' }, `缺少 ${entry.missing.map((d) => d.title).join('、')}`) : null,
+                missing.length ? h('span', { class: 'badge warn' }, `缺少 ${missing.map((d) => d.title).join('、')}`) : null,
                 entry.conflicts?.length ? h('span', { class: 'badge warn' }, `與 ${entry.conflicts.join('、')} 衝突`) : null,
                 entry.update && !entry.pinned ? h('span', { class: 'badge warn' }, `可更新 ${entry.update.version}`) : null),
             h('div', { class: 'meta' }, [entry.version, fmtBytes(entry.size), entry.dependents?.length ? `被 ${listNames(entry.dependents)} 需要` : entry.file].filter(Boolean).join('｜'))),
+        kind !== 'mod' && missing.length ? h('button', {
+            type: 'button',
+            class: 'mc primary',
+            disabled: busy.has(`deps:${entry.file}`),
+            title: `下載 ${missing.map((d) => d.title).join('、')}`,
+            onclick: () => installMissingMods(entry, missing)
+        }, busy.has(`deps:${entry.file}`) ? '下載中⋯' : '下載模組') : null,
         entry.update && !entry.pinned ? h('button', { type: 'button', class: 'mc primary', disabled: updating, onclick: () => update(kind, [entry]) }, updating ? '更新中⋯' : '更新') : null,
         entry.project_id && !entry.managed ? h('button', { type: 'button', class: 'mc', title: '切換版本或鎖定版本', onclick: () => showVersions(kind, entry) }, '版本') : null,
         kind === 'mod' ? h('button', { type: 'button', class: 'mc', onclick: () => toggleEnabled(kind, entry) }, entry.enabled ? '停用' : '啟用') : null,
@@ -895,7 +947,7 @@ function renderInstalled() {
     const all = $('#btn-update-all');
     all.hidden = !updates.length;
     all.textContent = `全部更新（${updates.length}）`;
-    $('#btn-add-mod').hidden = state.kind !== 'mod';
+    $('#store-side').hidden = state.kind !== 'mod';
     const problem = instanceProblem();
     if (problem) return box.append(h('div', { class: 'empty-state' }, problem));
     if (!list) return box.append(h('div', { class: 'empty-state' }, '讀取中⋯'));
@@ -974,7 +1026,7 @@ function selectTab(tab) {
 
 async function reloadInstalled() {
     const seq = ++state.listSeq;
-    const kinds = state.kind === 'mod' ? ['mod', 'shader'] : [state.kind];
+    const kinds = state.kind === 'mod' ? ['mod', 'shader'] : [state.kind, 'mod'];
     await Promise.all(kinds.map(loadInstalled));
     if (seq === state.listSeq) renderAll();
 }
@@ -1010,17 +1062,20 @@ async function warnRisky(instance, files) {
     renderAll();
 }
 
+const KIND_NAME = { mod: '模組', resourcepack: '資源包', shader: '光影' };
+
 async function installLocal(paths) {
     const instance = selectedInstance();
     if (!instance) return toast('請先選擇一個實例', 'error');
-    const jars = paths.filter((p) => p.toLowerCase().endsWith('.jar'));
-    if (!jars.length) return toast('只能安裝 .jar 模組檔', 'warn');
+    const files = paths.filter((p) => /\.(jar|zip)$/i.test(p));
+    if (!files.length) return toast('只能安裝 .jar 模組、.zip 資源包或光影', 'warn');
     try {
-        const added = await api.add_mods({ id: instance.id, files: jars });
-        toast(`已安裝 ${added.length} 個模組`);
-        await loadInstalled('mod');
+        const added = await api.add_content({ id: instance.id, files });
+        const kinds = [...new Set(added.map(([kind]) => kind))];
+        toast(`已安裝 ${kinds.map((kind) => `${added.filter(([k]) => k === kind).length} 個${KIND_NAME[kind]}`).join('、')}`);
+        await Promise.all(kinds.map(loadInstalled));
         renderAll();
-        await warnRisky(instance, added);
+        await warnRisky(instance, added.filter(([kind]) => kind === 'mod').map(([, file]) => file));
     } catch (error) {
         fail(error);
     }
@@ -1045,7 +1100,11 @@ export function initMods() {
         timer = setTimeout(() => search(), 400);
     });
     $('#store-sort').addEventListener('change', () => search());
+    $('#store-side').addEventListener('change', () => search());
     $('#btn-more-mods').addEventListener('click', guard(() => search(false)));
+    new IntersectionObserver((entries) => {
+        if (entries.some((e) => e.isIntersecting) && !$('#btn-more-mods').hidden && !state.loadingMore) search(false);
+    }, { rootMargin: '300px' }).observe($('#btn-more-mods'));
     $('#btn-refresh-mods').addEventListener('click', guard(() => reloadInstalled()));
     $('#installed-search').addEventListener('input', (e) => {
         state.filter = e.target.value;
@@ -1053,7 +1112,8 @@ export function initMods() {
     });
     $('#btn-update-all').addEventListener('click', guard(() => update(state.kind, (installed[state.kind] || []).filter((entry) => entry.update && !entry.pinned))));
     $('#btn-add-mod').addEventListener('click', guard(async () => {
-        const picked = await pickFiles({ multiple: true, filters: [{ name: 'Minecraft 模組', extensions: ['jar'] }] });
+        const filter = state.kind === 'mod' ? { name: 'Minecraft 模組', extensions: ['jar'] } : { name: state.kind === 'shader' ? '光影包' : '資源包', extensions: ['zip'] };
+        const picked = await pickFiles({ multiple: true, filters: [filter] });
         if (picked) await installLocal(Array.isArray(picked) ? picked : [picked]);
     }));
     $('#btn-open-mods').addEventListener('click', () => openFolder({ mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks' }[state.kind]));

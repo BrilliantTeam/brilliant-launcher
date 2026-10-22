@@ -249,19 +249,72 @@ pub async fn set_mod_enabled(id: &str, file: &str, enabled: bool) -> R<()> {
     Ok(())
 }
 
-pub async fn add_mod(id: &str, source: &str) -> R<String> {
+pub fn content_kind(source: &std::path::Path) -> R<(&'static str, &'static str)> {
+    let lower = source.file_name().map(|s| s.to_string_lossy().to_lowercase()).unwrap_or_default();
+    if lower.ends_with(".jar") {
+        return Ok(("mod", "mods"));
+    }
+    if !lower.ends_with(".zip") {
+        bail!("只能安裝 .jar 模組、.zip 資源包或光影：{}", source.display());
+    }
+    let file = std::fs::File::open(source).with_context(|| format!("無法開啟 {}", source.display()))?;
+    let zip = zip::ZipArchive::new(std::io::BufReader::new(file)).with_context(|| format!("無法讀取壓縮檔 {}", source.display()))?;
+    let names: Vec<String> = zip.file_names().map(|n| n.replace('\\', "/").to_lowercase()).collect();
+    if names.iter().any(|n| n.starts_with("shaders/")) {
+        return Ok(("shader", "shaderpacks"));
+    }
+    if names.iter().any(|n| n == "pack.mcmeta") {
+        return Ok(("resourcepack", "resourcepacks"));
+    }
+    bail!("{} 不是資源包也不是光影（找不到 pack.mcmeta 或 shaders 資料夾）", source.display())
+}
+
+pub async fn add_content(id: &str, source: &str) -> R<(String, String)> {
     let src = std::path::Path::new(source);
-    let name = src
-        .file_name()
-        .map(|s| s.to_string_lossy().to_string())
-        .filter(|n| n.ends_with(".jar"))
-        .context("只能安裝 .jar 檔")?;
-    let dest = mod_path(id, &name)?;
+    let (kind, dir) = content_kind(src)?;
+    let name = src.file_name().map(|s| s.to_string_lossy().to_string()).context("檔名不正確")?;
+    if name.contains(['/', '\\']) || name.contains("..") || name.is_empty() {
+        bail!("無效的檔名：{name}");
+    }
+    let dest = paths::game_dir(id).join(dir).join(&name);
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
     tokio::fs::copy(src, &dest).await.with_context(|| format!("複製失敗：{source}"))?;
-    Ok(name)
+    Ok((kind.to_string(), name))
+}
+
+#[cfg(test)]
+mod content_kind_tests {
+    use super::*;
+    use std::io::Write;
+
+    fn zip_with(path: &std::path::Path, entries: &[&str]) {
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(path).unwrap());
+        for name in entries {
+            zip.start_file(*name, zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(b"x").unwrap();
+        }
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn detects_packs_and_shaders() {
+        let dir = std::env::temp_dir().join(format!("brilliant-kind-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pack = dir.join("CozyUI.zip");
+        let shader = dir.join("Complementary.zip");
+        let junk = dir.join("photos.zip");
+        zip_with(&pack, &["pack.mcmeta", "assets/minecraft/textures/a.png"]);
+        zip_with(&shader, &["shaders/gbuffers.fsh", "shaders/lang/en_US.lang"]);
+        zip_with(&junk, &["a.jpg"]);
+        assert_eq!(content_kind(&pack).unwrap().0, "resourcepack");
+        assert_eq!(content_kind(&shader).unwrap().0, "shader");
+        assert_eq!(content_kind(&dir.join("sodium.jar")).unwrap().0, "mod");
+        assert!(content_kind(&junk).is_err());
+        assert!(content_kind(&dir.join("notes.txt")).is_err());
+        let _ = std::fs::remove_dir_all(dir);
+    }
 }
 
 #[cfg(test)]

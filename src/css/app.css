@@ -675,6 +675,7 @@ button.mc.icon-btn.danger:hover { color: var(--danger); }
 .chip[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 
 .mod-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; }
+.mod-results.refreshing { opacity: 0.55; pointer-events: none; transition: opacity 0.15s; }
 .mod-card {
     display: flex;
     align-items: center;
@@ -688,7 +689,7 @@ button.mc.icon-btn.danger:hover { color: var(--danger); }
     transition: background 0.12s ease, transform 0.12s ease;
 }
 .mod-card:hover { background: var(--content-bg); transform: translateY(-1px); }
-.mod-card.skeleton { cursor: default; background: linear-gradient(90deg, var(--panel-face) 0%, var(--content-bg-sunken) 50%, var(--panel-face) 100%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+.mod-card.skeleton { min-height: 190px; cursor: default; background: linear-gradient(90deg, var(--panel-face) 0%, var(--content-bg-sunken) 50%, var(--panel-face) 100%); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 .mod-card img, .mod-card .mod-icon, .detail-head img, .detail-head .mod-icon { width: 44px; height: 44px; flex: 0 0 auto; object-fit: cover; }
 .mod-icon { display: flex; align-items: center; justify-content: center; color: var(--accent); background: var(--content-bg-sunken); }
@@ -1113,8 +1114,11 @@ body.scenic .credit { font-size: 13px; color: #fff; }
 .pack-order { margin-bottom: 12px; padding: 10px 12px; background: var(--content-bg-sunken); border-left: 4px solid var(--accent); }
 .pack-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
 .pack-head .hint { margin: 0; }
-.pack-row { display: grid; grid-template-columns: 18px 26px 1fr 30px 30px; align-items: center; gap: 6px; padding: 5px 8px; margin-bottom: 4px; background: var(--panel-face); border: 2px solid; border-color: var(--bevel-up); cursor: grab; }
+.pack-row { display: grid; grid-template-columns: 18px 26px 22px 1fr 30px 30px; align-items: center; gap: 6px; padding: 5px 8px; margin-bottom: 4px; background: var(--panel-face); border: 2px solid; border-color: var(--bevel-up); cursor: grab; }
 .pack-row.off { opacity: 0.6; }
+.pack-icon { display: grid; place-items: center; width: 22px; height: 22px; object-fit: contain; image-rendering: pixelated; }
+.pack-icon .ico { width: 16px; height: 16px; }
+.store-search select[hidden] { display: none; }
 .pack-row { touch-action: none; transition: transform 0.15s ease; }
 .pack-row.dragging { position: relative; z-index: 2; cursor: grabbing; transition: none; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); }
 .pack-grip { color: var(--text-faint); letter-spacing: -2px; user-select: none; -webkit-user-select: none; }
@@ -1180,7 +1184,7 @@ button.mc.icon-btn .ico { width: 16px; height: 16px; }
 .chip-x .ico { width: 13px; height: 13px; }
 .profile-chip .chip { display: inline-flex; align-items: center; min-height: 30px; }
 
-.pack-row { grid-template-columns: 18px 26px 1fr 36px 36px; padding: 6px 8px; }
+.pack-row { grid-template-columns: 18px 26px 22px 1fr 36px 36px; padding: 6px 8px; }
 .pack-row button.mc.icon-btn { min-width: 36px; height: 30px; min-height: 30px; padding: 0; }
 .pack-row button.mc.icon-btn .ico { width: 16px; height: 16px; }
 .pack-name { font-size: 14px; }

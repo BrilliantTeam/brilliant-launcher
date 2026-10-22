@@ -367,9 +367,9 @@ pub async fn set_mod_enabled(id: String, file: String, enabled: bool) -> R<()> {
 }
 
 #[tauri::command]
-pub async fn content_search(id: String, kind: String, query: String, category: String, sort: String, offset: u32) -> R<modrinth::SearchResult> {
+pub async fn content_search(id: String, kind: String, query: String, category: String, sort: String, offset: u32, side: Option<String>) -> R<modrinth::SearchResult> {
     let instance = instance::get(&id).await?;
-    modrinth::search(modrinth::Kind::parse(&kind)?, &query, &instance.mc_version, &category, &sort, offset).await
+    modrinth::search(modrinth::Kind::parse(&kind)?, &query, &instance.mc_version, &category, &sort, offset, side.as_deref().unwrap_or("")).await
 }
 
 #[tauri::command]
@@ -736,10 +736,11 @@ pub async fn import_config(path: String) -> R<ImportSummary> {
 }
 
 #[tauri::command]
-pub async fn add_mods(id: String, files: Vec<String>) -> R<Vec<String>> {
+pub async fn add_content(id: String, files: Vec<String>) -> R<Vec<(String, String)>> {
+    instance::get(&id).await?;
     let mut added = Vec::new();
     for file in files {
-        added.push(instance::add_mod(&id, &file).await?);
+        added.push(instance::add_content(&id, &file).await?);
     }
     Ok(added)
 }

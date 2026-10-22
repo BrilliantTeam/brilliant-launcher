@@ -103,7 +103,7 @@ pub fn run() {
             commands::duplicate_instance,
             commands::select_instance,
             commands::set_mod_enabled,
-            commands::add_mods,
+            commands::add_content,
             commands::create_shortcut,
             commands::export_diagnostics,
             commands::export_config,
