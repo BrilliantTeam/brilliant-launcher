@@ -182,6 +182,7 @@ pub fn run() {
             insight::list_all_screenshots,
             insight::delete_screenshot,
             insight::save_png,
+            insight::save_shot_thumb,
         ])
         .run(tauri::generate_context!())
         .expect("啟動 Tauri 失敗");

@@ -152,7 +152,7 @@ async function saveRecapImage(r, delta) {
 }
 
 function memoryCard(memory) {
-    return h('button', { type: 'button', class: 'memory', style: `background-image:url("${fileSrc(memory.cover.path)}")`, onclick: () => playMemory(memory) },
+    return h('button', { type: 'button', class: 'memory', style: `background-image:url("${fileSrc(memory.cover.thumb || memory.cover.path)}")`, onclick: () => playMemory(memory) },
         h('span', { class: 'memory-count' }, `${memory.shots.length} 張`),
         h('span', { class: 'memory-text' }, h('b', {}, memory.title), h('small', {}, memory.subtitle)));
 }
@@ -225,7 +225,51 @@ async function viewShot(shot) {
     }
 }
 
+const THUMB_WIDTH = 480;
+const thumbQueue = [];
+let thumbsBusy = 0;
+
+async function makeThumb(shot) {
+    const img = await loadImage(fileSrc(shot.path));
+    if (!img?.naturalWidth) return null;
+    const width = Math.min(THUMB_WIDTH, img.naturalWidth);
+    const canvas = h('canvas', { width, height: Math.round(img.naturalHeight * width / img.naturalWidth) });
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    img.src = '';
+    return api.save_shot_thumb({ id: shot.instance, file: shot.name, time: shot.time, data: canvas.toDataURL('image/jpeg', 0.82) });
+}
+
+function pumpThumbs() {
+    while (thumbsBusy < 2 && thumbQueue.length) {
+        const [shot, img] = thumbQueue.shift();
+        if (!img.isConnected) continue;
+        thumbsBusy++;
+        makeThumb(shot)
+            .then((thumb) => { shot.thumb = thumb; img.src = fileSrc(thumb || shot.path); })
+            .catch(() => { img.src = fileSrc(shot.path); })
+            .finally(() => { thumbsBusy--; pumpThumbs(); });
+    }
+}
+
+const thumbObserver = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        thumbObserver.unobserve(entry.target);
+        thumbQueue.push([entry.target.shot, entry.target]);
+    }
+    pumpThumbs();
+}, { rootMargin: '400px' });
+
+function shotImage(shot) {
+    if (shot.thumb) return h('img', { src: fileSrc(shot.thumb), alt: shot.name, loading: 'lazy', decoding: 'async' });
+    const img = h('img', { alt: shot.name, decoding: 'async' });
+    img.shot = shot;
+    thumbObserver.observe(img);
+    return img;
+}
+
 function renderGrid() {
+    thumbQueue.length = 0;
     const list = shots.filter((s) => !filter || s.instance === filter);
     const thisYear = new Date().getFullYear();
     let year = thisYear;
@@ -238,7 +282,7 @@ function renderGrid() {
             }
             head.push(h('div', { class: 'album-month' }, h('b', {}, `${group.month} 月`), h('span', {}, `${group.year === thisYear ? '' : `${group.year} 年・`}${group.shots.length} 張`)));
             return [...head, ...group.shots.map((shot) => h('button', { type: 'button', class: 'shot shot-open', title: `${shot.instanceName}\n${shot.name}`, onclick: () => viewShot(shot) },
-                h('img', { src: fileSrc(shot.path), alt: shot.name, loading: 'lazy', decoding: 'async' }),
+                shotImage(shot),
                 h('div', { class: 'shot-foot' }, h('span', {}, shot.instanceName), `${new Date(shot.time * 1000).getDate()} 日`)))];
         })
         : [h('div', { class: 'empty-state' }, '還沒有截圖。遊戲中按 F2 就能截圖，所有實例的截圖都會出現在這裡。')]));

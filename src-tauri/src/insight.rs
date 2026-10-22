@@ -431,6 +431,15 @@ pub struct Shot {
     pub name: String,
     pub time: i64,
     pub meta: Option<serde_json::Value>,
+    pub thumb: Option<String>,
+}
+
+pub fn thumbs_dir() -> std::path::PathBuf {
+    paths::root().join("cache").join("thumbs")
+}
+
+fn thumb_path(id: &str, file: &str, time: i64) -> std::path::PathBuf {
+    thumbs_dir().join(format!("{}.jpg", crate::net::sha1_hex(format!("{id}/{file}/{time}").as_bytes())))
 }
 
 #[tauri::command]
@@ -444,7 +453,8 @@ pub async fn list_all_screenshots() -> Vec<Shot> {
             .unwrap_or_default();
         for shot in crate::extras::list_screenshots(instance.id.clone()).await {
             let meta = metas.get(&shot.name).cloned();
-            out.push(Shot { instance: instance.id.clone(), instance_name: instance.name.clone(), path: shot.path, name: shot.name, time: shot.time, meta });
+            let thumb = Some(thumb_path(&instance.id, &shot.name, shot.time)).filter(|p| p.is_file()).map(|p| p.to_string_lossy().to_string());
+            out.push(Shot { instance: instance.id.clone(), instance_name: instance.name.clone(), path: shot.path, name: shot.name, time: shot.time, meta, thumb });
         }
     }
     out.sort_by_key(|s| std::cmp::Reverse(s.time));
@@ -462,6 +472,23 @@ pub async fn delete_screenshot(id: String, file: String) -> R<()> {
     }
     tokio::fs::remove_file(paths::game_dir(&id).join("screenshots").join(file)).await.context("刪除截圖失敗")?;
     Ok(())
+}
+
+#[tauri::command]
+pub async fn save_shot_thumb(id: String, file: String, time: i64, data: String) -> R<String> {
+    if !safe_png(&file) {
+        bail!("截圖檔名不正確");
+    }
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.trim_start_matches("data:image/jpeg;base64,"))
+        .context("圖片資料不正確")?;
+    if bytes.len() > 2 << 20 || !bytes.starts_with(&[0xFF, 0xD8]) {
+        bail!("圖片資料不正確");
+    }
+    let path = thumb_path(&id, &file, time);
+    tokio::fs::create_dir_all(thumbs_dir()).await?;
+    tokio::fs::write(&path, bytes).await.context("儲存縮圖失敗")?;
+    Ok(path.to_string_lossy().to_string())
 }
 
 #[tauri::command]

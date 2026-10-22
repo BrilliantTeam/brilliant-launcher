@@ -173,6 +173,23 @@ pub async fn get_bytes(url: &str, mirror: bool) -> R<Vec<u8>> {
     Err(last.unwrap_or_else(|| anyhow!("沒有可用的下載來源：{url}").into()))
 }
 
+async fn sha1_file(path: &Path) -> std::io::Result<(String, u64)> {
+    use tokio::io::AsyncReadExt;
+    let mut file = tokio::fs::File::open(path).await?;
+    let mut hasher = Sha1::new();
+    let mut buf = vec![0u8; 256 * 1024];
+    let mut len = 0u64;
+    loop {
+        let n = file.read(&mut buf).await?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+        len += n as u64;
+    }
+    Ok((hex::encode(hasher.finalize()), len))
+}
+
 fn part_path(path: &Path) -> PathBuf {
     let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
     name.push(".part");
@@ -211,9 +228,9 @@ async fn fetch_file(f: &DlFile, mirror: bool) -> R<()> {
         for attempt in 0..RETRIES {
             match stream_to(&source, &part).await {
                 Ok(()) => {
-                    let bytes = tokio::fs::read(&part).await.unwrap_or_default();
-                    let sha_ok = f.sha1.as_deref().is_none_or(|want| sha1_hex(&bytes).eq_ignore_ascii_case(want));
-                    let size_ok = f.size == 0 || bytes.len() as u64 == f.size;
+                    let (got, len) = sha1_file(&part).await.unwrap_or_default();
+                    let sha_ok = f.sha1.as_deref().is_none_or(|want| got.eq_ignore_ascii_case(want));
+                    let size_ok = f.size == 0 || len == f.size;
                     if sha_ok && size_ok {
                         let _ = tokio::fs::remove_file(&f.path).await;
                         tokio::fs::rename(&part, &f.path).await.with_context(|| format!("搬移失敗：{}", f.path.display()))?;
@@ -267,10 +284,7 @@ async fn already_good(path: &Path, sha1: Option<&str>, size: u64) -> bool {
         return meta.len() == size;
     }
     match sha1 {
-        Some(want) => tokio::fs::read(path)
-            .await
-            .map(|b| sha1_hex(&b).eq_ignore_ascii_case(want))
-            .unwrap_or(false),
+        Some(want) => sha1_file(path).await.is_ok_and(|(got, _)| got.eq_ignore_ascii_case(want)),
         None => true,
     }
 }

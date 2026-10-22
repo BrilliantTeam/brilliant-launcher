@@ -196,6 +196,9 @@ pub async fn clean_cache(state: State<'_, AppState>) -> R<u64> {
         let natives = paths::shared().join("natives");
         freed += dir_size(&natives);
         let _ = std::fs::remove_dir_all(&natives);
+        let thumbs = crate::insight::thumbs_dir();
+        freed += dir_size(&thumbs);
+        let _ = std::fs::remove_dir_all(&thumbs);
         let week_ago = now_secs() - 7 * 86_400;
         for entry in std::fs::read_dir(paths::logs()).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
             if mtime(&entry.path()) < week_ago {
