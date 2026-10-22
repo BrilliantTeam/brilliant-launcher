@@ -267,7 +267,7 @@ pub async fn list_instances(state: State<'_, AppState>) -> R<(Vec<Instance>, Vec
     Ok((instance::list().await, state.running_ids().await))
 }
 
-async fn resolve_version(draft: &mut Instance, settings: &Settings) -> R<()> {
+pub(crate) async fn resolve_version(draft: &mut Instance, settings: &Settings) -> R<()> {
     if draft.mc_version.trim().is_empty() {
         bail!("請先選擇 Minecraft 版本");
     }
@@ -300,6 +300,14 @@ pub async fn create_instance(mut draft: Instance) -> R<Instance> {
         let _ = tokio::task::spawn_blocking(move || crate::boost::inherit_settings(&to, from.as_deref())).await;
     }
     Ok(created)
+}
+
+#[tauri::command]
+pub async fn prefetch_upgrade(app: AppHandle, id: String, mc: String) -> R<()> {
+    if mc.is_empty() || mc.len() > 20 || !mc.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+        bail!("版本號格式不正確");
+    }
+    crate::launch::prefetch_upgrade(&app, &id, &mc).await
 }
 
 #[tauri::command]

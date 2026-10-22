@@ -165,6 +165,7 @@ pub fn run() {
             commands::prefetch,
             commands::repair_instance,
             commands::send_report,
+            commands::prefetch_upgrade,
             commands::report_post,
             skins::share_screenshot,
             boost::system_info,

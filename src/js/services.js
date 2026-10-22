@@ -58,6 +58,8 @@ export function upgradeTarget(instance) {
     return null;
 }
 
+const upgradeReady = new Set();
+
 async function checkUpgrade() {
     const info = await api.launcher_info().catch(() => null);
     if (info?.recommended && store.versions && store.versions.recommended !== info.recommended) {
@@ -65,8 +67,15 @@ async function checkUpgrade() {
         store.versions.modVersions = info.versions;
         emit('instances');
     }
-    const target = upgradeTarget(selectedInstance());
-    if (target) await notifyOnce(`upgrade:${target}`, `輝煌已更新到 Minecraft ${target}`, '打開啟動器，一鍵把你的實例升級到新版本。');
+    const instance = selectedInstance();
+    const target = upgradeTarget(instance);
+    if (!target) return;
+    const key = `${instance.id}:${target}`;
+    if (!upgradeReady.has(key) && !store.running.length && store.online !== false) {
+        upgradeReady.add(key);
+        api.prefetch_upgrade({ id: instance.id, mc: target }).catch(() => upgradeReady.delete(key));
+    }
+    await notifyOnce(`upgrade:${target}`, `輝煌已更新到 Minecraft ${target}`, '打開啟動器，一鍵把你的實例升級到新版本。');
 }
 
 async function tuneHardware() {

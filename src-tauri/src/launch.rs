@@ -93,6 +93,7 @@ async fn prepare(
     instance: &Instance,
     settings: &Settings,
     account: Option<&Account>,
+    files_only: bool,
 ) -> R<Option<(PathBuf, Vec<String>, PathBuf, Vec<String>)>> {
     let mirror = settings.use_mirror;
     let game_dir = paths::game_dir(&instance.id);
@@ -156,14 +157,14 @@ async fn prepare(
     };
     let java = java::ensure(app, &java_component, java_major, instance.java(settings), mirror);
     let mods = async {
-        if !instance.wants_rich_presence(settings) {
+        if files_only || !instance.wants_rich_presence(settings) {
             return Ok(Vec::new());
         }
         net::emit_stage(app, "mods", "同步內建模組");
         modinject::inject(app, instance).await
     };
     let packs = async {
-        if crate::boost::wants_packs(instance, settings) {
+        if !files_only && crate::boost::wants_packs(instance, settings) {
             if let Err(e) = crate::boost::sync_server_packs(app, instance).await {
                 eprintln!("[respack] 預先下載伺服器資源包失敗：{:#}", e.0);
             }
@@ -275,7 +276,27 @@ pub async fn prefetch(app: &AppHandle, instance_id: &str) -> R<()> {
     };
     let settings = crate::config::load_settings().await;
     let instance = crate::instance::get(instance_id).await?;
-    prepare(app, &instance, &settings, None).await?;
+    prepare(app, &instance, &settings, None, false).await?;
+    Ok(())
+}
+
+pub async fn prefetch_upgrade(app: &AppHandle, instance_id: &str, mc: &str) -> R<()> {
+    let state = app.state::<AppState>();
+    if state.is_running(instance_id).await {
+        return Ok(());
+    }
+    let Ok(_guard) = state.prep_lock.try_lock() else {
+        return Ok(());
+    };
+    let settings = crate::config::load_settings().await;
+    let mut draft = crate::instance::get(instance_id).await?;
+    draft.mc_version = mc.to_string();
+    draft.loader_version.clear();
+    crate::commands::resolve_version(&mut draft, &settings).await?;
+    prepare(app, &draft, &settings, None, true).await?;
+    if draft.wants_rich_presence(&settings) {
+        let _ = crate::modinject::brilliant_mod(mc, settings.mod_update == "keep").await;
+    }
     Ok(())
 }
 
@@ -289,7 +310,7 @@ pub async fn repair(app: &AppHandle, instance_id: &str) -> R<()> {
     let instance = crate::instance::get(instance_id).await?;
     crate::modinject::forget_sync();
     net::DEEP_VERIFY.store(true, std::sync::atomic::Ordering::Relaxed);
-    let result = prepare(app, &instance, &settings, None).await;
+    let result = prepare(app, &instance, &settings, None, false).await;
     net::DEEP_VERIFY.store(false, std::sync::atomic::Ordering::Relaxed);
     result.map(|_| ())
 }
@@ -371,7 +392,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
 
     let prepared = {
         let _guard = state.prep_lock.lock().await;
-        prepare(app, &instance, &settings, Some(&account)).await?
+        prepare(app, &instance, &settings, Some(&account), false).await?
     };
     let (java_exe, args, game_dir, mut notes) = prepared.context("準備啟動參數失敗")?;
     early_notes.append(&mut notes);

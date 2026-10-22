@@ -131,7 +131,7 @@ fn cached_for(mc: &str) -> Option<PathBuf> {
         .map(|e| e.path())
 }
 
-async fn brilliant_mod(mc: &str, keep: bool) -> R<PathBuf> {
+pub(crate) async fn brilliant_mod(mc: &str, keep: bool) -> R<PathBuf> {
     if keep {
         if let Some(cached) = cached_for(mc) {
             return Ok(cached);
