@@ -151,6 +151,8 @@ pub fn run() {
             extras::set_media,
             extras::import_image,
             extras::save_image,
+            extras::read_svg,
+            extras::save_svg,
             leftovers::mod_leftovers,
             leftovers::remove_leftovers,
             commands::set_instance_image,

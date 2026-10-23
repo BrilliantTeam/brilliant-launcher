@@ -1,5 +1,5 @@
-import { api, listen, openUrl, pickFiles, watchFolders } from '../api.js';
-import { $, $$, clear, confirm, dialog, dismissDialog, fail, fmtBytes, h, toast, guard } from '../ui.js';
+import { api, isType, listen, openUrl, pickFile, typeLabel, watchFolders } from '../api.js';
+import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtBytes, h, modalOpen, toast, guard } from '../ui.js';
 import { emit, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
 import { selectInstance } from './instances.js';
@@ -580,8 +580,8 @@ async function exportProfile(profile) {
     }
 }
 
-export async function importPack(targetId = null) {
-    const path = await pickFiles({ multiple: false, filters: [{ name: 'Modrinth 模組包', extensions: ['mrpack'] }] }).catch(fail);
+export async function importPack(targetId = null, dropped = null) {
+    const path = dropped ?? await pickFile('mrpack').catch(fail);
     if (!path) return;
     let target = targetId;
     if (target === null && selectedInstance()) {
@@ -1096,8 +1096,8 @@ const KIND_NAME = { mod: '模組', resourcepack: '資源包', shader: '光影' }
 
 async function installLocal(paths, instance = selectedInstance()) {
     if (!instance) return toast('請先選擇一個實例', 'error');
-    const files = paths.filter((p) => /\.(jar|zip)$/i.test(p));
-    if (!files.length) return toast('只能安裝 .jar 模組、.zip 資源包或光影', 'warn');
+    const files = paths.filter((p) => isType(p, 'content'));
+    if (!files.length) return toast(`這裡只能放${typeLabel('content')}`, 'warn');
     try {
         const added = await api.add_content({ id: instance.id, files });
         const kinds = [...new Set(added.map(([kind]) => kind))];
@@ -1124,16 +1124,35 @@ function markDropCard(card) {
     card?.classList.add('drop-hover');
 }
 
+function zoneFor(payload) {
+    const at = payload?.position;
+    return at ? fileZoneAt(at.x / devicePixelRatio, at.y / devicePixelRatio) : null;
+}
+
+function markZone(el) {
+    for (const other of $$('.file-drop.drop-active')) if (other !== el) other.classList.remove('drop-active');
+    el?.classList.add('drop-active');
+}
+
 function dropHint(payload) {
     let hint = $('#drop-hint');
     if (!payload) {
         if (hint) hint.hidden = true;
         markDropCard(null);
+        markZone(null);
         return;
     }
     if (!hint) {
         hint = h('div', { id: 'drop-hint', class: 'drop-hint', role: 'status' });
         document.body.append(hint);
+    }
+    hint.hidden = false;
+    const zone = zoneFor(payload);
+    markZone(zone?.el);
+    if (zone || modalOpen()) {
+        markDropCard(null);
+        hint.textContent = zone ? `放開即可加入${typeLabel(zone.type)}` : '請拖到視窗中對應的欄位上';
+        return;
     }
     const hit = dropCard(payload);
     markDropCard(hit?.card);
@@ -1145,7 +1164,7 @@ function dropHint(payload) {
 }
 
 function pickDropTarget(paths) {
-    const names = paths.filter((p) => /\.(jar|zip)$/i.test(p)).map((p) => p.split(/[\\/]/).pop());
+    const names = paths.filter((p) => isType(p, 'content')).map((p) => p.split(/[\\/]/).pop());
     const current = selectedInstance();
     return dialog({
         title: '要安裝到哪個實例？',
@@ -1192,8 +1211,7 @@ export function initMods() {
     });
     $('#btn-update-all').addEventListener('click', guard(() => update(state.kind, (installed[state.kind] || []).filter((entry) => entry.update && !entry.pinned))));
     $('#btn-add-mod').addEventListener('click', guard(async () => {
-        const filter = state.kind === 'mod' ? { name: 'Minecraft 模組', extensions: ['jar'] } : { name: state.kind === 'shader' ? '光影包' : '資源包', extensions: ['zip'] };
-        const picked = await pickFiles({ multiple: true, filters: [filter] });
+        const picked = await pickFile('content', { multiple: true });
         if (picked) await installLocal(Array.isArray(picked) ? picked : [picked]);
     }));
     $('#btn-open-mods').addEventListener('click', () => openFolder({ mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks' }[state.kind]));
@@ -1203,11 +1221,20 @@ export function initMods() {
     listen('tauri://drag-over', (payload) => dropHint(payload ?? {}));
     listen('tauri://drag-leave', () => dropHint(null));
     listen('tauri://drag-drop', async (payload) => {
+        const zone = zoneFor(payload);
         const hit = dropCard(payload)?.instance;
         dropHint(null);
         const paths = payload?.paths ?? [];
+        if (zone) {
+            const ok = paths.filter((p) => isType(p, zone.type));
+            if (!ok.length) return toast(`這裡只能放${typeLabel(zone.type)}`, 'warn');
+            return zone.handler(zone.multiple ? ok : ok[0]);
+        }
+        if (modalOpen()) return toast('視窗開著時，請把檔案拖到視窗中對應的欄位上', 'warn');
+        const pack = paths.find((p) => isType(p, 'mrpack'));
+        if (pack) return importPack(null, pack);
         if ($('#view-mods').classList.contains('active')) return installLocal(paths);
-        if (!paths.some((p) => /\.(jar|zip)$/i.test(p))) return installLocal(paths);
+        if (!paths.some((p) => isType(p, 'content'))) return installLocal(paths);
         const target = hit ?? (store.instances.length === 1 ? store.instances[0] : await pickDropTarget(paths));
         if (target) installLocal(paths, target);
     });

@@ -1,5 +1,5 @@
-import { api, openUrl, pickFiles } from '../api.js';
-import { $, clampNumber, clear, confirm, fail, fmtBytes, h, rangeFill, toast, guard } from '../ui.js';
+import { api, openUrl, pickFile } from '../api.js';
+import { $, acceptFiles, clampNumber, clear, confirm, fail, fmtBytes, h, rangeFill, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { gpuName, isIntegratedGpu } from '../services.js';
 
@@ -251,24 +251,18 @@ export function initSettings() {
         $(`#${link.dataset.jump}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
 
-    $('#btn-bg-pick').addEventListener('click', guard(async () => {
-        const path = await pickFiles({ multiple: false, filters: [{ name: '圖片或影片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm'] }] }).catch(fail);
+    const setMedia = (kind) => async (path) => {
         if (!path) return;
         try {
-            await persist({ background: await api.set_media({ kind: 'background', path }) });
+            await persist({ [kind]: await api.set_media({ kind, path }) });
         } catch (error) {
             fail(error);
         }
-    }));
-    $('#btn-music-pick').addEventListener('click', guard(async () => {
-        const path = await pickFiles({ multiple: false, filters: [{ name: '音樂', extensions: ['mp3', 'ogg', 'wav', 'm4a', 'flac', 'opus'] }] }).catch(fail);
-        if (!path) return;
-        try {
-            await persist({ music: await api.set_media({ kind: 'music', path }) });
-        } catch (error) {
-            fail(error);
-        }
-    }));
+    };
+    $('#btn-bg-pick').addEventListener('click', guard(async () => setMedia('background')(await pickFile('background').catch(fail))));
+    $('#btn-music-pick').addEventListener('click', guard(async () => setMedia('music')(await pickFile('music').catch(fail))));
+    acceptFiles($('#btn-bg-pick').parentElement, 'background', setMedia('background'));
+    acceptFiles($('#btn-music-pick').parentElement, 'music', setMedia('music'));
     $('#btn-music-clear').addEventListener('click', guard(() => persist({ music: '' })));
     $('#btn-bg-reset').addEventListener('click', guard(() => persist({ background: '' })));
 
@@ -291,8 +285,7 @@ export function initSettings() {
             fail(error);
         }
     }));
-    $('#btn-config-import').addEventListener('click', guard(async () => {
-        const path = await pickFiles({ multiple: false, filters: [{ name: '輝煌啟動器設定', extensions: ['zip'] }] }).catch(fail);
+    const importConfig = async (path) => {
         if (!path) return;
         if (!(await confirm('匯入會用檔案裡的啟動器設定取代目前的設定，並加入目前沒有的實例（已存在的實例不會被動到）。要繼續嗎？', '匯入'))) return;
         try {
@@ -305,7 +298,9 @@ export function initSettings() {
         } catch (error) {
             fail(error);
         }
-    }));
+    };
+    $('#btn-config-import').addEventListener('click', guard(async () => importConfig(await pickFile('config').catch(fail))));
+    acceptFiles($('#btn-config-import'), 'config', importConfig);
 
     $('#btn-open-root').addEventListener('click', guard(async () => {
         const paths = await api.launcher_paths();

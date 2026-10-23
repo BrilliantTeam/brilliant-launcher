@@ -1359,3 +1359,7 @@ img.ico.custom, .ico.custom { object-fit: cover; image-rendering: auto; }
 .tree-row .ico { width: 14px; height: 14px; flex: none; color: var(--text-subtle); }
 .tree-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tree-row small { margin-left: auto; color: var(--text-faint); font-family: inherit; }
+.file-drop.drop-active { outline: 3px dashed var(--accent); outline-offset: 4px; background-color: color-mix(in srgb, var(--accent) 8%, transparent); }
+.cover-svg { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--accent); }
+.image-preview { position: relative; }
+.inst-img.custom-svg { color: var(--accent); }

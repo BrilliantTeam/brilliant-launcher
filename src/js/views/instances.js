@@ -1,7 +1,9 @@
-import { api, fileSrc, openUrl, pickFiles, watchFolders } from '../api.js';
-import { $, $$, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard } from '../ui.js';
+import { api, FILE_TYPES, fileSrc, openUrl, pickFile, pickFiles, watchFolders } from '../api.js';
+import { $, $$, acceptFiles, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard } from '../ui.js';
 import { accountFor, emit, isRunning, loadInstances, on, saveSettings, selectedInstance, store } from '../store.js';
-import { icon, iconOf, INSTANCE_ICONS, instanceIconName, instanceVisual } from '../icons.js';
+import { icon, iconOf, INSTANCE_ICONS, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
+
+const isSvg = (path) => /\.svg$/i.test(path || '');
 import { importPicture } from '../crop.js';
 import { importPack } from './mods.js';
 import { isPreparing, repairInstance } from './home.js';
@@ -49,24 +51,22 @@ async function editorDialog(title, source) {
     const imageClear = h('button', { type: 'button', class: 'mc', onclick: () => { pickedImage = ''; renderPreview(); } }, '移除圖片');
     const renderPreview = () => {
         const current = pickedImage === undefined ? source.image : pickedImage;
-        preview.style.backgroundImage = current ? `url("${fileSrc(current)}")` : '';
+        const vector = isSvg(current);
+        preview.style.backgroundImage = current && !vector ? `url("${fileSrc(current)}")` : '';
+        preview.replaceChildren(...(vector ? [svgFromFile(current, 'cover-svg')] : []));
         preview.classList.toggle('empty', !current);
         imageClear.disabled = !current;
     };
-    const imageField = h('div', { class: 'field' }, h('label', {}, '封面圖片（選填，會取代圖示；建議 1200×300，比例 4:1）'),
-        h('div', { class: 'image-pick' }, preview,
+    const chooseCover = async (path) => {
+        if (!path) return;
+        const saved = await importPicture(path, { width: 1200, height: 300, title: '調整封面', hint: '封面會以 4:1 顯示在實例卡片上，建議 1200×300。', vectorSvg: true }).catch(fail);
+        if (saved) { pickedImage = saved; renderPreview(); }
+    };
+    const imageField = h('div', { class: 'field' }, h('label', {}, `封面圖片（選填，會取代圖示；建議 1200×300，比例 4:1；${FILE_TYPES.cover.extensions.map((e) => e.toUpperCase()).join('、')}，可直接拖進來）`),
+        acceptFiles(h('div', { class: 'image-pick' }, preview,
             h('div', { class: 'toolbar' },
-                h('button', {
-                    type: 'button',
-                    class: 'mc',
-                    onclick: async () => {
-                        const path = await pickFiles({ multiple: false, filters: [{ name: '圖片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }] }).catch(fail);
-                        if (!path) return;
-                        const saved = await importPicture(path, { width: 1200, height: 300, title: '調整封面', hint: '封面會以 4:1 顯示在實例卡片上，建議 1200×300。' }).catch(fail);
-                        if (saved) { pickedImage = saved; renderPreview(); }
-                    }
-                }, icon('image'), '選擇圖片'),
-                imageClear)));
+                h('button', { type: 'button', class: 'mc', onclick: async () => chooseCover(await pickFile('cover').catch(fail)) }, icon('image'), '選擇圖片'),
+                imageClear)), 'cover', chooseCover));
     renderPreview();
     const wanted = source.mcVersion || (source.general ? data.latestRelease : data.recommended) || '';
     let showAll = !!source.general || !modSupported.size || (wanted !== '' && !modSupported.has(wanted));
@@ -586,8 +586,8 @@ async function showWorlds(instance) {
             }, icon('trash'))))
             : [h('div', { class: 'empty-state' }, '這個實例還沒有任何單人世界。')]));
     };
-    const importWorld = async (directory) => {
-        const path = await pickFiles(directory ? { directory: true, multiple: false } : { multiple: false, filters: [{ name: '世界壓縮檔', extensions: ['zip'] }] }).catch(fail);
+    const importWorld = async (directory, dropped = null) => {
+        const path = dropped ?? await (directory ? pickFiles({ directory: true, multiple: false }) : pickFile('world')).catch(fail);
         if (!path) return;
         try {
             const name = await api.world_import({ id: instance.id, path });
@@ -601,14 +601,14 @@ async function showWorlds(instance) {
     await dialog({
         title: `世界管理｜${instance.name}`,
         wide: true,
-        content: h('div', {},
+        content: acceptFiles(h('div', {},
             h('div', { class: 'toolbar' },
                 h('button', { type: 'button', class: 'mc primary', onclick: () => importWorld(false) }, icon('plus'), '匯入 zip'),
                 h('button', { type: 'button', class: 'mc', onclick: () => importWorld(true) }, icon('folder'), '匯入資料夾'),
                 h('span', { class: 'spacer' }),
                 h('button', { type: 'button', class: 'mc', onclick: () => openFolder(instance, 'saves') }, icon('folder'), '開啟存檔資料夾')),
             list,
-            h('div', { class: 'hint' }, '遊戲執行中無法匯入、複製或刪除世界。'))
+            h('div', { class: 'hint' }, '可以把世界 zip 直接拖進這個視窗匯入。遊戲執行中無法匯入、複製或刪除世界。')), 'world', (path) => importWorld(false, path))
     });
 }
 
@@ -865,8 +865,8 @@ function card(instance) {
             onclick: () => { if (!dragged()) selectInstance(instance).catch(fail); },
             onpointerdown: (e) => startDrag(e, e.currentTarget, { kind: 'instance', id: instance.id, label: instance.name })
         },
-        h('div', { class: `inst-banner${instance.image ? ' has-image' : ''}`, style: instance.image ? `--cover:url("${fileSrc(instance.image)}")` : '' },
-            instance.image ? null : iconOf(instance.icon),
+        h('div', { class: `inst-banner${instance.image && !isSvg(instance.image) ? ' has-image' : ''}`, style: instance.image && !isSvg(instance.image) ? `--cover:url("${fileSrc(instance.image)}")` : '' },
+            isSvg(instance.image) ? svgFromFile(instance.image, 'cover-svg') : instance.image ? null : iconOf(instance.icon),
             h('div', { class: 'inst-flags' },
                 pinnedKey() === `i:${instance.id}` ? h('span', { class: 'badge' }, '置頂') : null,
                 running ? h('span', { class: 'badge warn' }, '執行中') : null,
@@ -908,21 +908,22 @@ function iconChooser(initial, names) {
     const custom = h('button', {
         type: 'button',
         class: 'mc',
-        title: '自訂圖片（PNG、JPG、WebP、GIF、SVG）',
+        title: `自訂圖片（${FILE_TYPES.icon.extensions.map((e) => e.toUpperCase()).join('、')}），也可以直接把圖片拖到這一區`,
         'aria-label': '自訂圖片',
-        onclick: async () => {
-            const path = await pickFiles({ multiple: false, filters: [{ name: '圖片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] }] }).catch(fail);
-            if (!path) return;
-            const saved = await importPicture(path, { width: 256, height: 256, title: '裁切圖示', hint: '圖示會顯示成正方形，建議 256×256 以上。' }).catch(fail);
-            if (!saved) return;
-            chosen = `img:${saved}`;
-            box.querySelector('[data-custom]')?.remove();
-            const button = choice(chosen, '自訂圖片');
-            button.dataset.custom = '';
-            box.insertBefore(button, custom);
-            paint();
-        }
+        onclick: async () => useCustom(await pickFile('icon').catch(fail))
     }, icon('plus'));
+    async function useCustom(path) {
+        if (!path) return;
+        const saved = await importPicture(path, { width: 256, height: 256, title: '裁切圖示', hint: '圖示會顯示成正方形，建議 256×256 以上。' }).catch(fail);
+        if (!saved) return;
+        chosen = `img:${saved}`;
+        box.querySelector('[data-custom]')?.remove();
+        const button = choice(chosen, '自訂圖片');
+        button.dataset.custom = '';
+        box.insertBefore(button, custom);
+        paint();
+    }
+    acceptFiles(box, 'icon', useCustom);
     box.append(...names.map((name) => choice(name, name)));
     if (initial?.startsWith('img:')) {
         const button = choice(initial, '自訂圖片');

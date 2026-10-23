@@ -1,5 +1,5 @@
-import { api, fileSrc, pickFiles } from '../api.js';
-import { $, clear, confirm, dialog, dismissDialog, fail, h, toast, guard } from '../ui.js';
+import { api, fileSrc, pickFile } from '../api.js';
+import { $, acceptFiles, clear, confirm, dialog, dismissDialog, fail, h, toast, guard } from '../ui.js';
 import { icon } from '../icons.js';
 import { avatarUrl, emit, loadAccounts, on, refreshAvatar, selectedAccount, store } from '../store.js';
 
@@ -274,8 +274,8 @@ async function applySkin(account, entry) {
     renderPanel();
 }
 
-async function uploadSkin(account) {
-    const path = await pickFiles({ multiple: false, filters: [{ name: '皮膚 PNG', extensions: ['png'] }] }).catch(fail);
+async function uploadSkin(account, dropped = null) {
+    const path = dropped ?? await pickFile('skin').catch(fail);
     if (!path) return;
     const name = h('input', { type: 'text', maxlength: '32', placeholder: '例如：夏日泳裝' });
     const variant = h('select', {},
@@ -409,7 +409,7 @@ async function renderPanel() {
     const library = await api.skin_library().catch(() => []);
     if (seq !== panelSeq) return;
     const wardrobe = h('div', { class: 'wardrobe' },
-        h('button', { type: 'button', class: 'wardrobe-item wardrobe-add', onclick: () => uploadSkin(account) }, icon('plus'), '加入皮膚'),
+        acceptFiles(h('button', { type: 'button', class: 'wardrobe-item wardrobe-add', title: '點一下選擇，或把皮膚 PNG 拖到這裡', onclick: () => uploadSkin(account) }, icon('plus'), '加入皮膚'), 'skin', (path) => uploadSkin(account, path)),
         ...library.map((entry) => wardrobeItem(account, entry)));
     const wardrobeSection = [h('h2', {}, '衣櫃'), h('p', { class: 'hint' }, '點皮膚可以先在上方 3D 預覽試穿，滿意再換上。'), wardrobe];
 
@@ -468,7 +468,7 @@ async function renderPanel() {
                     h('button', { type: 'button', class: 'mc icon-btn', title: '更改名稱', 'aria-label': '更改名稱', onclick: () => changeName(account, profile) }, icon('edit'))),
                 sessionLine(account),
                 h('div', { class: 'toolbar' },
-                    h('button', { type: 'button', class: 'mc primary', onclick: () => uploadSkin(account) }, icon('plus'), '上傳新皮膚'),
+                    acceptFiles(h('button', { type: 'button', class: 'mc primary', onclick: () => uploadSkin(account) }, icon('plus'), '上傳新皮膚'), 'skin', (path) => uploadSkin(account, path)),
                     h('button', {
                         type: 'button',
                         class: 'mc',

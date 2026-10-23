@@ -343,7 +343,7 @@ pub async fn set_instance_image(id: String, path: String) -> R<Instance> {
         }
         current.image.clear();
     } else {
-        current.image = crate::extras::copy_media(std::path::Path::new(&path), &crate::extras::IMAGE_EXTS, 15, &dir, "cover-").await?;
+        current.image = crate::extras::copy_media(std::path::Path::new(&path), &crate::extras::COVER_EXTS, 15, &dir, "cover-").await?;
     }
     instance::save(&current).await?;
     Ok(current)

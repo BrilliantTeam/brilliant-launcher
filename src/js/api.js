@@ -18,6 +18,28 @@ export const openUrl = (url) => tauri.opener.openUrl(url);
 
 export const pickFiles = (options) => tauri.dialog.open(options);
 
+const RASTER = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
+
+export const FILE_TYPES = {
+    skin: { name: '皮膚 PNG', extensions: ['png'] },
+    cover: { name: '封面圖片', extensions: [...RASTER, 'svg'] },
+    icon: { name: '圖示圖片', extensions: [...RASTER, 'svg'] },
+    background: { name: '背景圖片或影片', extensions: [...RASTER, 'mp4', 'webm'] },
+    music: { name: '背景音樂', extensions: ['mp3', 'ogg', 'wav', 'm4a', 'flac', 'opus'] },
+    world: { name: '世界壓縮檔', extensions: ['zip'] },
+    mrpack: { name: 'Modrinth 模組包', extensions: ['mrpack'] },
+    config: { name: '輝煌啟動器設定', extensions: ['zip'] },
+    content: { name: '模組、資源包或光影', extensions: ['jar', 'zip'] }
+};
+
+export const extOf = (path) => (/\.([^.\\/]+)$/.exec(String(path)) || [])[1]?.toLowerCase() ?? '';
+export const isType = (path, type) => FILE_TYPES[type].extensions.includes(extOf(path));
+export const typeLabel = (type) => `${FILE_TYPES[type].name}（${FILE_TYPES[type].extensions.map((e) => e.toUpperCase()).join('、')}）`;
+
+export function pickFile(type, { multiple = false } = {}) {
+    return pickFiles({ multiple, filters: [{ name: FILE_TYPES[type].name, extensions: FILE_TYPES[type].extensions }] });
+}
+
 export const appWindow = () => tauri.window.getCurrentWindow();
 
 export const fileSrc = (path) => tauri.core.convertFileSrc(path);

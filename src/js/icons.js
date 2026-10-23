@@ -54,6 +54,7 @@ const PATHS = {
 };
 
 export function instanceVisual(instance, className = '') {
+    if (instance?.image && /\.svg$/i.test(instance.image)) return svgFromFile(instance.image, `inst-img ${className}`.trim());
     if (instance?.image) {
         const img = document.createElement('img');
         img.className = `inst-img ${className}`.trim();
@@ -64,7 +65,44 @@ export function instanceVisual(instance, className = '') {
     return iconOf(instance?.icon, className || 'ico');
 }
 
+const svgCache = new Map();
+
+export function cleanSvg(text) {
+    const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    const root = doc.documentElement;
+    if (!root || root.nodeName.toLowerCase() !== 'svg' || doc.querySelector('parsererror')) return null;
+    for (const el of root.querySelectorAll('script, foreignObject, iframe, object, embed, style')) el.remove();
+    for (const el of [root, ...root.querySelectorAll('*')]) {
+        for (const attr of [...el.attributes]) {
+            const name = attr.name.toLowerCase();
+            if (name.startsWith('on') || ((name === 'href' || name === 'xlink:href') && !attr.value.startsWith('#'))) el.removeAttribute(attr.name);
+        }
+    }
+    root.removeAttribute('width');
+    root.removeAttribute('height');
+    if (!root.getAttribute('viewBox')) return null;
+    return document.importNode(root, true);
+}
+
+export function svgFromFile(path, className) {
+    const holder = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    holder.setAttribute('class', `${className} custom-svg`);
+    holder.setAttribute('aria-hidden', 'true');
+    if (!svgCache.has(path)) svgCache.set(path, window.__TAURI__.core.invoke('read_svg', { path }).then(cleanSvg).catch(() => null));
+    svgCache.get(path).then((svg) => {
+        if (!svg) {
+            holder.setAttribute('viewBox', '0 0 24 24');
+            holder.innerHTML = PATHS['warning-box'];
+            return;
+        }
+        for (const attr of svg.attributes) if (!['class', 'aria-hidden'].includes(attr.name)) holder.setAttribute(attr.name, attr.value);
+        holder.replaceChildren(...[...svg.childNodes].map((node) => node.cloneNode(true)));
+    });
+    return holder;
+}
+
 export function iconOf(value, className = 'ico') {
+    if (typeof value === 'string' && value.startsWith('img:') && /\.svg$/i.test(value)) return svgFromFile(value.slice(4), className);
     if (typeof value === 'string' && value.startsWith('img:')) {
         const img = document.createElement('img');
         img.className = `${className} custom`;

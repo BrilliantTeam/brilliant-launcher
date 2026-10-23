@@ -244,6 +244,7 @@ pub async fn clean_cache(state: State<'_, AppState>) -> R<u64> {
 }
 
 pub const IMAGE_EXTS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
+pub const COVER_EXTS: [&str; 6] = ["png", "jpg", "jpeg", "webp", "gif", "svg"];
 const VIDEO_EXTS: [&str; 2] = ["mp4", "webm"];
 const AUDIO_EXTS: [&str; 6] = ["mp3", "ogg", "wav", "m4a", "flac", "opus"];
 
@@ -302,6 +303,32 @@ pub async fn import_image(path: String) -> R<String> {
     }
     let dest = dir.join(unique_name("upload-", &ext));
     tokio::fs::copy(&src, &dest).await.context("複製圖片失敗")?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn read_svg(path: String) -> R<String> {
+    let dir = paths::root().canonicalize().context("找不到啟動器資料夾")?;
+    let file = PathBuf::from(&path).canonicalize().context("找不到這張圖片")?;
+    if !file.starts_with(&dir) || file.extension().map(|e| e.to_string_lossy().to_lowercase()) != Some("svg".into()) {
+        bail!("只能讀取啟動器保存的 SVG 圖片");
+    }
+    if tokio::fs::metadata(&file).await?.len() > 512 * 1024 {
+        bail!("SVG 檔案太大了（上限 512 KB）");
+    }
+    Ok(tokio::fs::read_to_string(&file).await.context("讀取 SVG 失敗")?)
+}
+
+#[tauri::command]
+pub async fn save_svg(text: String) -> R<String> {
+    let trimmed = text.trim_start();
+    if !trimmed.starts_with("<svg") || text.len() > 512 * 1024 || text.contains("<script") || text.contains("<foreignObject") {
+        bail!("SVG 內容不正確");
+    }
+    let dir = images_dir();
+    tokio::fs::create_dir_all(&dir).await?;
+    let dest = dir.join(unique_name("image-", "svg"));
+    tokio::fs::write(&dest, text).await.context("儲存 SVG 失敗")?;
     Ok(dest.to_string_lossy().to_string())
 }
 

@@ -107,6 +107,22 @@ export function dialog({ title, content, wide = false, buttons = [{ label: '關�
 
 export const dismissDialog = (value) => closeOpenDialog?.(value);
 
+const fileZones = new WeakMap();
+
+export function acceptFiles(el, type, handler, { multiple = false } = {}) {
+    el.classList.add('file-drop');
+    fileZones.set(el, { type, handler, multiple });
+    return el;
+}
+
+export function fileZoneAt(x, y) {
+    let el = document.elementFromPoint(x, y)?.closest('.file-drop');
+    while (el && !fileZones.has(el)) el = el.parentElement?.closest('.file-drop');
+    return el ? { el, ...fileZones.get(el) } : null;
+}
+
+export const modalOpen = () => [...document.querySelectorAll('dialog[open]')].length > 0;
+
 export async function confirm(message, okLabel = '確定') {
     const answer = await dialog({
         title: '確認',
