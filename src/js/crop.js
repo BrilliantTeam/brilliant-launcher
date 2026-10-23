@@ -1,0 +1,101 @@
+import { api, fileSrc } from './api.js';
+import { h } from './ui.js';
+
+const loadImage = (src) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('無法讀取這張圖片'));
+    img.src = src;
+});
+
+const KEEP = /\.(gif|svg)$/i;
+
+export async function importPicture(path, { width, height, title, hint }) {
+    const imported = await api.import_image({ path });
+    if (KEEP.test(imported)) return imported;
+    const img = await loadImage(fileSrc(imported));
+    const ratio = img.naturalWidth / img.naturalHeight;
+    const target = width / height;
+    if (Math.abs(ratio - target) / target < 0.03 && img.naturalWidth <= width * 1.5) return imported;
+    const data = await cropDialog(img, { width, height, title, hint });
+    return data ? api.save_image({ data }) : null;
+}
+
+function cropDialog(img, { width, height, title, hint }) {
+    const base = width === height ? 360 : 520;
+    const viewW = Math.round(width >= height ? base : base * width / height);
+    const viewH = Math.round(viewW * height / width);
+    const canvas = h('canvas', { class: 'crop-canvas', width: viewW * 2, height: viewH * 2, style: `width:${viewW}px;height:${viewH}px` });
+    const ctx = canvas.getContext('2d');
+    const minScale = Math.max(viewW / img.naturalWidth, viewH / img.naturalHeight);
+    let scale = minScale;
+    let x = (viewW - img.naturalWidth * scale) / 2;
+    let y = (viewH - img.naturalHeight * scale) / 2;
+    const zoom = h('input', { type: 'range', min: '100', max: '400', value: '100', 'aria-label': '縮放' });
+
+    const clamp = () => {
+        x = Math.min(0, Math.max(viewW - img.naturalWidth * scale, x));
+        y = Math.min(0, Math.max(viewH - img.naturalHeight * scale, y));
+    };
+    const draw = () => {
+        clamp();
+        ctx.setTransform(2, 0, 0, 2, 0, 0);
+        ctx.clearRect(0, 0, viewW, viewH);
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, x, y, img.naturalWidth * scale, img.naturalHeight * scale);
+    };
+    const zoomTo = (next, cx = viewW / 2, cy = viewH / 2) => {
+        next = Math.min(minScale * 4, Math.max(minScale, next));
+        x = cx - (cx - x) * next / scale;
+        y = cy - (cy - y) * next / scale;
+        scale = next;
+        zoom.value = String(Math.round(scale / minScale * 100));
+        draw();
+    };
+    zoom.addEventListener('input', () => zoomTo(minScale * Number(zoom.value) / 100));
+    canvas.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        zoomTo(scale * (e.deltaY < 0 ? 1.1 : 1 / 1.1), e.clientX - rect.left, e.clientY - rect.top);
+    }, { passive: false });
+    canvas.addEventListener('pointerdown', (e) => {
+        canvas.setPointerCapture(e.pointerId);
+        const start = { px: e.clientX, py: e.clientY, x, y };
+        const move = (ev) => {
+            x = start.x + ev.clientX - start.px;
+            y = start.y + ev.clientY - start.py;
+            draw();
+        };
+        canvas.addEventListener('pointermove', move);
+        canvas.addEventListener('pointerup', () => canvas.removeEventListener('pointermove', move), { once: true });
+    });
+    draw();
+
+    return new Promise((resolve) => {
+        const close = (value) => {
+            modal.close();
+            modal.remove();
+            resolve(value);
+        };
+        const modal = h('dialog', { class: 'crop-dlg', oncancel: (e) => { e.preventDefault(); close(null); } },
+            h('div', { class: 'dlg-body' },
+                h('h2', {}, title),
+                h('div', { class: 'crop' },
+                    h('p', { class: 'hint' }, `${hint}原圖 ${img.naturalWidth}×${img.naturalHeight}，拖曳調整位置，滾輪或下方滑桿縮放。`),
+                    canvas,
+                    h('label', { class: 'crop-zoom' }, '縮放', zoom))),
+            h('div', { class: 'dlg-foot' },
+                h('button', { type: 'button', class: 'mc', onclick: () => close(null) }, '取消'),
+                h('button', { type: 'button', class: 'mc primary', onclick: () => close('ok') }, '確定')));
+        document.body.append(modal);
+        modal.showModal();
+    }).then((answer) => {
+        if (answer !== 'ok') return null;
+        const out = h('canvas', { width, height });
+        const octx = out.getContext('2d');
+        octx.imageSmoothingQuality = 'high';
+        const k = width / viewW;
+        octx.drawImage(img, x * k, y * k, img.naturalWidth * scale * k, img.naturalHeight * scale * k);
+        return width === height ? out.toDataURL('image/png') : out.toDataURL('image/jpeg', 0.9);
+    });
+}

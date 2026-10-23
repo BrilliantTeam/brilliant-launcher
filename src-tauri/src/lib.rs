@@ -148,6 +148,8 @@ pub fn run() {
             extras::list_screenshots,
             extras::clean_cache,
             extras::set_media,
+            extras::import_image,
+            extras::save_image,
             commands::set_instance_image,
             skins::account_profile,
             skins::skin_library,

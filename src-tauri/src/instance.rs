@@ -45,6 +45,7 @@ pub struct Instance {
     pub mod_channel: String,
     pub freeze_mods: bool,
     pub account: String,
+    pub group: String,
 }
 
 impl Instance {
@@ -69,7 +70,7 @@ impl Instance {
         }
         clean_jvm_args(&mut self.jvm_args);
         clean_env_vars(&mut self.env_vars);
-        for (field, max) in [(&mut self.java_path, 1024), (&mut self.wrapper, 1024), (&mut self.image, 1024), (&mut self.icon, 64)] {
+        for (field, max) in [(&mut self.java_path, 1024), (&mut self.wrapper, 1024), (&mut self.image, 1024), (&mut self.icon, 1024), (&mut self.group, 24), (&mut self.account, 64)] {
             clean_line(field, max);
         }
     }

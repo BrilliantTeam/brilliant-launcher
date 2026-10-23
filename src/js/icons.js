@@ -36,6 +36,7 @@ const PATHS = {
     'heart': '<path d="M9 2H5v2H3v2H1v6h2v2h2v2h2v2h2v2h2v2h2v-2h2v-2h2v-2h2v-2h2v-2h2V6h-2V4h-2V2h-4v2h-2v2h-2V4H9V2zm0 2v2h2v2h2V6h2V4h4v2h2v6h-2v2h-2v2h-2v2h-2v2h-2v-2H9v-2H7v-2H5v-2H3V6h2V4h4z"/>',
     'download': '<path d="M13 17V3h-2v10H9v-2H7v2h2v2h2v2h2zm8 2v-4h-2v4H5v-4H3v6h18v-2zm-8-6v2h2v-2h2v-2h-2v2h-2z"/>',
     'check': '<path d="M18 6h2v2h-2V6zm-2 4V8h2v2h-2zm-2 2v-2h2v2h-2zm-2 2h2v-2h-2v2zm-2 2h2v-2h-2v2zm-2 0v2h2v-2H8zm-2-2h2v2H6v-2zm0 0H4v-2h2v2z"/>',
+    'arrow-up': '<path d="M11 20h2V4h-2zm2-12h2V6h-2zm2 2h2V8h-2zm2 2h2v-2h-2zm-6-4H9V6h2z"/><path d="M15 10H7V8h8zm2 2H5v-2h12z"/>',
     'arrow-right': '<path d="M4 11v2h12v2h2v-2h2v-2h-2V9h-2v2H4zm10-4h2v2h-2V7zm0 0h-2V5h2v2zm0 10h2v-2h-2v2zm0 0h-2v2h2v-2z"/>',
     'chevron-down': '<path d="M7 8H5v2h2v2h2v2h2v2h2v-2h2v-2h2v-2h2V8h-2v2h-2v2h-2v2h-2v-2H9v-2H7V8z"/>',
     'map': '<path d="M8 2h2v2h2v2h-2v10H8V6H6V4h2V2zM4 8V6h2v2H4zm2 10v2H4v2H2V8h2v10h2zm0 0h2v-2H6v2zm6 0h-2v-2h2v2zm2-10V6h-2v2h2zm2 0h-2v10h-2v2h2v2h2v-2h2v-2h2v-2h2V2h-2v2h-2v2h-2v2zm0 0h2V6h2v10h-2v2h-2V8z"/>',
@@ -60,7 +61,18 @@ export function instanceVisual(instance, className = '') {
         img.alt = '';
         return img;
     }
-    return icon(instanceIconName(instance?.icon), className || 'ico');
+    return iconOf(instance?.icon, className || 'ico');
+}
+
+export function iconOf(value, className = 'ico') {
+    if (typeof value === 'string' && value.startsWith('img:')) {
+        const img = document.createElement('img');
+        img.className = `${className} custom`;
+        img.src = window.__TAURI__.core.convertFileSrc(value.slice(4));
+        img.alt = '';
+        return img;
+    }
+    return icon(instanceIconName(value), className);
 }
 
 export function icon(name, className = 'ico') {

@@ -61,6 +61,16 @@ pub struct Settings {
     pub mod_update: String,
     pub update_channel: String,
     pub alpha_unlocked: bool,
+    pub instance_groups: Vec<InstanceGroup>,
+    pub pinned: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct InstanceGroup {
+    pub name: String,
+    pub icon: String,
+    pub note: String,
 }
 
 impl Default for Settings {
@@ -119,6 +129,8 @@ impl Default for Settings {
             mod_update: "auto".into(),
             update_channel: "stable".into(),
             alpha_unlocked: false,
+            instance_groups: Vec::new(),
+            pinned: String::new(),
         }
     }
 }
@@ -199,6 +211,15 @@ impl Settings {
         if !(self.accent.is_empty() || self.accent.len() == 7 && self.accent.starts_with('#') && self.accent[1..].chars().all(|c| c.is_ascii_hexdigit())) {
             self.accent.clear();
         }
+        for group in self.instance_groups.iter_mut() {
+            clean_line(&mut group.name, 24);
+            clean_line(&mut group.icon, 1024);
+            clean_line(&mut group.note, 120);
+        }
+        let mut seen = std::collections::HashSet::new();
+        self.instance_groups.retain(|g| !g.name.is_empty() && seen.insert(g.name.clone()));
+        self.instance_groups.truncate(100);
+        clean_line(&mut self.pinned, 80);
         self.shared_folders.retain(|f| crate::advanced::SHAREABLE.contains(&f.as_str()));
         self.shared_folders.dedup();
     }

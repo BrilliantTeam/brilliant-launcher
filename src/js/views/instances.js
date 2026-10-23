@@ -1,7 +1,8 @@
 import { api, fileSrc, openUrl, pickFiles, watchFolders } from '../api.js';
-import { $, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard } from '../ui.js';
-import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../store.js';
-import { icon, INSTANCE_ICONS, instanceIconName } from '../icons.js';
+import { $, $$, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard } from '../ui.js';
+import { accountFor, emit, isRunning, loadInstances, on, saveSettings, selectedInstance, store } from '../store.js';
+import { icon, iconOf, INSTANCE_ICONS, instanceIconName, instanceVisual } from '../icons.js';
+import { importPicture } from '../crop.js';
 import { importPack } from './mods.js';
 import { isPreparing, repairInstance } from './home.js';
 import { jvmPresetButtons } from './settings.js';
@@ -40,21 +41,9 @@ async function editorDialog(title, source) {
     const modSupported = new Set(data.modVersions);
 
     const name = h('input', { type: 'text', value: source.name ?? '', maxlength: '40' });
-    let chosenIcon = instanceIconName(source.icon);
-    const iconPicker = h('div', { class: 'icon-picker' });
-    const iconButtons = INSTANCE_ICONS.map((name) =>
-        h('button', {
-            type: 'button',
-            class: 'mc',
-            title: name,
-            'aria-pressed': name === chosenIcon ? 'true' : 'false',
-            onclick: () => {
-                chosenIcon = name;
-                iconButtons.forEach((button, i) => button.setAttribute('aria-pressed', INSTANCE_ICONS[i] === name ? 'true' : 'false'));
-            }
-        }, icon(name))
-    );
-    iconPicker.append(...iconButtons);
+    const group = groupInput(source.group);
+    const iconPick = iconChooser(source.icon?.startsWith('img:') ? source.icon : instanceIconName(source.icon), INSTANCE_ICONS);
+    const iconPicker = iconPick.el;
     let pickedImage;
     const preview = h('div', { class: 'image-preview' });
     const imageClear = h('button', { type: 'button', class: 'mc', onclick: () => { pickedImage = ''; renderPreview(); } }, '移除圖片');
@@ -64,7 +53,7 @@ async function editorDialog(title, source) {
         preview.classList.toggle('empty', !current);
         imageClear.disabled = !current;
     };
-    const imageField = h('div', { class: 'field' }, h('label', {}, '封面圖片（選填，會取代圖示）'),
+    const imageField = h('div', { class: 'field' }, h('label', {}, '封面圖片（選填，會取代圖示；建議 1200×300，比例 4:1）'),
         h('div', { class: 'image-pick' }, preview,
             h('div', { class: 'toolbar' },
                 h('button', {
@@ -72,7 +61,9 @@ async function editorDialog(title, source) {
                     class: 'mc',
                     onclick: async () => {
                         const path = await pickFiles({ multiple: false, filters: [{ name: '圖片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }] }).catch(fail);
-                        if (path) { pickedImage = path; renderPreview(); }
+                        if (!path) return;
+                        const saved = await importPicture(path, { width: 1200, height: 300, title: '調整封面', hint: '封面會以 4:1 顯示在實例卡片上，建議 1200×300。' }).catch(fail);
+                        if (saved) { pickedImage = saved; renderPreview(); }
                     }
                 }, icon('image'), '選擇圖片'),
                 imageClear)));
@@ -212,6 +203,7 @@ async function editorDialog(title, source) {
         { class: 'inst-editor' },
         h('div', { class: 'field' }, h('label', {}, '類型'), kind, kindHint),
         h('div', { class: 'field' }, h('label', {}, '名稱'), name),
+        h('div', { class: 'field' }, h('label', {}, '分組'), group, h('div', { class: 'hint' }, '同一組的實例會放在一起，並可一鍵全部啟動。留空表示不分組。')),
         h('div', { class: 'field' }, h('label', {}, '圖示'), iconPicker),
         imageField,
         h('div', { class: 'field' }, h('label', {}, 'Minecraft 版本'), mcVersion, modSupported.size ? showAllBox : ''),
@@ -241,7 +233,7 @@ async function editorDialog(title, source) {
     return {
         ...source,
         name: name.value.trim(),
-        icon: chosenIcon,
+        icon: iconPick.value,
         mcVersion: mcVersion.value,
         loader: loader.value,
         loaderVersion: loader.value === 'fabric' ? loaderVersion.value : '',
@@ -260,6 +252,7 @@ async function editorDialog(title, source) {
         modChannel: modChannel.value,
         freezeMods: freezeMods.checked,
         account: account.value,
+        group: group.input.value.trim().slice(0, 24),
         pickedImage
     };
 }
@@ -794,6 +787,8 @@ function moreMenu(instance) {
         item('image', '截圖', () => showScreenshots(instance)),
         item('zap', '效能健檢', () => perfCheck(instance)),
         item('arrow-right', '升級版本⋯', () => pickUpgrade(instance)),
+        item('arrow-up', pinnedKey() === `i:${instance.id}` ? '取消置頂' : '置頂實例', () => togglePin(`i:${instance.id}`)),
+        item('folder', '移到分組⋯', () => moveToGroup(instance).catch(fail)),
         item('folder', '開啟資料夾', () => openFolder(instance)),
         item('reload', '驗證並修復檔案', () => repairInstance(instance)),
         navigator.userAgent.includes('Mac') ? null : item('external-link', '建立桌面捷徑', () => createShortcut(instance)),
@@ -830,6 +825,7 @@ function placeMenu(menu, anchor) {
 
 function closeMenus() {
     document.querySelectorAll('.inst-menu').forEach((m) => { m.hidden = true; });
+    document.querySelectorAll('.inst-menu.floating').forEach((m) => m.remove());
 }
 
 async function playInstance(instance) {
@@ -863,10 +859,16 @@ function card(instance) {
 
     return h(
         'div',
-        { class: `inst-card${active ? ' selected' : ''}`, 'data-id': instance.id, onclick: () => selectInstance(instance).catch(fail) },
+        {
+            class: `inst-card${active ? ' selected' : ''}`,
+            'data-id': instance.id,
+            onclick: () => { if (!dragged()) selectInstance(instance).catch(fail); },
+            onpointerdown: (e) => startDrag(e, e.currentTarget, { kind: 'instance', id: instance.id, label: instance.name })
+        },
         h('div', { class: `inst-banner${instance.image ? ' has-image' : ''}`, style: instance.image ? `--cover:url("${fileSrc(instance.image)}")` : '' },
-            instance.image ? null : icon(instanceIconName(instance.icon)),
+            instance.image ? null : iconOf(instance.icon),
             h('div', { class: 'inst-flags' },
+                pinnedKey() === `i:${instance.id}` ? h('span', { class: 'badge' }, '置頂') : null,
                 running ? h('span', { class: 'badge warn' }, '執行中') : null,
                 active ? h('span', { class: 'badge' }, '使用中') : null)),
         h('div', { class: 'inst-body' },
@@ -898,9 +900,64 @@ function card(instance) {
     );
 }
 
+function iconChooser(initial, names) {
+    let chosen = initial;
+    const box = h('div', { class: 'icon-picker' });
+    const paint = () => { for (const b of box.querySelectorAll('[data-value]')) b.setAttribute('aria-pressed', String(b.dataset.value === chosen)); };
+    const choice = (value, title) => h('button', { type: 'button', class: 'mc', title, 'data-value': value, onclick: () => { chosen = value; paint(); } }, iconOf(value));
+    const custom = h('button', {
+        type: 'button',
+        class: 'mc',
+        title: '自訂圖片（PNG、JPG、WebP、GIF、SVG）',
+        'aria-label': '自訂圖片',
+        onclick: async () => {
+            const path = await pickFiles({ multiple: false, filters: [{ name: '圖片', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'] }] }).catch(fail);
+            if (!path) return;
+            const saved = await importPicture(path, { width: 256, height: 256, title: '裁切圖示', hint: '圖示會顯示成正方形，建議 256×256 以上。' }).catch(fail);
+            if (!saved) return;
+            chosen = `img:${saved}`;
+            box.querySelector('[data-custom]')?.remove();
+            const button = choice(chosen, '自訂圖片');
+            button.dataset.custom = '';
+            box.insertBefore(button, custom);
+            paint();
+        }
+    }, icon('plus'));
+    box.append(...names.map((name) => choice(name, name)));
+    if (initial?.startsWith('img:')) {
+        const button = choice(initial, '自訂圖片');
+        button.dataset.custom = '';
+        box.append(button);
+    }
+    box.append(custom);
+    paint();
+    return { el: box, get value() { return chosen; } };
+}
+
+function groupList() {
+    const saved = (store.settings?.instanceGroups ?? []).filter((g) => g.name);
+    const known = new Set(saved.map((g) => g.name));
+    const extra = [...new Set(store.instances.map((i) => i.group).filter((name) => name && !known.has(name)))].map((name) => ({ name, icon: '', note: '' }));
+    return [...saved, ...extra];
+}
+
+const saveGroups = (groups) => saveSettings({ instanceGroups: groups.map(({ name, icon: ico, note }) => ({ name, icon: ico || '', note: note || '' })) });
+const pinnedKey = () => store.settings?.pinned ?? '';
+
+async function togglePin(key) {
+    const next = pinnedKey() === key ? '' : key;
+    await saveSettings({ pinned: next }).catch(fail);
+    toast(next ? '已置頂，原本置頂的項目已取消置頂' : '已取消置頂');
+}
+
+function sortMembers(members) {
+    const pinned = pinnedKey();
+    return [...members].sort((a, b) => (pinned === `i:${b.id}`) - (pinned === `i:${a.id}`));
+}
+
 function render() {
     const box = clear($('#instance-list'));
-    if (!store.instances.length) {
+    if (!store.instances.length && !groupList().length) {
         box.append(h('div', { class: 'empty-state inst-empty' },
             icon('zap'),
             h('div', {}, '還沒有任何實例'),
@@ -908,13 +965,290 @@ function render() {
             h('button', { type: 'button', class: 'mc primary', onclick: () => quickCreate().catch(fail) }, icon('plus'), '一鍵建立輝煌實例')));
         return;
     }
-    box.append(...store.instances.map(card));
+    const groups = groupList();
+    if (!groups.length) {
+        box.append(...sortMembers(store.instances).map(card));
+        return;
+    }
+    const pinned = pinnedKey();
+    const ordered = [...groups.filter((g) => pinned === `g:${g.name}`), ...groups.filter((g) => pinned !== `g:${g.name}`)];
+    const loose = store.instances.filter((i) => !i.group || !groups.some((g) => g.name === i.group));
+    const sections = [...ordered.filter((g) => pinned === `g:${g.name}`), ...(loose.length ? [{ name: '', icon: '', note: '' }] : []), ...ordered.filter((g) => pinned !== `g:${g.name}`)];
+    const folded = foldedGroups();
+    for (const group of sections) {
+        const members = sortMembers(group.name ? store.instances.filter((i) => i.group === group.name) : loose);
+        const closed = folded.has(group.name);
+        box.append(groupHeader(group, members, closed));
+        if (closed) continue;
+        if (members.length) box.append(...members.map(card));
+        else box.append(h('div', { class: 'inst-group-empty', 'data-group': group.name }, '把實例拖到這裡加入這個分組'));
+    }
+}
+
+const FOLD_KEY = 'instance-groups-folded';
+
+function foldedGroups() {
+    try {
+        return new Set(JSON.parse(localStorage.getItem(FOLD_KEY) || '[]'));
+    } catch {
+        return new Set();
+    }
+}
+
+function setFolded(folded) {
+    try {
+        localStorage.setItem(FOLD_KEY, JSON.stringify([...folded]));
+    } catch {}
+}
+
+function toggleFold(name) {
+    const folded = foldedGroups();
+    if (!folded.delete(name)) folded.add(name);
+    setFolded(folded);
+    render();
+}
+
+function groupHeader(group, members, closed) {
+    const running = members.filter((i) => isRunning(i.id)).length;
+    const pinned = group.name && pinnedKey() === `g:${group.name}`;
+    const header = h('div', {
+        class: `inst-group${group.name ? ' movable' : ''}`,
+        'data-group': group.name,
+        oncontextmenu: (e) => {
+            if (!group.name) return;
+            e.preventDefault();
+            groupMenu(group, members, e.clientX, e.clientY);
+        },
+        onpointerdown: (e) => group.name && startDrag(e, header, { kind: 'group', name: group.name, label: group.name })
+    },
+    h('button', { type: 'button', class: 'inst-group-name', 'aria-expanded': String(!closed), title: group.name ? '點一下收合；右鍵可編輯、置頂；拖曳可調整順序' : '', onclick: () => { if (!dragged()) toggleFold(group.name); } },
+        icon('chevron-down', 'ico fold'), iconOf(group.name ? group.icon || 'folder' : 'folder'), h('b', {}, group.name || '未分組'),
+        pinned ? h('span', { class: 'badge' }, '置頂') : null,
+        h('span', { class: 'hint' }, `${members.length} 個實例${running ? `・${running} 個執行中` : ''}`),
+        group.note ? h('span', { class: 'inst-group-note', title: group.note }, group.note) : null),
+    group.name ? h('button', {
+        type: 'button',
+        class: 'mc',
+        disabled: !members.length || running === members.length,
+        title: '依序啟動這一組所有還沒在執行的實例',
+        onclick: () => launchGroup(group.name, members).catch(fail)
+    }, icon('play'), '全部啟動') : null);
+    return header;
+}
+
+function groupMenu(group, members, x, y) {
+    closeMenus();
+    const item = (name, label, handler, extra = '') =>
+        h('button', { type: 'button', role: 'menuitem', class: extra, onclick: (e) => { e.stopPropagation(); closeMenus(); handler(); } }, icon(name), label);
+    const menu = h('div', { class: 'inst-menu floating', role: 'menu' },
+        item('edit', '編輯分組⋯', () => groupDialog(group).catch(fail)),
+        item('arrow-up', pinnedKey() === `g:${group.name}` ? '取消置頂' : '置頂分組', () => togglePin(`g:${group.name}`)),
+        members.length ? item('play', '全部啟動', () => launchGroup(group.name, members).catch(fail)) : null,
+        item('trash', '刪除分組（實例保留）', () => removeGroup(group).catch(fail), 'danger'));
+    document.body.append(menu);
+    const rect = menu.getBoundingClientRect();
+    menu.style.left = `${Math.min(x, innerWidth - rect.width - 8)}px`;
+    menu.style.top = `${Math.min(y, innerHeight - rect.height - 8)}px`;
+}
+
+async function setGroupOf(list, name) {
+    for (const instance of list) {
+        if ((instance.group || '') === name) continue;
+        await api.update_instance({ updated: { ...instance, group: name } }).catch(fail);
+    }
+    await loadInstances().catch(fail);
+}
+
+async function groupDialog(existing = null) {
+    const iconPick = iconChooser(existing?.icon || 'folder', ['folder', ...INSTANCE_ICONS]);
+    const icons = iconPick.el;
+    const name = h('input', { type: 'text', value: existing?.name ?? '', maxlength: '24', placeholder: '例如：輝煌、建築、朋友的伺服器' });
+    const note = h('input', { type: 'text', value: existing?.note ?? '', maxlength: '120', placeholder: '選填，會顯示在分組標題旁' });
+    const picks = store.instances.map((instance) => ({ instance, input: h('input', { type: 'checkbox', checked: !!existing && instance.group === existing.name }) }));
+    const ok = await dialog({
+        title: existing ? `編輯分組「${existing.name}」` : '建立分組',
+        content: h('div', { class: 'inst-editor' },
+            h('div', { class: 'field' }, h('label', {}, '名稱'), name),
+            h('div', { class: 'field' }, h('label', {}, '圖示'), icons),
+            h('div', { class: 'field' }, h('label', {}, '備註'), note),
+            picks.length ? h('div', { class: 'field' }, h('label', {}, '加入的實例'),
+                h('div', { class: 'group-picks' }, ...picks.map(({ instance, input }) => h('label', { class: 'group-pick' }, input, instanceVisual(instance), h('span', {}, instance.name),
+                    instance.group && instance.group !== existing?.name ? h('small', {}, `目前在「${instance.group}」`) : null)))) : null),
+        buttons: [{ label: '取消', value: false }, { label: existing ? '儲存' : '建立', value: true }]
+    });
+    if (ok !== true) return;
+    const title = name.value.trim().slice(0, 24);
+    if (!title) return toast('請輸入分組名稱', 'error');
+    const groups = groupList();
+    if (groups.some((g) => g.name === title && g.name !== existing?.name)) return toast(`已經有叫「${title}」的分組`, 'error');
+    const entry = { name: title, icon: iconPick.value, note: note.value.trim().slice(0, 120) };
+    const next = existing ? groups.map((g) => (g.name === existing.name ? entry : g)) : [...groups, entry];
+    const patch = { instanceGroups: next };
+    if (existing && existing.name !== title && pinnedKey() === `g:${existing.name}`) patch.pinned = `g:${title}`;
+    await saveSettings(patch).catch(fail);
+    if (existing && existing.name !== title) {
+        const folded = foldedGroups();
+        if (folded.delete(existing.name)) folded.add(title);
+        setFolded(folded);
+    }
+    const join = picks.filter((p) => p.input.checked).map((p) => p.instance);
+    const leave = existing ? picks.filter((p) => !p.input.checked && p.instance.group === existing.name).map((p) => p.instance) : [];
+    const renamed = existing && existing.name !== title ? store.instances.filter((i) => i.group === existing.name && !leave.includes(i)) : [];
+    await setGroupOf([...join, ...renamed], title);
+    if (leave.length) await setGroupOf(leave, '');
+    toast(existing ? `已更新分組「${title}」` : `已建立分組「${title}」`);
+}
+
+async function removeGroup(group) {
+    const members = store.instances.filter((i) => i.group === group.name);
+    if (!(await confirm(`確定要刪除分組「${group.name}」嗎？${members.length ? `\n裡面的 ${members.length} 個實例會移到「未分組」，不會被刪除。` : ''}`, '刪除分組'))) return;
+    const patch = { instanceGroups: groupList().filter((g) => g.name !== group.name) };
+    if (pinnedKey() === `g:${group.name}`) patch.pinned = '';
+    await saveSettings(patch).catch(fail);
+    await setGroupOf(members, '');
+}
+
+let dragState = null;
+let dragEndedAt = 0;
+const dragged = () => Date.now() - dragEndedAt < 300;
+
+function startDrag(event, source, item) {
+    if (event.button !== 0 || event.target.closest('.inst-actions, .inst-group > .mc, input, select, textarea, .inst-menu')) return;
+    dragState = { item, source, x: event.clientX, y: event.clientY, ghost: null };
+    addEventListener('pointermove', moveDrag);
+    addEventListener('pointerup', endDrag, { once: true });
+    addEventListener('pointercancel', cancelDrag, { once: true });
+}
+
+function dropTargetAt(x, y) {
+    const el = document.elementFromPoint(x, y);
+    if (!dragState || !el) return null;
+    if (dragState.item.kind === 'group') {
+        const header = el.closest('.inst-group.movable');
+        return header && header.dataset.group !== dragState.item.name ? header : null;
+    }
+    const spot = el.closest('#instance-list [data-group], #instance-list .inst-card');
+    if (!spot) return null;
+    const group = spot.dataset.group ?? store.instances.find((i) => i.id === spot.dataset.id)?.group ?? '';
+    return { el: spot, group: groupList().some((g) => g.name === group) ? group : '' };
+}
+
+function moveDrag(event) {
+    if (!dragState) return;
+    if (!dragState.ghost) {
+        if (Math.hypot(event.clientX - dragState.x, event.clientY - dragState.y) < 6) return;
+        dragState.ghost = h('div', { class: 'drag-ghost' }, icon(dragState.item.kind === 'group' ? 'folder' : 'zap'), dragState.item.label);
+        document.body.append(dragState.ghost);
+        dragState.source.classList.add('dragging');
+        document.body.classList.add('inst-dragging');
+    }
+    dragState.ghost.style.transform = `translate(${event.clientX + 12}px, ${event.clientY + 12}px)`;
+    const wrap = $('#view-instances').closest('.page-wrap') ?? $('.page-wrap');
+    const edge = wrap?.getBoundingClientRect();
+    if (edge && event.clientY > edge.bottom - 48) wrap.scrollBy(0, 16);
+    else if (edge && event.clientY < edge.top + 48) wrap.scrollBy(0, -16);
+    for (const el of $$('#instance-list .drop-over')) el.classList.remove('drop-over');
+    const target = dropTargetAt(event.clientX, event.clientY);
+    const mark = target?.el ?? target;
+    if (dragState.item.kind === 'instance' && target) {
+        const header = $(`#instance-list .inst-group[data-group="${CSS.escape(target.group)}"]`);
+        header?.classList.add('drop-over');
+    } else mark?.classList?.add('drop-over');
+}
+
+function cancelDrag() {
+    removeEventListener('pointermove', moveDrag);
+    if (dragState?.ghost) {
+        dragState.ghost.remove();
+        dragState.source.classList.remove('dragging');
+        document.body.classList.remove('inst-dragging');
+        dragEndedAt = Date.now();
+    }
+    for (const el of $$('#instance-list .drop-over')) el.classList.remove('drop-over');
+    dragState = null;
+}
+
+async function endDrag(event) {
+    const state = dragState;
+    const moved = !!state?.ghost;
+    const target = moved ? dropTargetAt(event.clientX, event.clientY) : null;
+    removeEventListener('pointercancel', cancelDrag);
+    cancelDrag();
+    if (!moved || !target) return;
+    if (state.item.kind === 'group') {
+        const groups = groupList();
+        const from = groups.findIndex((g) => g.name === state.item.name);
+        const [moving] = groups.splice(from, 1);
+        const rect = target.getBoundingClientRect();
+        let to = groups.findIndex((g) => g.name === target.dataset.group);
+        if (event.clientY > rect.top + rect.height / 2 || from <= to) to++;
+        groups.splice(Math.min(to, groups.length), 0, moving);
+        await saveGroups(groups).catch(fail);
+        return;
+    }
+    const instance = store.instances.find((i) => i.id === state.item.id);
+    if (!instance || (instance.group || '') === target.group) return;
+    await setGroupOf([instance], target.group);
+    toast(target.group ? `已把「${instance.name}」移到「${target.group}」` : `已把「${instance.name}」移出分組`);
+}
+
+async function launchGroup(name, members) {
+    if (isPreparing()) return toast('正在準備遊戲，請等這次完成後再啟動', 'warn');
+    const pending = members.filter((i) => !isRunning(i.id));
+    if (!pending.length) return toast(`「${name}」的實例都已經在執行中`);
+    const byAccount = new Map();
+    for (const instance of members) {
+        const account = accountFor(instance);
+        if (!account) continue;
+        byAccount.set(account.id, [...(byAccount.get(account.id) ?? []), instance]);
+    }
+    const shared = [...byAccount.values()].filter((list) => list.length > 1);
+    if (shared.length && !(await confirm(`${shared.map((list) => `${list.map((i) => `「${i.name}」`).join('、')}都使用 ${accountFor(list[0]).name}`).join('\n')}。\n同一個帳號同時連進伺服器會互相踢下線，可以在實例設定的「使用帳號」各自指定帳號。\n仍要全部啟動嗎？`, '仍要啟動'))) return;
+    let started = 0;
+    for (const [index, instance] of pending.entries()) {
+        toast(`正在啟動「${instance.name}」（${index + 1}/${pending.length}）`);
+        try {
+            const notes = await api.launch_game({ id: instance.id, join: null });
+            for (const note of notes) toast(note, 'warn');
+            started++;
+            await loadInstances();
+        } catch (error) {
+            fail(error);
+        }
+    }
+    toast(`「${name}」已啟動 ${started} 個實例`);
+}
+
+function groupInput(value = '') {
+    const list = h('datalist', { id: `groups-${Math.random().toString(36).slice(2)}` },
+        ...groupList().map((g) => h('option', { value: g.name })));
+    const input = h('input', { type: 'text', value, maxlength: '24', placeholder: '例如：輝煌、建築、朋友的伺服器', list: list.id });
+    const box = h('span', { class: 'group-input' }, input, list);
+    box.input = input;
+    return box;
+}
+
+async function moveToGroup(instance) {
+    const group = groupInput(instance.group);
+    const ok = await dialog({
+        title: `把「${instance.name}」移到分組`,
+        content: h('div', { class: 'field' }, h('label', {}, '分組名稱'), group, h('div', { class: 'hint' }, '輸入新名稱即建立新分組；留空表示不分組。也可以直接把實例卡片拖到分組上。')),
+        buttons: [{ label: '取消', value: false }, { label: '確定', value: true }]
+    });
+    if (ok !== true) return;
+    await assignGroup(instance, group.input.value.trim().slice(0, 24));
+}
+
+async function assignGroup(instance, name) {
+    if (name && !groupList().some((g) => g.name === name)) await saveGroups([...groupList(), { name, icon: 'folder', note: '' }]).catch(fail);
+    await setGroupOf([instance], name);
 }
 
 export function initInstances() {
     $('#btn-new-instance').addEventListener('click', guard(() => createInstance()));
     $('#btn-quick-instance').addEventListener('click', guard(() => quickCreate().catch(fail)));
     $('#btn-import').addEventListener('click', guard(() => importFlow().catch(fail)));
+    $('#btn-new-group').addEventListener('click', guard(() => groupDialog().catch(fail)));
     $('#btn-refresh-instances').addEventListener('click', guard(async () => {
         store.versions = null;
         await loadInstances().catch(fail);

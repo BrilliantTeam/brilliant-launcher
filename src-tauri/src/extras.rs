@@ -268,6 +268,65 @@ pub async fn copy_media(src: &Path, exts: &[&str], max_mb: u64, dir: &Path, pref
     Ok(dest.to_string_lossy().to_string())
 }
 
+const PICTURE_EXTS: [&str; 6] = ["png", "jpg", "jpeg", "webp", "gif", "svg"];
+
+fn images_dir() -> PathBuf {
+    paths::root().join("media").join("images")
+}
+
+fn unique_name(prefix: &str, ext: &str) -> String {
+    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or_default();
+    format!("{prefix}{nanos:x}.{ext}")
+}
+
+#[tauri::command]
+pub async fn import_image(path: String) -> R<String> {
+    let src = PathBuf::from(&path);
+    let ext = src
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .filter(|e| PICTURE_EXTS.contains(&e.as_str()))
+        .with_context(|| format!("只支援 {} 格式", PICTURE_EXTS.join("、").to_uppercase()))?;
+    let meta = tokio::fs::metadata(&src).await.context("找不到檔案")?;
+    if !meta.is_file() || meta.len() > 15 * 1024 * 1024 {
+        bail!("圖片太大了（上限 15 MB）");
+    }
+    let dir = images_dir();
+    tokio::fs::create_dir_all(&dir).await?;
+    let day_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(86400);
+    for entry in std::fs::read_dir(&dir).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
+        let stale = entry.metadata().and_then(|m| m.modified()).map(|t| t < day_ago).unwrap_or(false);
+        if stale && entry.file_name().to_string_lossy().starts_with("upload-") {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+    let dest = dir.join(unique_name("upload-", &ext));
+    tokio::fs::copy(&src, &dest).await.context("複製圖片失敗")?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn save_image(data: String) -> R<String> {
+    use base64::Engine;
+    let (ext, body) = if let Some(rest) = data.strip_prefix("data:image/png;base64,") {
+        ("png", rest)
+    } else if let Some(rest) = data.strip_prefix("data:image/jpeg;base64,") {
+        ("jpg", rest)
+    } else {
+        bail!("圖片資料不正確");
+    };
+    let bytes = base64::engine::general_purpose::STANDARD.decode(body).context("圖片資料不正確")?;
+    let valid = if ext == "png" { bytes.starts_with(b"\x89PNG") } else { bytes.starts_with(&[0xFF, 0xD8]) };
+    if !valid || bytes.len() > 8 << 20 {
+        bail!("圖片資料不正確");
+    }
+    let dir = images_dir();
+    tokio::fs::create_dir_all(&dir).await?;
+    let dest = dir.join(unique_name("image-", ext));
+    tokio::fs::write(&dest, bytes).await.context("儲存圖片失敗")?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 pub async fn set_media(kind: String, path: String) -> R<String> {
     let src = PathBuf::from(&path);
