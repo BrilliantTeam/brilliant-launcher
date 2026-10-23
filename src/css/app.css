@@ -418,9 +418,9 @@ button.mc.primary {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 6px 28px 6px 12px;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 28px 6px 10px;
     font: inherit;
     text-align: left;
     cursor: pointer;
@@ -429,16 +429,32 @@ button.mc.primary {
 }
 .pick-arrow { position: absolute; right: 9px; top: 50%; width: 14px; height: 14px; transform: translateY(-50%); color: var(--glass-dim); }
 .instance-pick:hover { background: var(--glass-bg-hover); }
-.pick-name, .pick-meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pick-name { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; }
-.pick-name .ico, .instance-menu .ico { color: var(--accent); }
-.pick-meta { font-size: 11px; color: var(--glass-dim); }
+.pick-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 3px; }
+.instance-pick .pick-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; line-height: 1.2; }
+.instance-pick .pick-meta { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 11px; line-height: 1.2; color: var(--glass-dim); }
+.pick-meta .meta-fixed { flex: none; white-space: nowrap; }
+.pick-meta .meta-account { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.pick-meta .meta-account img { width: 12px; height: 12px; flex: none; image-rendering: pixelated; }
+.pick-meta .meta-account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-meta .meta-sep { flex: none; opacity: .5; }
+.pick-meta .meta-ready { flex: none; color: var(--success); }
+.inst-thumb { position: relative; flex: none; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; overflow: hidden; color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.inst-thumb > img { width: 100%; height: 100%; object-fit: cover; }
+.instance-pick .pick-name { display: flex; align-items: center; gap: 6px; }
+.pick-name .pick-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-name .name-face { flex: none; width: 14px; height: 14px; image-rendering: pixelated; }
+.pick-meta .meta-warn { flex: none; color: var(--warning); }
+.inst-thumb > svg { width: 62%; height: 62%; vertical-align: 0; }
+.inst-thumb > svg.inst-img { width: 100%; height: 100%; }
+.inst-thumb:empty { display: none; }
+.instance-menu .inst-thumb { width: 24px; height: 24px; }
 
 .instance-menu { position: absolute; left: 0; right: 0; bottom: 70px; max-height: 260px; overflow-y: auto; padding: 4px 0; z-index: 3; }
 .instance-menu[hidden] { display: none; }
 .instance-menu button, .account-menu button {
     width: 100%;
     display: flex;
+    align-items: center;
     gap: 8px;
     padding: 7px 12px;
     font: inherit;
@@ -1160,8 +1176,8 @@ body.scenic .credit { font-size: 13px; color: #fff; }
 .pick-row input { margin: 0; }
 .pick-icon { width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; object-fit: cover; color: var(--accent); }
 .pick-icon .ico { width: 16px; height: 16px; }
-.pick-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.pick-meta { font-size: 11px; color: var(--text-faint); }
+.pick-row .pick-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.pick-row .pick-meta { font-size: 11px; color: var(--text-faint); }
 
 button.mc { white-space: nowrap; flex-shrink: 0; }
 button.mc .ico, .chip .ico, .chip-x .ico { flex: none; }
@@ -1363,3 +1379,5 @@ img.ico.custom, .ico.custom { object-fit: cover; image-rendering: auto; }
 .cover-svg { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--accent); }
 .image-preview { position: relative; }
 .inst-img.custom-svg { color: var(--accent); }
+.instance-menu .menu-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.instance-menu .sub { flex: none; }

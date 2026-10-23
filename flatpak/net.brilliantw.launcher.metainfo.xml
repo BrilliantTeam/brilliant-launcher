@@ -18,6 +18,7 @@
   <url type="homepage">https://www.brilliantw.net/launcher/</url>
   <content_rating type="oars-1.1"/>
   <releases>
+    <release version="1.0.58" date="2026-10-23"/>
     <release version="1.0.57" date="2026-10-23"/>
     <release version="1.0.56" date="2026-10-23"/>
     <release version="1.0.55" date="2026-10-23"/>

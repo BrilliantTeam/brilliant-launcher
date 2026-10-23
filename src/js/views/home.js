@@ -143,12 +143,16 @@ function renderPlayBar() {
     const target = instance?.general ? null : shardOf(store.settings?.quickJoin);
     const button = $('#btn-play');
 
-    clear($('#home-instance')).append(...(instance ? [instanceVisual(instance), instance.name] : ['尚未建立實例']));
-    $('#home-meta').textContent = !instance
-        ? '先到「實例」建立一個遊戲實例'
-        : !account
-            ? '尚未登入帳號'
-            : `${instance.mcVersion}　${instance.loader === 'fabric' ? 'Fabric' : '原版'}　${account.name}${ready.has(instance.id) && !running ? '　已就緒' : ''}`;
+    clear($('#home-thumb')).append(...(instance ? [instanceVisual(instance)] : []));
+    clear($('#home-instance')).append(...[h('span', { class: 'pick-title' }, instance ? instance.name : '尚未建立實例'), instance && account ? h('img', { class: 'name-face', src: avatarUrl(account), alt: '', title: account.name }) : null].filter(Boolean));
+    $('#instance-pick').title = instance ? `${instance.name}｜Minecraft ${instance.mcVersion}${instance.loader === 'fabric' ? `・Fabric ${instance.loaderVersion || ''}` : '・原版'}${account ? `｜${account.name}` : ''}（點一下切換實例）` : '切換遊戲實例';
+    clear($('#home-meta')).append(...(!instance
+        ? ['先到「實例」建立一個遊戲實例']
+        : [
+            h('span', { class: 'meta-fixed' }, `${instance.mcVersion}・${instance.loader === 'fabric' ? 'Fabric' : '原版'}`),
+            account ? null : h('span', { class: 'meta-warn' }, '尚未登入'),
+            ready.has(instance.id) && !running ? h('span', { class: 'meta-ready' }, '已就緒') : null
+        ].filter(Boolean)));
     renderUpgrade(instance);
     document.body.classList.toggle('launching', busy);
 
@@ -513,9 +517,9 @@ function toggleInstanceMenu(force) {
                         emit('settings');
                     }
                 },
-                instanceVisual(instance),
-                instance.name,
-                h('span', { class: 'sub' }, instance.mcVersion)
+                h('span', { class: 'inst-thumb' }, instanceVisual(instance)),
+                h('span', { class: 'menu-name' }, instance.name),
+                h('span', { class: 'sub' }, `${instance.mcVersion}${instance.loader === 'fabric' ? '・Fabric' : ''}`)
             )
         ),
         store.instances.length ? h('hr') : '',
