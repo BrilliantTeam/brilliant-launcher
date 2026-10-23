@@ -181,6 +181,9 @@ fn move_into(src: &Path, dst: &Path, tag: &str) -> R<()> {
 
 #[tauri::command]
 pub async fn shared_folder_path(key: String) -> R<String> {
+    if !valid_key(&key) {
+        bail!("共用資料夾不正確");
+    }
     let dir = group_base(&key);
     std::fs::create_dir_all(&dir)?;
     Ok(dir.to_string_lossy().to_string())
@@ -253,8 +256,12 @@ pub struct SharedItem {
     pub path: String,
 }
 
+fn valid_key(key: &str) -> bool {
+    !key.is_empty() && key.len() <= 32 && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+}
+
 fn shared_dir(key: &str, folder: &str) -> R<PathBuf> {
-    if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || !SHAREABLE.contains(&folder) {
+    if !valid_key(key) || !SHAREABLE.contains(&folder) {
         bail!("共用資料夾不正確");
     }
     Ok(group_base(key).join(folder))
@@ -536,10 +543,6 @@ pub async fn export_config() -> R<PathBuf> {
     Ok(path)
 }
 
-fn valid_instance_id(id: &str) -> bool {
-    !id.is_empty() && id.len() <= 80 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-}
-
 pub fn fit_memory(mb: u32, total_mb: u64) -> u32 {
     if total_mb == 0 || u64::from(mb) * 10 <= total_mb * 7 {
         mb
@@ -570,7 +573,7 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
             source_os = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v| v.get("os")?.as_str().map(str::to_string));
         } else if let Some(rest) = name.strip_prefix(&format!("{CONFIG_ROOT}/instances/")) {
             if let Some((id, "instance.json")) = rest.split_once('/') {
-                if valid_instance_id(id) {
+                if paths::valid_instance_id(id) {
                     instances.push((id.to_string(), text));
                 }
             }
@@ -606,6 +609,15 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
             if !cleared.is_empty() {
                 notes.push(format!("設定來自其他作業系統，已清除不適用的{}", cleared.join("、")));
             }
+        } else {
+            let kept: Vec<&str> = [("啟動包裝指令", &imported.wrapper), ("啟動前指令", &imported.pre_launch_cmd), ("結束後指令", &imported.post_exit_cmd)]
+                .into_iter()
+                .filter(|(_, v)| !v.trim().is_empty())
+                .map(|(label, _)| label)
+                .collect();
+            if !kept.is_empty() {
+                notes.push(format!("設定裡有{}，會在開始遊戲時執行；如果不是你自己設定的，請到「設定」的「啟動流程」與「進階」清除", kept.join("、")));
+            }
         }
         if !imported.background.is_empty() && !Path::new(&imported.background).is_file() {
             imported.background = String::new();
@@ -637,6 +649,8 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
         if !same_os && !instance.wrapper.trim().is_empty() {
             instance.wrapper.clear();
             notes.push(format!("「{}」的啟動包裝指令來自其他作業系統，已清除", instance.name));
+        } else if !instance.wrapper.trim().is_empty() {
+            notes.push(format!("「{}」設有啟動包裝指令，會在開始遊戲時執行；如果不是你自己設定的，請到實例設定清除", instance.name));
         }
         if !instance.java_path.is_empty() && !Path::new(&instance.java_path).is_file() {
             instance.java_path = String::new();

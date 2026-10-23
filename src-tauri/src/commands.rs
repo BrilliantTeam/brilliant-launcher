@@ -812,12 +812,19 @@ pub fn open_path(app: AppHandle, path: String) -> R<()> {
     if let Some(parent) = target.parent() {
         let _ = std::fs::create_dir_all(if target.is_dir() { &target } else { parent });
     }
-    app.opener().open_path(path, None::<&str>)?;
+    let viewable = target.extension().map(|e| e.to_string_lossy().to_lowercase()).is_some_and(|e| VIEWABLE.contains(&e.as_str()));
+    let open = if target.is_file() && !viewable { target.parent().map(|p| p.to_path_buf()).unwrap_or(target) } else { target };
+    app.opener().open_path(open.to_string_lossy(), None::<&str>)?;
     Ok(())
 }
 
+const VIEWABLE: [&str; 9] = ["png", "jpg", "jpeg", "gif", "webp", "txt", "log", "json", "zip"];
+
 #[tauri::command]
 pub fn open_instance_folder(id: String, sub: String) -> R<std::path::PathBuf> {
+    if !std::path::Path::new(&sub).components().all(|c| matches!(c, std::path::Component::Normal(_))) {
+        bail!("資料夾不正確");
+    }
     let dir = paths::game_dir(&id);
     let target = if sub.is_empty() { dir } else { dir.join(sub) };
     std::fs::create_dir_all(&target).with_context(|| format!("建立失敗：{}", target.display()))?;

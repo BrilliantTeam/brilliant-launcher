@@ -50,12 +50,28 @@ pub fn logs() -> PathBuf {
 pub fn instances() -> PathBuf {
     root().join("instances")
 }
+pub fn valid_instance_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 80 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
 pub fn instance_dir(id: &str) -> PathBuf {
-    instances().join(id)
+    instances().join(if valid_instance_id(id) { id } else { "_invalid" })
 }
 pub fn instance_json(id: &str) -> PathBuf {
     instance_dir(id).join("instance.json")
 }
 pub fn game_dir(id: &str) -> PathBuf {
     instance_dir(id).join(".minecraft")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn instance_dir_never_leaves_instances_folder() {
+        for id in ["../../evil", "..", "a/b", "a\\b", "", "C:\\x"] {
+            assert_eq!(instance_dir(id), instances().join("_invalid"), "{id}");
+        }
+        assert_eq!(instance_dir("26-3-1792333628"), instances().join("26-3-1792333628"));
+    }
 }

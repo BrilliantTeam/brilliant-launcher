@@ -1444,3 +1444,4 @@ dialog::backdrop { cursor: move; }
 .inst-page-meta .ico { width: 14px; height: 14px; }
 .inst-page-actions { display: flex; align-items: stretch; gap: 6px; flex: none; }
 .inst-card { cursor: pointer; }
+.inst-thumb:has(> img, > .custom-svg) { background: transparent; }

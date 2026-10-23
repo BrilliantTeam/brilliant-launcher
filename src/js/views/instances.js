@@ -1020,8 +1020,12 @@ async function sharedResources(group) {
             }, 3000);
             return;
         }
-        await api.shared_remove({ key: group.key, folder, names: [item.name] }).catch(fail);
-        toast(`已從共用資料夾移除「${item.title}」，可以在共用資料夾的 trash 找回`);
+        try {
+            await api.shared_remove({ key: group.key, folder, names: [item.name] });
+            toast(`已從共用資料夾移除「${item.title}」，可以在共用資料夾的 trash 找回`);
+        } catch (error) {
+            fail(error);
+        }
         load();
     };
     const row = (item) => h('div', { class: 'row shared-row' },
