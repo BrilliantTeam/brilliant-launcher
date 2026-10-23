@@ -135,6 +135,19 @@ function initChrome() {
     $('#win-min').addEventListener('click', () => win.minimize());
     $('#win-max').addEventListener('click', () => win.toggleMaximize());
     $('#win-close').addEventListener('click', () => (store.settings?.closeToTray ? win.hide() : win.close()));
+    const dragFromDialog = (e) => {
+        const dlg = e.target.closest?.('dialog[open]');
+        if (!dlg || e.button !== 0) return false;
+        const box = dlg.getBoundingClientRect();
+        const outside = e.target === dlg && (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom);
+        return outside || e.target.matches('dialog h2, dialog .dlg-body > h2');
+    };
+    document.addEventListener('mousedown', (e) => {
+        if (!dragFromDialog(e)) return;
+        e.preventDefault();
+        if (e.detail === 2) win.toggleMaximize();
+        else win.startDragging?.();
+    });
 
     const views = $$('.rail a[data-view]').map((a) => a.dataset.view);
     const mac = navigator.userAgent.includes('Mac');

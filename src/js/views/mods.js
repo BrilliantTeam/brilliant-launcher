@@ -2,7 +2,7 @@ import { api, isType, listen, openUrl, pickFile, typeLabel, watchFolders } from 
 import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtBytes, h, modalOpen, toast, guard } from '../ui.js';
 import { emit, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
-import { selectInstance } from './instances.js';
+import { selectInstance, shareNotice } from './instances.js';
 import { renderMarkdown } from '../markdown.js';
 
 const FABRIC_API = 'P7dR8mSH';
@@ -969,7 +969,17 @@ function installedRow(entry) {
         h('button', { type: 'button', class: 'mc', onclick: () => remove(kind, entry) }, '移除'));
 }
 
+let noticeSeq = 0;
+async function updateShareNotice() {
+    const seq = ++noticeSeq;
+    const folder = { resourcepack: 'resourcepacks', shader: 'shaderpacks' }[state.kind];
+    const instance = selectedInstance();
+    const el = folder && instance ? await shareNotice(instance, folder) : null;
+    if (seq === noticeSeq) $('#share-notice').replaceChildren(...(el ? [el] : []));
+}
+
 function renderInstalled() {
+    updateShareNotice();
     const box = clear($('#mod-list'));
     const list = installed[state.kind];
     const updates = (list || []).filter((entry) => entry.update && !entry.pinned);

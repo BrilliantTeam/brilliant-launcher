@@ -9,6 +9,7 @@ pub mod fabric;
 pub mod instance;
 pub mod launch;
 pub mod leftovers;
+pub mod logfiles;
 pub mod mc;
 pub mod modinject;
 pub mod modrinth;
@@ -155,6 +156,13 @@ pub fn run() {
             extras::save_svg,
             leftovers::mod_leftovers,
             leftovers::remove_leftovers,
+            logfiles::log_files,
+            logfiles::read_log,
+            logfiles::delete_logs,
+            logfiles::upload_log,
+            advanced::shared_folder_path,
+            advanced::apply_shared,
+            advanced::shared_status,
             commands::set_instance_image,
             skins::account_profile,
             skins::skin_library,

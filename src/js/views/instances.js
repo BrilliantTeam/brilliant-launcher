@@ -7,7 +7,7 @@ const isSvg = (path) => /\.svg$/i.test(path || '');
 import { importPicture } from '../crop.js';
 import { importPack } from './mods.js';
 import { isPreparing, repairInstance } from './home.js';
-import { jvmPresetButtons } from './settings.js';
+import { jvmPresetButtons, SHARE_INFO, SHARE_LABELS } from './settings.js';
 import { perfCheck } from '../perf.js';
 
 export async function versionData() {
@@ -172,13 +172,11 @@ async function editorDialog(title, source) {
             h('option', { value: String(value), selected: Number(source.javaMajor || 0) === value }, label)));
     const wrapper = h('input', { type: 'text', spellcheck: 'false', value: source.wrapper ?? '', placeholder: '留空沿用全域設定' });
     const envVars = h('textarea', { spellcheck: 'false', placeholder: '每行一個 KEY=VALUE，會覆蓋全域的同名變數' }, source.envVars ?? '');
-    const useShared = h('input', { type: 'checkbox', checked: !!source.useShared });
-    const sharedList = (store.settings?.sharedFolders ?? []).map((f) => ({ saves: '存檔', resourcepacks: '資源包', shaderpacks: '光影', screenshots: '截圖' })[f]).filter(Boolean);
     const modChannel = h('select', {},
         ...[['', '沿用全域設定'], ['release', '只用正式版'], ['beta', '允許 Beta 版'], ['alpha', '允許所有版本']].map(([value, label]) =>
             h('option', { value, selected: (source.modChannel ?? '') === value }, label)));
     const freezeMods = h('input', { type: 'checkbox', checked: !!source.freezeMods });
-    const advanced = h('details', { class: 'advanced', open: !!(source.javaPath || source.jvmArgs || source.width || source.javaMajor || source.wrapper || source.envVars || source.useShared || source.modChannel || source.freezeMods) },
+    const advanced = h('details', { class: 'advanced', open: !!(source.javaPath || source.jvmArgs || source.width || source.javaMajor || source.wrapper || source.envVars || source.modChannel || source.freezeMods) },
         h('summary', {}, '進階設定（覆寫全域）'),
         h('div', { class: 'field-row' },
             h('div', { class: 'field' }, h('label', {}, 'Java 版本'), javaMajor),
@@ -187,9 +185,6 @@ async function editorDialog(title, source) {
         h('div', { class: 'field' }, h('label', {}, 'JVM 參數'), jvmArgs, h('div', { class: 'jvm-presets' }, ...jvmPresetButtons(jvmArgs, () => {}))),
         h('div', { class: 'field' }, h('label', {}, '啟動包裝指令'), wrapper),
         h('div', { class: 'field' }, h('label', {}, '環境變數'), envVars),
-        h('div', { class: 'field' },
-            h('label', {}, useShared, '使用共用資料夾'),
-            h('div', { class: 'hint' }, sharedList.length ? `會共用：${sharedList.join('、')}（在「設定 → 進階」調整）` : '目前沒有選擇要共用的資料夾，請先到「設定 → 進階」勾選。')),
         h('div', { class: 'field-row' },
             h('div', { class: 'field' }, h('label', {}, '模組更新管道'), modChannel),
             h('div', { class: 'field' }, h('label', {}, freezeMods, '凍結模組'), h('div', { class: 'hint' }, '不檢查也不自動更新這個實例的模組，適合穩定的整合包。'))),
@@ -203,7 +198,7 @@ async function editorDialog(title, source) {
         { class: 'inst-editor' },
         h('div', { class: 'field' }, h('label', {}, '類型'), kind, kindHint),
         h('div', { class: 'field' }, h('label', {}, '名稱'), name),
-        h('div', { class: 'field' }, h('label', {}, '分組'), group, h('div', { class: 'hint' }, '同一組的實例會放在一起，並可一鍵全部啟動。留空表示不分組。')),
+        h('div', { class: 'field' }, h('label', {}, '分組'), group, h('div', { class: 'hint' }, '同一組的實例會放在一起，可一鍵全部啟動，也能在分組設定裡共用存檔、資源包、光影或截圖。留空表示不分組。')),
         h('div', { class: 'field' }, h('label', {}, '圖示'), iconPicker),
         imageField,
         h('div', { class: 'field' }, h('label', {}, 'Minecraft 版本'), mcVersion, modSupported.size ? showAllBox : ''),
@@ -248,7 +243,6 @@ async function editorDialog(title, source) {
         javaMajor: Number(javaMajor.value) || 0,
         wrapper: wrapper.value.trim(),
         envVars: envVars.value.trim(),
-        useShared: useShared.checked,
         modChannel: modChannel.value,
         freezeMods: freezeMods.checked,
         account: account.value,
@@ -546,6 +540,8 @@ const GAME_MODE = ['生存', '創造', '冒險', '旁觀'];
 
 async function showWorlds(instance) {
     const list = h('div', { class: 'rows world-list' }, h('div', { class: 'empty-state' }, '讀取世界清單⋯'));
+    const notice = h('div', {});
+    shareNotice(instance, 'saves').then((el) => el && notice.replaceWith(el));
     const refresh = async () => {
         const worlds = await api.list_worlds({ id: instance.id }).catch((error) => (fail(error), []));
         clear(list).append(...(worlds.length ? worlds.map((w) => h('div', { class: 'row world-row' },
@@ -607,6 +603,7 @@ async function showWorlds(instance) {
                 h('button', { type: 'button', class: 'mc', onclick: () => importWorld(true) }, icon('folder'), '匯入資料夾'),
                 h('span', { class: 'spacer' }),
                 h('button', { type: 'button', class: 'mc', onclick: () => openFolder(instance, 'saves') }, icon('folder'), '開啟存檔資料夾')),
+            notice,
             list,
             h('div', { class: 'hint' }, '可以把世界 zip 直接拖進這個視窗匯入。遊戲執行中無法匯入、複製或刪除世界。')), 'world', (path) => importWorld(false, path))
     });
@@ -878,7 +875,8 @@ function card(instance) {
                 h('span', { class: 'tag' }, fabric ? `Fabric${instance.loaderVersion ? ` ${instance.loaderVersion}` : ''}` : '原版'),
                 instance.general ? h('span', { class: 'tag' }, '一般實例') : null,
                 inject ? h('span', { class: 'tag accent' }, 'Brilliant-Server-Mod') : null,
-                owner ? h('span', { class: 'tag', title: '這個實例固定用這個帳號啟動' }, icon('user'), owner.name) : null),
+                owner ? h('span', { class: 'tag', title: '這個實例固定用這個帳號啟動' }, icon('user'), owner.name) : null,
+                ...shareTags(instance)),
             h('div', { class: 'inst-meta' },
                 icon('clock'),
                 [fmtDuration(instance.playSeconds), instance.lastPlayed ? `上次 ${new Date(instance.lastPlayed * 1000).toLocaleDateString('zh-TW')}` : ''].filter(Boolean).join('｜')),
@@ -938,11 +936,85 @@ function iconChooser(initial, names) {
 function groupList() {
     const saved = (store.settings?.instanceGroups ?? []).filter((g) => g.name);
     const known = new Set(saved.map((g) => g.name));
-    const extra = [...new Set(store.instances.map((i) => i.group).filter((name) => name && !known.has(name)))].map((name) => ({ name, icon: '', note: '' }));
+    const extra = [...new Set(store.instances.map((i) => i.group).filter((name) => name && !known.has(name)))].map((name) => ({ name, icon: '', note: '', key: '', shared: [] }));
     return [...saved, ...extra];
 }
 
-const saveGroups = (groups) => saveSettings({ instanceGroups: groups.map(({ name, icon: ico, note }) => ({ name, icon: ico || '', note: note || '' })) });
+const newKey = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('');
+const cleanGroups = (groups) => groups.map(({ name, icon: ico, note, key, shared }) => ({ name, icon: ico || '', note: note || '', key: key || newKey(), shared: shared || [] }));
+const saveGroups = (groups) => saveSettings({ instanceGroups: cleanGroups(groups) });
+const sharedNames = (group) => (group?.shared ?? []).map((f) => SHARE_LABELS.find(([v]) => v === f)?.[1]).filter(Boolean);
+
+let shareState = new Map();
+let shareSeq = 0;
+
+async function refreshShare() {
+    const seq = ++shareSeq;
+    const results = await api.shared_status({ ids: store.instances.map((i) => i.id) }).catch(() => null);
+    if (!results || seq !== shareSeq) return;
+    const next = new Map(results.map((r) => [r.id, r]));
+    if (JSON.stringify([...next]) === JSON.stringify([...shareState])) return;
+    shareState = next;
+    render();
+}
+
+const folderLabel = (f) => SHARE_LABELS.find(([v]) => v === f)?.[1] ?? f;
+
+function shareTags(instance) {
+    const st = shareState.get(instance.id);
+    if (!st) return [];
+    return [
+        st.linked.length ? h('span', { class: 'tag share-tag', title: `這些資料夾連到分組「${instance.group}」的共用資料夾` }, icon('folder'), `共用中：${st.linked.map(folderLabel).join('、')}`) : null,
+        st.pending.length ? h('span', { class: 'tag share-pending', title: `${st.pending.map(folderLabel).join('、')}的共用設定還沒套用到這個實例，會在下次啟動遊戲時套用` }, icon('warning-box'), '下次啟動套用共用') : null
+    ].filter(Boolean);
+}
+
+export async function shareNotice(instance, folder) {
+    const [st] = await api.shared_status({ ids: [instance.id] }).catch(() => []);
+    if (!st?.linked.includes(folder)) return null;
+    const members = store.instances.filter((i) => i.group === instance.group);
+    return h('div', { class: 'share-notice' }, icon('folder'),
+        `這個${folderLabel(folder)}資料夾與分組「${instance.group}」的 ${members.length} 個實例共用，新增或刪除會影響所有參與的實例。`);
+}
+
+async function applySharing(ids, quiet = false) {
+    if (!ids.length) return;
+    try {
+        const results = await api.apply_shared({ ids: [...new Set(ids)] });
+        refreshShare();
+        const lines = results.flatMap(([name, notes]) => notes.map((note) => `「${name}」${note}`));
+        if (!lines.length) return;
+        if (quiet && lines.length <= 2) return lines.forEach((line) => toast(line));
+        await dialog({ title: '共用資料夾已更新', content: h('ul', { class: 'share-result' }, ...lines.map((line) => h('li', {}, line))), buttons: [{ label: '好', value: null }] });
+    } catch (error) {
+        fail(error);
+    }
+}
+
+let migrating = false;
+async function migrateLegacyShare() {
+    const folders = store.settings?.sharedFolders ?? [];
+    if (migrating || !folders.length || !store.instances.length) return;
+    migrating = true;
+    const users = store.instances.filter((i) => i.useShared);
+    const groups = groupList();
+    const patch = { sharedFolders: [] };
+    if (users.length) {
+        let name = '共用資料夾';
+        for (let n = 2; groups.some((g) => g.name === name); n++) name = `共用資料夾 ${n}`;
+        patch.instanceGroups = cleanGroups([...groups, { name, icon: 'folder', note: '從舊版共用設定轉移', key: 'legacy', shared: folders }]);
+        await saveSettings(patch).catch(fail);
+        for (const instance of users) {
+            await api.update_instance({ updated: { ...instance, useShared: false, group: instance.group || name } }).catch(fail);
+        }
+        await loadInstances().catch(() => {});
+        toast(`共用資料夾改由分組設定，原本的共用設定已轉成分組「${name}」`);
+        await applySharing(users.map((i) => i.id), true);
+    } else {
+        await saveSettings(patch).catch(fail);
+    }
+    migrating = false;
+}
 const pinnedKey = () => store.settings?.pinned ?? '';
 
 async function togglePin(key) {
@@ -1025,6 +1097,7 @@ function groupHeader(group, members, closed) {
     h('button', { type: 'button', class: 'inst-group-name', 'aria-expanded': String(!closed), title: group.name ? '點一下收合；右鍵可編輯、置頂；拖曳可調整順序' : '', onclick: () => { if (!dragged()) toggleFold(group.name); } },
         icon('chevron-down', 'ico fold'), iconOf(group.name ? group.icon || 'folder' : 'folder'), h('b', {}, group.name || '未分組'),
         pinned ? h('span', { class: 'badge' }, '置頂') : null,
+        sharedNames(group).length ? h('span', { class: 'badge share-badge', title: '這個分組的實例共用這些資料夾；後面的數字是已經套用的實例數' }, `共用 ${sharedNames(group).join('、')}${members.length ? `・${members.filter((m) => !shareState.get(m.id)?.pending.length).length}/${members.length} 已套用` : ''}`) : null,
         h('span', { class: 'hint' }, `${members.length} 個實例${running ? `・${running} 個執行中` : ''}`),
         group.note ? h('span', { class: 'inst-group-note', title: group.note }, group.note) : null),
     group.name ? h('button', {
@@ -1043,6 +1116,7 @@ function groupMenu(group, members, x, y) {
         h('button', { type: 'button', role: 'menuitem', class: extra, onclick: (e) => { e.stopPropagation(); closeMenus(); handler(); } }, icon(name), label);
     const menu = h('div', { class: 'inst-menu floating', role: 'menu' },
         item('edit', '編輯分組⋯', () => groupDialog(group).catch(fail)),
+        item('folder', '共用資料夾設定⋯', () => groupDialog(group).then(() => {}).catch(fail)),
         item('arrow-up', pinnedKey() === `g:${group.name}` ? '取消置頂' : '置頂分組', () => togglePin(`g:${group.name}`)),
         members.length ? item('play', '全部啟動', () => launchGroup(group.name, members).catch(fail)) : null,
         item('trash', '刪除分組（實例保留）', () => removeGroup(group).catch(fail), 'danger'));
@@ -1053,11 +1127,14 @@ function groupMenu(group, members, x, y) {
 }
 
 async function setGroupOf(list, name) {
+    const moved = [];
     for (const instance of list) {
         if ((instance.group || '') === name) continue;
         await api.update_instance({ updated: { ...instance, group: name } }).catch(fail);
+        moved.push(instance.id);
     }
     await loadInstances().catch(fail);
+    await applySharing(moved, true);
 }
 
 async function groupDialog(existing = null) {
@@ -1065,7 +1142,22 @@ async function groupDialog(existing = null) {
     const icons = iconPick.el;
     const name = h('input', { type: 'text', value: existing?.name ?? '', maxlength: '24', placeholder: '例如：輝煌、建築、朋友的伺服器' });
     const note = h('input', { type: 'text', value: existing?.note ?? '', maxlength: '120', placeholder: '選填，會顯示在分組標題旁' });
-    const picks = store.instances.map((instance) => ({ instance, input: h('input', { type: 'checkbox', checked: !!existing && instance.group === existing.name }) }));
+    const picks = store.instances.map((instance) => ({ instance, input: h('input', { type: 'checkbox', checked: !!existing && instance.group === existing.name, onchange: () => warnShare() }) }));
+    const key = existing?.key || newKey();
+    const sharing = new Set(existing?.shared ?? []);
+    const shareCards = SHARE_LABELS.map(([value, label]) => {
+        const input = h('input', { type: 'checkbox', checked: sharing.has(value), onchange: () => { input.checked ? sharing.add(value) : sharing.delete(value); warnShare(); } });
+        return h('label', { class: 'share-card' }, h('span', { class: 'share-head' }, input, icon(SHARE_INFO[value][0]), h('b', {}, label)), h('small', {}, SHARE_INFO[value][1]));
+    });
+    const shareWarn = h('div', { class: 'share-warn', hidden: true });
+    const warnShare = () => {
+        const versions = new Set(picks.filter((p) => p.input.checked).map((p) => p.instance.mcVersion));
+        shareWarn.hidden = !(sharing.has('saves') && versions.size > 1);
+        shareWarn.textContent = `注意：這個分組有不同 Minecraft 版本的實例（${[...versions].join('、')}），共用存檔可能讓舊版本打不開被升級過的世界。`;
+    };
+    warnShare();
+    const location = h('code', {}, existing?.key ? '讀取中⋯' : '建立分組後才會產生');
+    if (existing?.key) api.shared_folder_path({ key }).then((path) => { location.textContent = path; }).catch(() => {});
     const ok = await dialog({
         title: existing ? `編輯分組「${existing.name}」` : '建立分組',
         content: h('div', { class: 'inst-editor' },
@@ -1074,17 +1166,23 @@ async function groupDialog(existing = null) {
             h('div', { class: 'field' }, h('label', {}, '備註'), note),
             picks.length ? h('div', { class: 'field' }, h('label', {}, '加入的實例'),
                 h('div', { class: 'group-picks' }, ...picks.map(({ instance, input }) => h('label', { class: 'group-pick' }, input, instanceVisual(instance), h('span', {}, instance.name),
-                    instance.group && instance.group !== existing?.name ? h('small', {}, `目前在「${instance.group}」`) : null)))) : null),
-        buttons: [{ label: '取消', value: false }, { label: existing ? '儲存' : '建立', value: true }]
+                    instance.group && instance.group !== existing?.name ? h('small', {}, `目前在「${instance.group}」`) : null)))) : null,
+            h('div', { class: 'field share-manager' }, h('label', {}, '共用資料夾'),
+                h('div', { class: 'hint' }, '勾選的資料夾由這個分組的實例共用一份，其他分組不受影響。加入共用時，實例原本的內容會搬進分組的共用資料夾（同名會自動改名，不會覆蓋）；實例離開分組或取消共用時，會把共用內容複製一份回實例。'),
+                h('div', { class: 'share-cards' }, ...shareCards),
+                shareWarn,
+                h('div', { class: 'share-location' }, location, existing?.key ? h('button', { type: 'button', class: 'mc', onclick: async () => api.open_path({ path: await api.shared_folder_path({ key }) }).catch(fail) }, icon('folder'), '開啟') : null))),
+        buttons: [{ label: '取消', value: false }, { label: existing ? '儲存並套用' : '建立', value: true }]
     });
     if (ok !== true) return;
     const title = name.value.trim().slice(0, 24);
     if (!title) return toast('請輸入分組名稱', 'error');
     const groups = groupList();
     if (groups.some((g) => g.name === title && g.name !== existing?.name)) return toast(`已經有叫「${title}」的分組`, 'error');
-    const entry = { name: title, icon: iconPick.value, note: note.value.trim().slice(0, 120) };
+    const entry = { name: title, icon: iconPick.value, note: note.value.trim().slice(0, 120), key, shared: SHARE_LABELS.map(([v]) => v).filter((v) => sharing.has(v)) };
+    const shareChanged = (existing?.shared ?? []).join() !== entry.shared.join();
     const next = existing ? groups.map((g) => (g.name === existing.name ? entry : g)) : [...groups, entry];
-    const patch = { instanceGroups: next };
+    const patch = { instanceGroups: cleanGroups(next) };
     if (existing && existing.name !== title && pinnedKey() === `g:${existing.name}`) patch.pinned = `g:${title}`;
     await saveSettings(patch).catch(fail);
     if (existing && existing.name !== title) {
@@ -1097,13 +1195,14 @@ async function groupDialog(existing = null) {
     const renamed = existing && existing.name !== title ? store.instances.filter((i) => i.group === existing.name && !leave.includes(i)) : [];
     await setGroupOf([...join, ...renamed], title);
     if (leave.length) await setGroupOf(leave, '');
+    if (shareChanged) await applySharing(store.instances.filter((i) => i.group === title).map((i) => i.id));
     toast(existing ? `已更新分組「${title}」` : `已建立分組「${title}」`);
 }
 
 async function removeGroup(group) {
     const members = store.instances.filter((i) => i.group === group.name);
     if (!(await confirm(`確定要刪除分組「${group.name}」嗎？${members.length ? `\n裡面的 ${members.length} 個實例會移到「未分組」，不會被刪除。` : ''}`, '刪除分組'))) return;
-    const patch = { instanceGroups: groupList().filter((g) => g.name !== group.name) };
+    const patch = { instanceGroups: cleanGroups(groupList().filter((g) => g.name !== group.name)) };
     if (pinnedKey() === `g:${group.name}`) patch.pinned = '';
     await saveSettings(patch).catch(fail);
     await setGroupOf(members, '');
@@ -1261,6 +1360,8 @@ export function initInstances() {
     document.addEventListener('click', closeMenus);
     on('settings', render);
     on('accounts', render);
+    on('instances', () => { migrateLegacyShare(); refreshShare(); });
+    on('settings', () => { migrateLegacyShare(); refreshShare(); });
     render();
     versionData().then(render, () => {});
 }

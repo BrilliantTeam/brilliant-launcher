@@ -1,6 +1,7 @@
 import { api, openUrl, pickFile } from '../api.js';
 import { $, acceptFiles, clampNumber, clear, confirm, fail, fmtBytes, h, rangeFill, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
+import { icon } from '../icons.js';
 import { gpuName, isIntegratedGpu } from '../services.js';
 
 const FIELDS = {
@@ -65,7 +66,24 @@ export function jvmPresetButtons(target, onPick) {
 }
 
 const PROXY_PATTERN = /^https?:\/\/([^\s@/]+@)?[A-Za-z0-9.\-[\]:_]+:\d{1,5}\/?$/;
-const SHARE_LABELS = [['saves', '存檔'], ['resourcepacks', '資源包'], ['shaderpacks', '光影'], ['screenshots', '截圖']];
+export const SHARE_LABELS = [['saves', '存檔'], ['resourcepacks', '資源包'], ['shaderpacks', '光影'], ['screenshots', '截圖']];
+export const SHARE_INFO = {
+    saves: ['map', '在任一實例建立或下載的單人世界，其他實例也看得到。只建議同一個 Minecraft 版本的實例共用，高版本開過的世界會被升級。'],
+    resourcepacks: ['image', '在任一實例加入的資源包，其他實例也看得到；啟用與排序仍由各實例自己決定。'],
+    shaderpacks: ['eye', '光影包只要放一份，所有參與的實例都能選用。'],
+    screenshots: ['image', '所有參與實例的截圖集中在同一個資料夾，相簿也會一起顯示。']
+};
+
+function renderSharedSummary() {
+    const box = $('#set-shared');
+    if (!box) return;
+    const groups = (store.settings?.instanceGroups ?? []).filter((g) => g.shared?.length);
+    clear(box).append(
+        h('span', { class: 'share-summary' }, groups.length
+            ? groups.map((g) => `「${g.name}」共用 ${g.shared.map((f) => SHARE_LABELS.find(([v]) => v === f)?.[1]).filter(Boolean).join('、')}`).join('；')
+            : '共用資料夾改在實例分組中設定：每個分組可以各自選擇要共用的資料夾。'),
+        h('button', { type: 'button', class: 'mc', onclick: () => { location.hash = '#instances'; } }, icon('folder'), '前往實例分組'));
+}
 
 const ACCENTS = [
     ['', '官網配色'],
@@ -162,8 +180,7 @@ function write() {
         else el.value = settings[key] ?? '';
     }
     $('#set-backup-keep').disabled = !settings.backupOnLaunch;
-    const shared = settings.sharedFolders ?? [];
-    for (const box of $('#set-shared').querySelectorAll('input')) box.checked = shared.includes(box.value);
+    renderSharedSummary();
     $('#bg-state').textContent = !settings.background ? '目前使用官網輪播' : /\.(mp4|webm)$/i.test(settings.background) ? '目前使用自訂影片' : '目前使用自訂圖片';
     $('#music-state').textContent = settings.music ? `目前播放：${settings.music.split(/[\\/]/).pop().replace(/^music-\d+\./, '自訂音樂.')}` : '未設定';
     $('#btn-music-clear').disabled = !settings.music;
@@ -270,12 +287,7 @@ export function initSettings() {
         persist(read());
         toast('已套用 JVM 參數預設組');
     }));
-    $('#set-shared').append(...SHARE_LABELS.map(([value, label]) => h('label', {},
-        h('input', {
-            type: 'checkbox',
-            value,
-            onchange: () => persist({ sharedFolders: [...$('#set-shared').querySelectorAll('input:checked')].map((b) => b.value) })
-        }), label)));
+    on('instances', renderSharedSummary);
     $('#btn-config-export').addEventListener('click', guard(async () => {
         try {
             const path = await api.export_config();

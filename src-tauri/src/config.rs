@@ -71,6 +71,8 @@ pub struct InstanceGroup {
     pub name: String,
     pub icon: String,
     pub note: String,
+    pub key: String,
+    pub shared: Vec<String>,
 }
 
 impl Default for Settings {
@@ -215,6 +217,14 @@ impl Settings {
             clean_line(&mut group.name, 24);
             clean_line(&mut group.icon, 1024);
             clean_line(&mut group.note, 120);
+            group.key.retain(|c| c.is_ascii_alphanumeric() || c == '-');
+            group.key.truncate(32);
+            if group.key.is_empty() {
+                group.key = format!("{:016x}", rand::random::<u64>());
+            }
+            group.shared.retain(|f| crate::advanced::SHAREABLE.contains(&f.as_str()));
+            group.shared.sort();
+            group.shared.dedup();
         }
         let mut seen = std::collections::HashSet::new();
         self.instance_groups.retain(|g| !g.name.is_empty() && seen.insert(g.name.clone()));
@@ -281,7 +291,11 @@ pub fn channel_of(settings: &Settings) -> &'static str {
 
 pub async fn load_settings() -> Settings {
     let mut settings: Settings = read_json(&paths::config_file()).await;
+    let missing_key = settings.instance_groups.iter().any(|g| g.key.is_empty());
     settings.clean();
+    if missing_key {
+        let _ = write_json(&paths::config_file(), &settings).await;
+    }
     settings
 }
 

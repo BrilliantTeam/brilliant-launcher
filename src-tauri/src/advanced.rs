@@ -178,57 +178,141 @@ fn move_into(src: &Path, dst: &Path, tag: &str) -> R<()> {
     Ok(())
 }
 
+#[tauri::command]
+pub async fn shared_folder_path(key: String) -> R<String> {
+    let dir = group_base(&key);
+    std::fs::create_dir_all(&dir)?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub async fn apply_shared(state: tauri::State<'_, crate::state::AppState>, ids: Vec<String>) -> R<Vec<(String, Vec<String>)>> {
+    let settings = crate::config::load_settings().await;
+    let mut out = Vec::new();
+    for id in ids {
+        let instance = crate::instance::get(&id).await?;
+        if state.is_running(&id).await {
+            out.push((instance.name, vec!["遊戲執行中，會在下次啟動時套用".to_string()]));
+            continue;
+        }
+        let s = settings.clone();
+        let inst = instance.clone();
+        let notes = tokio::task::spawn_blocking(move || sync_shared(&inst, &s)).await.context("共用資料夾工作中斷")??;
+        out.push((instance.name, notes));
+    }
+    Ok(out)
+}
+
+#[derive(serde::Serialize)]
+pub struct ShareStatus {
+    pub id: String,
+    pub linked: Vec<String>,
+    pub pending: Vec<String>,
+}
+
+pub fn share_status(instance: &Instance, settings: &Settings) -> ShareStatus {
+    let game = paths::game_dir(&instance.id);
+    let group = settings.instance_groups.iter().find(|g| !instance.group.is_empty() && g.name == instance.group && !g.key.is_empty());
+    let mut linked = Vec::new();
+    let mut pending = Vec::new();
+    for name in SHAREABLE {
+        let link = game.join(name);
+        let want = group.filter(|g| g.shared.iter().any(|f| f == name)).map(|g| group_base(&g.key).join(name));
+        let current = if is_link(&link) { std::fs::read_link(&link).ok() } else { None };
+        match (&want, &current) {
+            (Some(w), Some(c)) if same_dir(w, c) => linked.push(name.to_string()),
+            (None, None) => {}
+            _ => pending.push(name.to_string()),
+        }
+    }
+    ShareStatus { id: instance.id.clone(), linked, pending }
+}
+
+#[tauri::command]
+pub async fn shared_status(ids: Vec<String>) -> R<Vec<ShareStatus>> {
+    let settings = crate::config::load_settings().await;
+    let mut out = Vec::new();
+    for id in ids {
+        if let Ok(instance) = crate::instance::get(&id).await {
+            let s = settings.clone();
+            out.push(tokio::task::spawn_blocking(move || share_status(&instance, &s)).await.context("讀取共用狀態中斷")?);
+        }
+    }
+    Ok(out)
+}
+
+pub fn group_base(key: &str) -> PathBuf {
+    if key == "legacy" {
+        paths::shared().join("folders")
+    } else {
+        paths::shared().join("groups").join(key)
+    }
+}
+
+fn same_dir(a: &Path, b: &Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => a == b,
+    }
+}
+
 pub fn sync_shared(instance: &Instance, settings: &Settings) -> R<Vec<String>> {
     let game = paths::game_dir(&instance.id);
     std::fs::create_dir_all(&game)?;
-    let base = paths::shared().join("folders");
+    let group = settings.instance_groups.iter().find(|g| !instance.group.is_empty() && g.name == instance.group && !g.key.is_empty());
     let mut notes = Vec::new();
     for name in SHAREABLE {
         let link = game.join(name);
-        let target = base.join(name);
-        let want = instance.use_shared && settings.shared_folders.iter().any(|f| f == name);
-        let linked = is_link(&link);
-        if want && !linked {
-            std::fs::create_dir_all(&target)?;
-            if link.exists() {
-                move_into(&link, &target, &instance.name)?;
+        let want = group.filter(|g| g.shared.iter().any(|f| f == name)).map(|g| group_base(&g.key).join(name));
+        let current = if is_link(&link) { std::fs::read_link(&link).ok().or_else(|| Some(PathBuf::new())) } else { None };
+        if let (Some(w), Some(c)) = (&want, &current) {
+            if same_dir(w, c) {
+                continue;
             }
-            make_link(&link, &target)?;
-            notes.push(format!("「{name}」已改用所有實例共用的資料夾"));
-        } else if !want && linked {
+        }
+        if let Some(old) = &current {
             remove_link(&link).with_context(|| format!("移除共用連結失敗：{}", link.display()))?;
-            if target.is_dir() {
-                copy_dir(&target, &link)?;
+            if old.is_dir() {
+                copy_dir(old, &link)?;
             } else {
                 std::fs::create_dir_all(&link)?;
             }
-            notes.push(format!("「{name}」已改回這個實例自己的資料夾（複製了一份共用內容）"));
+            if want.is_none() {
+                notes.push(format!("「{name}」已改回這個實例自己的資料夾（複製了一份共用內容）"));
+            }
+        }
+        if let Some(target) = &want {
+            std::fs::create_dir_all(target)?;
+            if link.exists() {
+                move_into(&link, target, &instance.name)?;
+            }
+            make_link(&link, target)?;
+            notes.push(format!("「{name}」已改用分組「{}」共用的資料夾", instance.group));
         }
     }
     Ok(notes)
 }
 
 pub fn redact(text: &str) -> String {
-    let mut out = Vec::new();
+    let mut out = String::with_capacity(text.len());
     let mut hide_next = false;
-    for word in text.split(' ') {
-        if hide_next {
-            out.push("<已隱藏>".to_string());
+    for word in text.split_inclusive(char::is_whitespace) {
+        let bare = word.trim_end();
+        let tail = &word[bare.len()..];
+        if bare.is_empty() {
+            out.push_str(word);
+            continue;
+        }
+        if hide_next || bare.starts_with("token:") || (bare.starts_with("eyJ") && bare.len() > 40) {
+            out.push_str("<已隱藏>");
+            out.push_str(tail);
             hide_next = false;
             continue;
         }
-        if word == "--accessToken" || word == "--session" || word == "--xuid" {
-            hide_next = true;
-            out.push(word.to_string());
-            continue;
-        }
-        if word.starts_with("token:") || (word.starts_with("eyJ") && word.len() > 40) {
-            out.push("<已隱藏>".to_string());
-            continue;
-        }
-        out.push(word.to_string());
+        hide_next = matches!(bare, "--accessToken" | "--session" | "--xuid");
+        out.push_str(word);
     }
-    out.join(" ")
+    out
 }
 
 fn newest(dir: &Path, filter: impl Fn(&str) -> bool, count: usize) -> Vec<PathBuf> {
@@ -589,6 +673,7 @@ mod tests {
         assert!(out.contains("--accessToken <已隱藏>"));
         assert!(out.contains("--uuid abc"));
         assert_eq!(redact("token:abc:def"), "<已隱藏>");
+        assert_eq!(redact("[main/INFO]: ok\n--accessToken secret\nnext line"), "[main/INFO]: ok\n--accessToken <已隱藏>\nnext line");
     }
 
     #[test]
@@ -646,8 +731,20 @@ mod tests {
         make_link(&instance_saves, &shared).unwrap();
         assert!(is_link(&instance_saves));
         assert!(instance_saves.join("World A (測試)").join("level.dat").is_file());
+        assert!(same_dir(&std::fs::read_link(&instance_saves).unwrap(), &shared));
         remove_link(&instance_saves).unwrap();
         assert!(shared.join("World A (測試)").join("level.dat").is_file());
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn group_bases_are_separate() {
+        assert!(group_base("legacy").ends_with("folders"));
+        assert_ne!(group_base("a1"), group_base("b2"));
+        let mut s = Settings::default();
+        s.instance_groups = vec![crate::config::InstanceGroup { name: "建築".into(), shared: vec!["saves".into(), "../x".into()], ..Default::default() }];
+        s.clean();
+        assert_eq!(s.instance_groups[0].shared, vec!["saves".to_string()]);
+        assert_eq!(s.instance_groups[0].key.len(), 16);
     }
 }

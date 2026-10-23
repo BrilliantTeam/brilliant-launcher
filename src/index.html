@@ -210,6 +210,7 @@
                 </div>
 
                 <div id="store-installed" hidden>
+                    <div id="share-notice"></div>
                     <div class="toolbar">
                         <button type="button" class="mc primary" id="btn-update-all" hidden>全部更新</button>
                         <button type="button" class="mc" id="btn-add-mod">安裝本機檔案⋯</button>
@@ -403,7 +404,7 @@
                 <div class="field">
                     <label>共用資料夾</label>
                     <div class="share-boxes" id="set-shared"></div>
-                    <div class="hint">勾選的資料夾會讓「啟用共用資料夾」的實例共用同一份，不必每個實例各放一份。第一次啟用時，實例原本的內容會搬進共用資料夾（同名的會加上實例名稱，不會覆蓋）；之後取消共用，會把共用內容複製一份回實例。</div>
+                    <div class="hint">讓多個實例共用存檔、資源包、光影或截圖，不用每個實例各放一份。</div>
                 </div>
                 <div class="field-row">
                     <div class="field">
@@ -515,15 +516,33 @@
 
             <section class="view" id="view-log">
                 <h1>遊戲日誌</h1>
-                <div class="toolbar">
-                    <select id="log-instance" aria-label="選擇實例" hidden></select>
-                    <button type="button" class="mc" id="btn-clear-log">清空</button>
-                    <button type="button" class="mc" id="btn-open-logs">開啟日誌資料夾</button>
-                    <button type="button" class="mc" id="btn-my-reports">我的回報</button>
+                <div class="toolbar log-bar">
+                    <select id="log-instance" aria-label="選擇實例"></select>
+                    <select id="log-source" aria-label="選擇紀錄檔"></select>
                     <span class="spacer"></span>
-                    <label style="margin:0"><input type="checkbox" id="log-follow" checked>自動捲到底</label>
+                    <label><input type="checkbox" id="log-wrap" checked>自動換行</label>
+                    <label><input type="checkbox" id="log-color" checked>彩色輸出</label>
+                    <label><input type="checkbox" id="log-follow" checked>自動捲到底</label>
+                </div>
+                <div class="toolbar log-bar">
+                    <button type="button" class="mc" id="btn-log-copy"><i data-icon="copy"></i>複製</button>
+                    <button type="button" class="mc" id="btn-log-upload"><i data-icon="external-link"></i>上傳</button>
+                    <button type="button" class="mc" id="btn-log-reload"><i data-icon="reload"></i>重新載入</button>
+                    <button type="button" class="mc" id="btn-clear-log">清空畫面</button>
+                    <button type="button" class="mc" id="btn-log-delete"><i data-icon="trash"></i>刪除這個檔案</button>
+                    <button type="button" class="mc" id="btn-log-clean">清除舊紀錄檔</button>
+                    <button type="button" class="mc" id="btn-open-logs"><i data-icon="folder"></i>開啟資料夾</button>
+                    <span class="spacer"></span>
+                    <button type="button" class="mc" id="btn-my-reports">我的回報</button>
                 </div>
                 <div class="console" id="console"></div>
+                <div class="toolbar log-bar log-find">
+                    <input type="search" id="log-search" placeholder="搜尋（Enter 下一個，Shift+Enter 上一個）" spellcheck="false">
+                    <span class="hint" id="log-hits"></span>
+                    <button type="button" class="mc" id="btn-log-prev">上一個</button>
+                    <button type="button" class="mc" id="btn-log-next">下一個</button>
+                    <button type="button" class="mc" id="btn-log-bottom">底部</button>
+                </div>
             </section>
 
             <section class="view" id="view-about">
