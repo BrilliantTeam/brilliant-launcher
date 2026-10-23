@@ -1,6 +1,6 @@
 import { api, listen, openUrl } from '../api.js';
 import { $, clear, confirm, dialog, fail, fmtBytes, h, toast } from '../ui.js';
-import { avatarUrl, emit, isRunning, loadAccounts, loadInstances, on, selectedAccount, selectedInstance, store, saveSettings } from '../store.js';
+import { accountFor, avatarUrl, emit, isRunning, loadAccounts, loadInstances, on, selectedAccount, selectedInstance, store, saveSettings } from '../store.js';
 import { initNews } from './news.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
 import { addOffline, loginMicrosoft } from './accounts.js';
@@ -138,7 +138,7 @@ function renderAccountChip() {
 
 function renderPlayBar() {
     const instance = selectedInstance();
-    const account = selectedAccount();
+    const account = accountFor(instance);
     const running = instance && isRunning(instance.id);
     const target = instance?.general ? null : shardOf(store.settings?.quickJoin);
     const button = $('#btn-play');
@@ -464,6 +464,34 @@ async function refreshShards() {
     renderShards();
 }
 
+function toggleAccountMenu(force) {
+    const menu = $('#account-menu');
+    const open = force ?? menu.hidden;
+    menu.hidden = !open;
+    $('#account-more').setAttribute('aria-expanded', String(open));
+    if (!open) return;
+    const current = selectedAccount();
+    clear(menu).append(
+        ...store.accounts.map((account) => h('button', {
+            type: 'button',
+            role: 'menuitem',
+            'aria-current': current?.id === account.id ? 'true' : 'false',
+            onclick: async () => {
+                toggleAccountMenu(false);
+                if (current?.id === account.id) return;
+                await api.select_account({ id: account.id }).catch(fail);
+                store.settings.selectedAccount = account.id;
+                emit('accounts');
+                emit('settings');
+                toast(`已切換為 ${account.name}`);
+            }
+        }, h('img', { src: avatarUrl(account), alt: '' }), account.name, h('span', { class: 'sub' }, account.kind === 'msa' ? '正版' : '離線'))),
+        store.accounts.length ? h('hr') : null,
+        h('button', { type: 'button', role: 'menuitem', onclick: () => { toggleAccountMenu(false); location.hash = '#accounts'; } },
+            icon('user'), store.accounts.length ? '管理帳號' : '登入帳號')
+    );
+}
+
 function toggleInstanceMenu(force) {
     const menu = $('#instance-menu');
     const open = force ?? menu.hidden;
@@ -547,7 +575,9 @@ export function initHome() {
     $('#instance-menu').classList.add('glass');
     document.addEventListener('click', (e) => {
         if (!e.target.closest('#instance-menu')) toggleInstanceMenu(false);
+        if (!e.target.closest('#account-menu, #account-more')) toggleAccountMenu(false);
     });
+    $('#account-more').addEventListener('click', () => toggleAccountMenu());
     on('instances', () => {
         renderPlayBar();
         renderShards();

@@ -1,5 +1,5 @@
 import { api, listen, openUrl, pickFiles, watchFolders } from '../api.js';
-import { $, $$, clear, confirm, dialog, fail, fmtBytes, h, toast, guard } from '../ui.js';
+import { $, $$, clear, confirm, dialog, dismissDialog, fail, fmtBytes, h, toast, guard } from '../ui.js';
 import { emit, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
 import { selectInstance } from './instances.js';
@@ -1064,21 +1064,71 @@ async function warnRisky(instance, files) {
 
 const KIND_NAME = { mod: '模組', resourcepack: '資源包', shader: '光影' };
 
-async function installLocal(paths) {
-    const instance = selectedInstance();
+async function installLocal(paths, instance = selectedInstance()) {
     if (!instance) return toast('請先選擇一個實例', 'error');
     const files = paths.filter((p) => /\.(jar|zip)$/i.test(p));
     if (!files.length) return toast('只能安裝 .jar 模組、.zip 資源包或光影', 'warn');
     try {
         const added = await api.add_content({ id: instance.id, files });
         const kinds = [...new Set(added.map(([kind]) => kind))];
-        toast(`已安裝 ${kinds.map((kind) => `${added.filter(([k]) => k === kind).length} 個${KIND_NAME[kind]}`).join('、')}`);
-        await Promise.all(kinds.map(loadInstalled));
-        renderAll();
+        toast(`已安裝 ${kinds.map((kind) => `${added.filter(([k]) => k === kind).length} 個${KIND_NAME[kind]}`).join('、')}到「${instance.name}」`);
+        if (instance.id === selectedInstance()?.id) {
+            await Promise.all(kinds.map(loadInstalled));
+            renderAll();
+        }
         await warnRisky(instance, added.filter(([kind]) => kind === 'mod').map(([, file]) => file));
     } catch (error) {
         fail(error);
     }
+}
+
+function dropCard(payload) {
+    const at = payload?.position;
+    if (!at || !$('#view-instances').classList.contains('active')) return null;
+    const card = document.elementFromPoint(at.x / devicePixelRatio, at.y / devicePixelRatio)?.closest('.inst-card[data-id]');
+    return card ? { card, instance: store.instances.find((i) => i.id === card.dataset.id) } : null;
+}
+
+function markDropCard(card) {
+    for (const other of $$('.inst-card.drop-hover')) if (other !== card) other.classList.remove('drop-hover');
+    card?.classList.add('drop-hover');
+}
+
+function dropHint(payload) {
+    let hint = $('#drop-hint');
+    if (!payload) {
+        if (hint) hint.hidden = true;
+        markDropCard(null);
+        return;
+    }
+    if (!hint) {
+        hint = h('div', { id: 'drop-hint', class: 'drop-hint', role: 'status' });
+        document.body.append(hint);
+    }
+    const hit = dropCard(payload);
+    markDropCard(hit?.card);
+    const onMods = $('#view-mods').classList.contains('active');
+    const target = onMods ? selectedInstance() : hit?.instance ?? (store.instances.length === 1 ? store.instances[0] : null);
+    hint.textContent = target ? `放開即可把模組、資源包或光影安裝到「${target.name}」`
+        : store.instances.length ? '放開後選擇要安裝到哪個實例（在「實例」頁可直接拖到卡片上）' : '請先建立一個實例';
+    hint.hidden = false;
+}
+
+function pickDropTarget(paths) {
+    const names = paths.filter((p) => /\.(jar|zip)$/i.test(p)).map((p) => p.split(/[\\/]/).pop());
+    const current = selectedInstance();
+    return dialog({
+        title: '要安裝到哪個實例？',
+        wide: true,
+        content: h('div', {},
+            h('p', { class: 'hint' }, `${names.slice(0, 3).join('、')}${names.length > 3 ? ` 等 ${names.length} 個檔案` : ''}，會依內容自動放進模組、資源包或光影資料夾。`),
+            h('div', { class: 'drop-targets' }, ...store.instances.map((instance) => h('button', {
+                type: 'button',
+                class: `drop-target${instance.id === current?.id ? ' current' : ''}`,
+                onclick: () => dismissDialog(instance)
+            }, instanceVisual(instance), h('b', {}, instance.name), h('small', {}, `${instance.mcVersion}・${instance.loader === 'fabric' ? 'Fabric' : '原版'}`))))),
+        buttons: [{ label: '取消', value: null }]
+    });
 }
 
 export function initMods() {
@@ -1119,9 +1169,17 @@ export function initMods() {
     $('#btn-open-mods').addEventListener('click', () => openFolder({ mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks' }[state.kind]));
     for (const button of $$('[data-folder]')) button.addEventListener('click', () => openFolder(button.dataset.folder));
 
-    listen('tauri://drag-drop', (payload) => {
-        if (!$('#view-mods').classList.contains('active')) return;
-        installLocal(payload?.paths ?? []);
+    listen('tauri://drag-enter', (payload) => dropHint(payload ?? {}));
+    listen('tauri://drag-over', (payload) => dropHint(payload ?? {}));
+    listen('tauri://drag-leave', () => dropHint(null));
+    listen('tauri://drag-drop', async (payload) => {
+        const hit = dropCard(payload)?.instance;
+        dropHint(null);
+        const paths = payload?.paths ?? [];
+        if ($('#view-mods').classList.contains('active')) return installLocal(paths);
+        if (!paths.some((p) => /\.(jar|zip)$/i.test(p))) return installLocal(paths);
+        const target = hit ?? (store.instances.length === 1 ? store.instances[0] : await pickDropTarget(paths));
+        if (target) installLocal(paths, target);
     });
 
     on('instances', onInstanceChange);

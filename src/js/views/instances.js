@@ -116,6 +116,10 @@ async function editorDialog(title, source) {
         source.injectRichPresence === true ? 'on' : source.injectRichPresence === false ? 'off' : '');
 
     const loaderField = h('div', { class: 'field' }, h('label', {}, 'Fabric Loader 版本'), loaderVersion);
+    const account = h('select', {}, h('option', { value: '' }, '跟隨目前選擇的帳號'),
+        ...store.accounts.map((a) => h('option', { value: a.id, selected: a.id === source.account }, `${a.name}${a.kind === 'msa' ? '' : '（離線）'}`)));
+    const accountField = h('div', { class: 'field' }, h('label', {}, '使用帳號'), account,
+        h('div', { class: 'hint' }, '指定後，這個實例一律用該帳號啟動，不受上方切換的帳號影響，適合同時開兩個帳號遊玩。'));
     const rpcField = h('div', { class: 'field' }, h('label', {}, '自動安裝 Brilliant-Server-Mod'), rpc,
         h('div', { class: 'hint' }, '啟用時，每次啟動都會自動安裝最新的 Brilliant-Server-Mod 與 Fabric API。'));
 
@@ -214,6 +218,7 @@ async function editorDialog(title, source) {
         h('div', { class: 'field' }, h('label', {}, '模組載入器'), loader),
         loaderField,
         h('div', { class: 'field' }, h('label', {}, '記憶體上限：', memoryLabel), memory),
+        accountField,
         rpcField,
         advanced
     );
@@ -254,6 +259,7 @@ async function editorDialog(title, source) {
         useShared: useShared.checked,
         modChannel: modChannel.value,
         freezeMods: freezeMods.checked,
+        account: account.value,
         pickedImage
     };
 }
@@ -843,6 +849,7 @@ function card(instance) {
     const running = isRunning(instance.id);
     const fabric = instance.loader === 'fabric';
     const inject = fabric && !instance.general && (instance.injectRichPresence ?? store.settings?.injectRichPresence ?? true);
+    const owner = instance.account ? store.accounts.find((acc) => acc.id === instance.account) : null;
     const supported = store.versions?.modVersions;
     const unsupported = !instance.general && supported?.length && !supported.includes(instance.mcVersion);
     const tool = (name, label, handler, extra = '') =>
@@ -856,7 +863,7 @@ function card(instance) {
 
     return h(
         'div',
-        { class: `inst-card${active ? ' selected' : ''}`, onclick: () => selectInstance(instance).catch(fail) },
+        { class: `inst-card${active ? ' selected' : ''}`, 'data-id': instance.id, onclick: () => selectInstance(instance).catch(fail) },
         h('div', { class: `inst-banner${instance.image ? ' has-image' : ''}`, style: instance.image ? `--cover:url("${fileSrc(instance.image)}")` : '' },
             instance.image ? null : icon(instanceIconName(instance.icon)),
             h('div', { class: 'inst-flags' },
@@ -868,7 +875,8 @@ function card(instance) {
                 h('span', { class: 'tag' }, `Minecraft ${instance.mcVersion}`),
                 h('span', { class: 'tag' }, fabric ? `Fabric${instance.loaderVersion ? ` ${instance.loaderVersion}` : ''}` : '原版'),
                 instance.general ? h('span', { class: 'tag' }, '一般實例') : null,
-                inject ? h('span', { class: 'tag accent' }, 'Brilliant-Server-Mod') : null),
+                inject ? h('span', { class: 'tag accent' }, 'Brilliant-Server-Mod') : null,
+                owner ? h('span', { class: 'tag', title: '這個實例固定用這個帳號啟動' }, icon('user'), owner.name) : null),
             h('div', { class: 'inst-meta' },
                 icon('clock'),
                 [fmtDuration(instance.playSeconds), instance.lastPlayed ? `上次 ${new Date(instance.lastPlayed * 1000).toLocaleDateString('zh-TW')}` : ''].filter(Boolean).join('｜')),
@@ -917,6 +925,7 @@ export function initInstances() {
     on('instances', render);
     document.addEventListener('click', closeMenus);
     on('settings', render);
+    on('accounts', render);
     render();
     versionData().then(render, () => {});
 }

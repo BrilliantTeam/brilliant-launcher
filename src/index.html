@@ -25,10 +25,14 @@
         <button type="button" class="channel-chip" id="channel-chip" hidden></button>
         <button type="button" class="net-chip" id="net-chip" hidden><i data-icon="warning-box"></i>離線模式</button>
         <button type="button" class="update-chip" id="update-chip" hidden><i data-icon="download"></i><span id="update-label">有新版本</span></button>
-        <a class="account-chip" id="account-chip" href="#accounts" title="切換帳號">
-            <img id="chip-avatar" src="assets/icon.png" alt="">
-            <span id="chip-name">登入帳號</span>
-        </a>
+        <div class="account-switch">
+            <a class="account-chip" id="account-chip" href="#accounts" title="帳號管理">
+                <img id="chip-avatar" src="assets/icon.png" alt="">
+                <span id="chip-name">登入帳號</span>
+            </a>
+            <button type="button" class="account-more" id="account-more" title="快速切換帳號" aria-label="快速切換帳號" aria-haspopup="menu" aria-expanded="false"><i data-icon="chevron-down"></i></button>
+            <div class="account-menu glass" id="account-menu" role="menu" hidden></div>
+        </div>
         <button type="button" class="tool" id="walker-toggle" aria-pressed="false" title="開啟虛擬夥伴" aria-label="開啟虛擬夥伴"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 1h6v6H5zM4 8h8v4H4zM5 12h2v3H5zM9 12h2v3H9zM2 8h2v3H2zM12 8h2v3h-2z"/></svg></button>
         <button type="button" class="tool" id="font-toggle" title="切換點陣／系統字型" aria-label="切換點陣／系統字型"><i data-icon="art-text"></i></button>
         <button type="button" class="tool" id="theme-toggle" title="主題" aria-label="主題"></button>

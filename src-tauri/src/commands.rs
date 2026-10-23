@@ -203,13 +203,18 @@ pub async fn select_account(id: String) -> R<()> {
 }
 
 pub async fn active_account(settings: &Settings) -> R<Account> {
+    account_for(settings, "").await
+}
+
+pub async fn account_for(settings: &Settings, preferred: &str) -> R<Account> {
     let accounts = config::load_accounts().await;
     if accounts.is_empty() {
         bail!("還沒有任何帳號，請先在「帳號」頁登入");
     }
     let account = accounts
         .iter()
-        .find(|a| a.id == settings.selected_account)
+        .find(|a| !preferred.is_empty() && a.id == preferred)
+        .or_else(|| accounts.iter().find(|a| a.id == settings.selected_account))
         .or_else(|| accounts.first())
         .cloned()
         .expect("accounts 非空");

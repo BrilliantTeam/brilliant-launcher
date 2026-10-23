@@ -1,6 +1,6 @@
 import { api } from './api.js';
 import { clear, dialog, fail, fmtBytes, h, toast } from './ui.js';
-import { emit, on, saveSettings, selectedAccount, store } from './store.js';
+import { accountFor, emit, on, saveSettings, store } from './store.js';
 import { gpuName } from './services.js';
 import { recentLog } from './views/logview.js';
 
@@ -49,7 +49,7 @@ export function buildSummary(kind, instance, extra, clean) {
 }
 
 export async function reportDialog(kind, instance, extra = {}) {
-    const account = selectedAccount();
+    const account = accountFor(instance);
     let level = 'basic';
     const boxes = ITEMS.map(([key, label, min]) => ({ key, min, input: h('input', { type: 'checkbox' }), label }));
     const levelInputs = LEVELS.map(([value, label, hint]) => {

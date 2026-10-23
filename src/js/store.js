@@ -54,6 +54,10 @@ export function selectedAccount() {
     return store.accounts.find((a) => a.id === id) ?? store.accounts[0] ?? null;
 }
 
+export function accountFor(instance) {
+    return (instance?.account && store.accounts.find((a) => a.id === instance.account)) || selectedAccount();
+}
+
 export const isRunning = (id) => store.running.includes(id);
 
 const faces = new Map();

@@ -44,6 +44,7 @@ pub struct Instance {
     pub use_shared: bool,
     pub mod_channel: String,
     pub freeze_mods: bool,
+    pub account: String,
 }
 
 impl Instance {
