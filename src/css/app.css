@@ -1343,3 +1343,19 @@ body.inst-dragging, body.inst-dragging * { cursor: grabbing !important; user-sel
 .crop-zoom { display: flex; align-items: center; gap: 10px; align-self: stretch; font-size: 13px; }
 .crop-zoom input { flex: 1; }
 img.ico.custom, .ico.custom { object-fit: cover; image-rendering: auto; }
+.leftovers { margin-top: 10px; }
+.leftover-list { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; }
+.leftover { display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 13px; background: var(--content-bg-sunken); border: 1px solid var(--border-soft); cursor: pointer; }
+.leftover .ico { width: 16px; height: 16px; flex: none; color: var(--accent); }
+.leftover-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: 'Consolas', 'Cascadia Mono', monospace; font-size: 12px; }
+.leftover small { flex: none; color: var(--text-faint); }
+.leftover-tree > summary { list-style: none; }
+.leftover-tree > summary::-webkit-details-marker { display: none; }
+.leftover-tree > summary .leftover::after { content: '▸'; margin-left: 4px; color: var(--text-faint); }
+.leftover-tree[open] > summary .leftover::after { content: '▾'; }
+.tree { margin: 2px 0 4px; padding-left: 18px; list-style: none; border-left: 1px dashed var(--border-soft); }
+.tree .tree { margin-left: 6px; }
+.tree-row { display: flex; align-items: center; gap: 6px; padding: 2px 6px; font-family: 'Consolas', 'Cascadia Mono', monospace; font-size: 12px; }
+.tree-row .ico { width: 14px; height: 14px; flex: none; color: var(--text-subtle); }
+.tree-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-row small { margin-left: auto; color: var(--text-faint); font-family: inherit; }

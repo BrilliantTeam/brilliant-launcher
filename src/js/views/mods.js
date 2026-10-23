@@ -104,13 +104,43 @@ async function install(kind, projectId, title, quiet = false) {
     }
 }
 
+function leftoverTree(nodes) {
+    return h('ul', { class: 'tree' }, ...nodes.map((node) => h('li', {},
+        h('span', { class: 'tree-row' }, icon(node.dir ? 'folder' : 'script-text'), h('span', {}, node.dir ? `${node.name}/` : node.name), h('small', {}, fmtBytes(node.size))),
+        node.dir && node.children.length ? leftoverTree(node.children) : null)));
+}
+
 async function remove(kind, entry) {
     const warning = (entry.managed ? '\n這是啟動器自動安裝的項目，下次啟動遊戲時會再放回來。' : '')
         + (entry.dependents?.length ? `\n${entry.dependents.join('、')} 需要它，移除後這些模組可能無法載入。` : '');
-    if (!(await confirm(`確定移除「${entry.name}」？${warning}`, '移除'))) return;
+    const instance = selectedInstance();
+    const leftovers = kind === 'mod' && !entry.managed
+        ? await api.mod_leftovers({ id: instance.id, file: entry.file }).catch(() => null)
+        : null;
+    const picks = (leftovers?.items ?? []).map((item) => ({ item, input: h('input', { type: 'checkbox' }) }));
+    const ok = await dialog({
+        title: '移除確認',
+        content: h('div', {},
+            h('p', {}, `確定移除「${entry.name}」？${warning}`),
+            picks.length ? h('div', { class: 'leftovers' },
+                h('p', { class: 'hint' }, `找到 ${picks.length} 個這個模組留下的設定或資料（共 ${fmtBytes(picks.reduce((sum, p) => sum + p.item.size, 0))}），預設會保留；想一起清掉的請勾選，勾選的會移到實例的 trash 資料夾，需要時還能找回：`),
+                h('div', { class: 'leftover-list' }, ...picks.map(({ item, input }) => {
+                    const row = h(item.dir && item.children.length ? 'div' : 'label', { class: 'leftover', title: item.path },
+                        input,
+                        icon(item.dir ? 'folder' : 'script-text'),
+                        h('span', { class: 'leftover-path' }, item.dir ? `${item.path}/` : item.path),
+                        h('small', {}, fmtBytes(item.size)));
+                    if (!item.dir || !item.children.length) return row;
+                    return h('details', { class: 'leftover-tree' }, h('summary', {}, row), leftoverTree(item.children));
+                }))) : null),
+        buttons: [{ label: '取消', value: false }, { label: '移除', value: true }]
+    });
+    if (ok !== true) return;
     try {
-        await api.content_remove({ id: selectedInstance().id, kind, file: entry.file });
-        toast(`已移除 ${entry.name}`);
+        await api.content_remove({ id: instance.id, kind, file: entry.file });
+        const chosen = picks.filter((p) => p.input.checked).map((p) => p.item.path);
+        const moved = chosen.length ? await api.remove_leftovers({ id: instance.id, modId: leftovers.modId, pathsToRemove: chosen }).catch((error) => { fail(error); return 0; }) : 0;
+        toast(moved ? `已移除 ${entry.name}，並清掉 ${moved} 個相關設定或資料` : `已移除 ${entry.name}`);
         await loadInstalled(kind);
         renderAll();
     } catch (error) {

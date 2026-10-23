@@ -8,6 +8,7 @@ pub mod extras;
 pub mod fabric;
 pub mod instance;
 pub mod launch;
+pub mod leftovers;
 pub mod mc;
 pub mod modinject;
 pub mod modrinth;
@@ -150,6 +151,8 @@ pub fn run() {
             extras::set_media,
             extras::import_image,
             extras::save_image,
+            leftovers::mod_leftovers,
+            leftovers::remove_leftovers,
             commands::set_instance_image,
             skins::account_profile,
             skins::skin_library,
