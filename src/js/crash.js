@@ -22,7 +22,7 @@ const RULES = [
                 .filter((line) => /^\s*-\s*(?:Mod|Install|Replace|Remove)\b/.test(line) || /requires (?:version|any version)/i.test(line))
                 .map((line) => line.trim().replace(/^-\s*/, ''))
                 .slice(0, 6);
-            return `Fabric 拒絕載入目前的模組組合。${reasons.length ? `\n${reasons.map((r) => `・${r}`).join('\n')}` : ''}\n請到「模組」頁安裝缺少的前置模組，或移除不支援這個版本的模組。`;
+            return `Fabric 拒絕載入目前的模組組合。${reasons.length ? `\n${reasons.map((r) => `・${r}`).join('\n')}` : ''}\n請到實例頁的「模組與資源」安裝缺少的前置模組，或移除不支援這個版本的模組。`;
         }
     },
     {
@@ -36,7 +36,7 @@ const RULES = [
     {
         test: /Duplicate mod|Found duplicate mods|duplicate mod ids?/i,
         title: '有重複的模組',
-        detail: () => '同一個模組被放了兩份（常見於不同版本的同名 jar）。請到「模組」頁刪掉舊的那一份。'
+        detail: () => '同一個模組被放了兩份（常見於不同版本的同名 jar）。請到實例頁的「模組與資源」刪掉舊的那一份。'
     },
     {
         test: /NoClassDefFoundError|ClassNotFoundException|NoSuchMethodError|NoSuchFieldError/,
@@ -117,7 +117,7 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
     if (report && !fixes.some((f) => ['disable', 'update', 'install'].includes(f.kind))) {
         const suspect = enabled.filter((m) => m.blame > 0 && !m.managed).sort((a, b) => b.blame - a.blame)[0];
         if (suspect) {
-            findings.push({ title: `當機報告指向「${suspect.name}」`, detail: `當機時的程式呼叫堆疊裡出現這個模組的程式碼，它很可能就是元兇。可以先停用它再試一次，確認沒問題後再到「模組」頁找更新版本。` });
+            findings.push({ title: `當機報告指向「${suspect.name}」`, detail: `當機時的程式呼叫堆疊裡出現這個模組的程式碼，它很可能就是元兇。可以先停用它再試一次，確認沒問題後再到實例頁的「模組與資源」找更新版本。` });
             disable(suspect, '（當機報告指向它）');
         }
     }

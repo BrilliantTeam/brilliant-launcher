@@ -38,7 +38,7 @@ function show(view) {
         clearTimeout(active.enterTimer);
         active.enterTimer = setTimeout(() => active.classList.remove('entering'), 700);
     }
-    $$('.rail a').forEach((el) => el.classList.toggle('active', el.dataset.view === name));
+    $$('.rail a').forEach((el) => el.classList.toggle('active', el.dataset.view === (name === 'mods' ? 'instances' : name)));
     $('.page-wrap').scrollTop = 0;
 }
 
@@ -167,6 +167,11 @@ function initChrome() {
             location.hash = '#settings';
         } else if (e.code === 'KeyF') {
             e.preventDefault();
+            if (location.hash === '#settings') {
+                $('#settings-search').focus();
+                $('#settings-search').select();
+                return;
+            }
             location.hash = '#mods';
             setTimeout(() => $('#mod-search').focus(), 50);
         } else if (e.code === 'KeyR' || e.code === 'KeyP') {

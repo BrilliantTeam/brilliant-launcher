@@ -73,12 +73,15 @@ async function showLinkHint(account) {
         h('div', { class: 'grow' },
             h('b', {}, '你的 Minecraft 帳號還沒綁定 Discord'),
             h('div', {}, '綁定後才能投稿「玩家足跡」，也能在官網查詢自己的資料。在遊戲內輸入 /discord link 就能開始。')),
-        h('button', { type: 'button', class: 'mc primary', onclick: () => openUrl(LINK_GUIDE) }, '查看綁定教學')));
+        h('div', { class: 'link-actions' },
+            h('button', { type: 'button', class: 'mc primary', onclick: () => openUrl(LINK_GUIDE) }, '查看綁定教學'),
+            h('button', { type: 'button', class: 'mc', onclick: () => { linkState.delete(account.uuid); loaded.delete(account.uuid.replace(/-/g, '')); render(); } }, icon('reload'), '已綁定？重新檢查'))));
 }
 
 async function render() {
     const account = selectedAccount();
     const box = clear($('#profile-body'));
+    $('#btn-profile-refresh').hidden = true;
     if (!account) {
         box.append(h('div', { class: 'empty-state' }, '先登入帳號，就能看到你在輝煌的遊玩紀錄。'));
         return;
@@ -97,10 +100,14 @@ async function render() {
     }
     if (!data) {
         clear(box).append(h('div', { class: 'empty-state' }, '暫時連不上官網，請稍後再試。'));
+        $('#btn-profile-refresh').hidden = false;
         return;
     }
     if (!data.servers.length) clear(box).append(h('div', { class: 'empty-state' }, '還沒有你在輝煌的遊玩紀錄，進伺服器玩一陣子再回來看看吧！'));
-    else renderProfile(account, data);
+    else {
+        renderProfile(account, data);
+        $('#btn-profile-refresh').hidden = false;
+    }
     showLinkHint(account);
 }
 

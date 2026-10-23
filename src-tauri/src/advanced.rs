@@ -124,6 +124,7 @@ fn make_link(link: &Path, target: &Path) -> R<()> {
             .arg(link.as_os_str())
             .arg(target.as_os_str())
             .creation_flags(0x0800_0000)
+            .stdout(std::process::Stdio::null())
             .status()
             .context("無法建立共用資料夾連結")?;
         if !status.success() {
@@ -239,6 +240,113 @@ pub async fn shared_status(ids: Vec<String>) -> R<Vec<ShareStatus>> {
         }
     }
     Ok(out)
+}
+
+#[derive(serde::Serialize)]
+pub struct SharedItem {
+    pub name: String,
+    pub title: String,
+    pub size: u64,
+    pub modified: i64,
+    pub dir: bool,
+    pub icon: Option<String>,
+    pub path: String,
+}
+
+fn shared_dir(key: &str, folder: &str) -> R<PathBuf> {
+    if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || !SHAREABLE.contains(&folder) {
+        bail!("共用資料夾不正確");
+    }
+    Ok(group_base(key).join(folder))
+}
+
+fn safe_item(name: &str) -> bool {
+    !name.is_empty() && !name.contains(['/', '\\']) && name != "." && name != ".."
+}
+
+#[tauri::command]
+pub async fn shared_items(key: String, folder: String) -> R<Vec<SharedItem>> {
+    let dir = shared_dir(&key, &folder)?;
+    tokio::task::spawn_blocking(move || {
+        let mut out = Vec::new();
+        for entry in std::fs::read_dir(&dir).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            let Ok(meta) = entry.metadata() else { continue };
+            let modified = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_secs() as i64).unwrap_or(0);
+            let lower = name.to_ascii_lowercase();
+            let (keep, title, icon) = match folder.as_str() {
+                "saves" => {
+                    let level = path.join("level.dat");
+                    let title = std::fs::read(&level).ok().and_then(|b| crate::worlds::read_level(&b).0).unwrap_or_else(|| name.clone());
+                    let icon = path.join("icon.png");
+                    (level.is_file(), title, icon.is_file().then(|| icon.to_string_lossy().to_string()))
+                }
+                "screenshots" => (lower.ends_with(".png") || lower.ends_with(".jpg"), name.clone(), None),
+                _ => {
+                    let pack = meta.is_dir() || lower.ends_with(".zip");
+                    let icon = if !meta.is_dir() && meta.len() < 64 << 20 {
+                        std::fs::read(&path).ok().and_then(|b| crate::modrinth::embedded_icon(&b, false))
+                    } else if meta.is_dir() && path.join("pack.png").is_file() {
+                        std::fs::read(path.join("pack.png")).ok().map(|b| {
+                            use base64::Engine;
+                            format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(b))
+                        })
+                    } else {
+                        None
+                    };
+                    (pack, name.trim_end_matches(".zip").to_string(), icon)
+                }
+            };
+            if !keep {
+                continue;
+            }
+            let size = if meta.is_dir() { crate::worlds::dir_size(&path) } else { meta.len() };
+            out.push(SharedItem { name, title, size, modified, dir: meta.is_dir(), icon, path: path.to_string_lossy().to_string() });
+        }
+        out.sort_by(|a, b| b.modified.cmp(&a.modified));
+        out
+    })
+    .await
+    .context("讀取共用資料夾中斷")
+    .map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn shared_add(key: String, folder: String, files: Vec<String>) -> R<usize> {
+    let dir = shared_dir(&key, &folder)?;
+    if !matches!(folder.as_str(), "resourcepacks" | "shaderpacks") {
+        bail!("這個共用資料夾不能直接加入檔案");
+    }
+    std::fs::create_dir_all(&dir)?;
+    let mut added = 0;
+    for file in files {
+        let src = PathBuf::from(&file);
+        let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        if !safe_item(&name) || !name.to_ascii_lowercase().ends_with(".zip") || !src.is_file() {
+            continue;
+        }
+        std::fs::copy(&src, dir.join(&name)).with_context(|| format!("複製 {name} 失敗"))?;
+        added += 1;
+    }
+    Ok(added)
+}
+
+#[tauri::command]
+pub async fn shared_remove(key: String, folder: String, names: Vec<String>) -> R<usize> {
+    let dir = shared_dir(&key, &folder)?;
+    let trash = group_base(&key).join("trash").join(format!("{folder}-{}", crate::config::now_secs()));
+    let mut moved = 0;
+    for name in names.iter().filter(|n| safe_item(n)) {
+        let src = dir.join(name);
+        if !src.exists() {
+            continue;
+        }
+        std::fs::create_dir_all(&trash)?;
+        std::fs::rename(&src, trash.join(name)).with_context(|| format!("移除 {name} 失敗"))?;
+        moved += 1;
+    }
+    Ok(moved)
 }
 
 pub fn group_base(key: &str) -> PathBuf {
@@ -734,6 +842,39 @@ mod tests {
         assert!(same_dir(&std::fs::read_link(&instance_saves).unwrap(), &shared));
         remove_link(&instance_saves).unwrap();
         assert!(shared.join("World A (測試)").join("level.dat").is_file());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    #[ignore = "改動 BRILLIANT_LAUNCHER_HOME，需單獨執行：cargo test --lib group_share_moves_existing_files -- --ignored"]
+    fn group_share_moves_existing_files() {
+        let root = std::env::temp_dir().join(format!("brilliant-group-share-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::env::set_var("BRILLIANT_LAUNCHER_HOME", &root);
+        let packs = paths::game_dir("a").join("resourcepacks");
+        std::fs::create_dir_all(&packs).unwrap();
+        std::fs::write(packs.join("Faithful.zip"), b"pack").unwrap();
+        let other = paths::game_dir("b").join("resourcepacks");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("Faithful.zip"), b"other").unwrap();
+        let mut settings = Settings::default();
+        settings.instance_groups = vec![crate::config::InstanceGroup { name: "建築".into(), key: "k1".into(), shared: vec!["resourcepacks".into()], ..Default::default() }];
+        let a = Instance { id: "a".into(), name: "A".into(), group: "建築".into(), ..Default::default() };
+        let b = Instance { id: "b".into(), name: "B".into(), group: "建築".into(), ..Default::default() };
+        assert_eq!(share_status(&a, &settings).pending, vec!["resourcepacks".to_string()]);
+        sync_shared(&a, &settings).unwrap();
+        sync_shared(&b, &settings).unwrap();
+        let shared = group_base("k1").join("resourcepacks");
+        assert_eq!(std::fs::read(shared.join("Faithful.zip")).unwrap(), b"pack");
+        assert_eq!(std::fs::read(shared.join("Faithful (B).zip")).unwrap(), b"other");
+        assert!(is_link(&packs) && is_link(&other));
+        assert_eq!(std::fs::read(packs.join("Faithful (B).zip")).unwrap(), b"other");
+        assert_eq!(share_status(&a, &settings).linked, vec!["resourcepacks".to_string()]);
+        let left = Instance { group: String::new(), ..a.clone() };
+        sync_shared(&left, &settings).unwrap();
+        assert!(!is_link(&packs));
+        assert!(packs.join("Faithful.zip").is_file() && shared.join("Faithful.zip").is_file());
+        std::env::remove_var("BRILLIANT_LAUNCHER_HOME");
         let _ = std::fs::remove_dir_all(&root);
     }
 

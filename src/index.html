@@ -48,7 +48,6 @@
         <a href="#profile" data-view="profile" title="我的輝煌"><i data-icon="trophy"></i><span>我的</span></a>
         <a href="#album" data-view="album" title="相簿與回顧"><i data-icon="image"></i><span>相簿</span></a>
         <a href="#instances" data-view="instances" title="實例"><i data-icon="gamepad"></i><span>實例</span></a>
-        <a href="#mods" data-view="mods" title="模組與資源"><i data-icon="zap"></i><span>模組</span></a>
         <a href="#explore" data-view="explore" title="探索"><i data-icon="map"></i><span>探索</span></a>
         <a href="#accounts" data-view="accounts" title="帳號"><i data-icon="user"></i><span>帳號</span></a>
         <a href="#settings" data-view="settings" title="設定"><i data-icon="sliders"></i><span>設定</span></a>
@@ -158,7 +157,7 @@
             <section class="view" id="view-instances">
                 <div class="store-head">
                     <h1>實例管理</h1>
-                    <div class="store-instance">每個實例都有獨立的遊戲版本、模組與存檔，點選卡片即可切換使用中的實例。</div>
+                    <div class="store-instance">每個實例都有獨立的遊戲版本、模組與存檔，點一下卡片選擇實例，點兩下或按 <i data-icon="zap"></i> 開啟它的模組與資源。</div>
                 </div>
                 <div class="toolbar">
                     <button type="button" class="mc primary" id="btn-new-instance"><i data-icon="plus"></i>建立實例</button>
@@ -172,16 +171,16 @@
             </section>
 
             <section class="view" id="view-mods">
-                <h1>模組與資源</h1>
-                <div class="install-target" id="store-instance"></div>
+                <button type="button" class="mc inst-back" id="btn-inst-back"><i data-icon="arrow-right"></i>返回實例列表</button>
+                <div class="inst-page-head" id="store-instance"></div>
                 <div class="segmented" id="kind-tabs" role="tablist">
                     <button type="button" data-kind="mod" aria-selected="true">模組</button>
                     <button type="button" data-kind="resourcepack" aria-selected="false">資源包</button>
                     <button type="button" data-kind="shader" aria-selected="false">光影</button>
                 </div>
                 <div class="store-tabs" role="tablist">
-                    <button type="button" data-tab="explore" aria-selected="true">探索</button>
-                    <button type="button" data-tab="installed" aria-selected="false">已安裝 <span class="count" id="installed-count"></span></button>
+                    <button type="button" data-tab="installed" aria-selected="true">已安裝 <span class="count" id="installed-count"></span></button>
+                    <button type="button" data-tab="explore" aria-selected="false">瀏覽內容</button>
                 </div>
 
                 <div id="store-explore">
@@ -256,6 +255,7 @@
                     <a href="#" data-jump="set-system">系統與下載</a>
                     <a href="#" data-jump="set-data">資料</a>
                     <a href="#" data-jump="set-keys">快捷鍵</a>
+                    <input type="search" id="settings-search" class="settings-search" placeholder="搜尋設定" spellcheck="false" aria-label="搜尋設定">
                 </nav>
 
                 <h2 id="set-game">遊戲</h2>
@@ -510,8 +510,9 @@
                     <div><kbd class="mod-key">Ctrl</kbd> + <kbd>Enter</kbd><span>開始遊戲</span></div>
                     <div><kbd class="mod-key">Ctrl</kbd> + <kbd>1</kbd>～<kbd>8</kbd><span>切換左側分頁</span></div>
                     <div><kbd class="mod-key">Ctrl</kbd> + <kbd>,</kbd><span>開啟設定</span></div>
-                    <div><kbd class="mod-key">Ctrl</kbd> + <kbd>F</kbd><span>在模組頁搜尋</span></div>
+                    <div><kbd class="mod-key">Ctrl</kbd> + <kbd>F</kbd><span>搜尋（設定頁搜尋設定，其他頁搜尋模組）</span></div>
                 </div>
+                <div class="empty-state" id="settings-empty" hidden>找不到符合的設定</div>
             </section>
 
             <section class="view" id="view-log">
@@ -587,21 +588,28 @@
                         <img src="https://mc-heads.net/avatar/Ochite_Miro/64" alt="" loading="lazy">
                         <div>
                             <div class="thanks-name">森息<span>Ochite_Miro</span></div>
-                            <p>協助測試 macOS 版本的功能。</p>
+                            <p>協助測試 macOS 版本的功能，並提供錯誤回報、功能與介面建議。</p>
                         </div>
                     </div>
                     <div class="thanks-card">
                         <img src="https://mc-heads.net/avatar/isbn978986/64" alt="" loading="lazy">
                         <div>
                             <div class="thanks-name">書碼<span>isbn978986</span></div>
-                            <p>協助測試 Windows 版本的功能。</p>
+                            <p>協助測試 Windows 版本的功能，並提供錯誤回報、功能與介面建議。</p>
                         </div>
                     </div>
                     <div class="thanks-card">
                         <img src="https://mc-heads.net/avatar/Q_YUN/64" alt="" loading="lazy">
                         <div>
                             <div class="thanks-name">YUN<span>Q_YUN</span></div>
-                            <p>協助測試 Windows 版本的功能。</p>
+                            <p>協助測試 Windows 版本的功能，並提供錯誤回報、功能與介面建議。</p>
+                        </div>
+                    </div>
+                    <div class="thanks-card">
+                        <img src="https://mc-heads.net/avatar/nelsonGX/64" alt="" loading="lazy">
+                        <div>
+                            <div class="thanks-name">nelson<span>nelsonGX</span></div>
+                            <p>協助測試 Windows 版本的功能，並提供錯誤回報與介面建議。</p>
                         </div>
                     </div>
                 </div>

@@ -1,11 +1,11 @@
-import { api, FILE_TYPES, fileSrc, openUrl, pickFile, pickFiles, watchFolders } from '../api.js';
+import { api, FILE_TYPES, fileSrc, isType, openUrl, pickFile, pickFiles, watchFolders } from '../api.js';
 import { $, $$, acceptFiles, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard } from '../ui.js';
 import { accountFor, emit, isRunning, loadInstances, on, saveSettings, selectedInstance, store } from '../store.js';
 import { icon, iconOf, INSTANCE_ICONS, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
 
 const isSvg = (path) => /\.svg$/i.test(path || '');
 import { importPicture } from '../crop.js';
-import { importPack } from './mods.js';
+import { importPack, openStore } from './mods.js';
 import { isPreparing, repairInstance } from './home.js';
 import { jvmPresetButtons, SHARE_INFO, SHARE_LABELS } from './settings.js';
 import { perfCheck } from '../perf.js';
@@ -290,7 +290,7 @@ async function createInstance(general = false) {
 
 export const createGeneralInstance = () => createInstance(true);
 
-async function editInstance(instance) {
+export async function editInstance(instance) {
     const result = await editorDialog('編輯實例', { ...instance });
     if (!result) return;
     const { pickedImage, ...draft } = result;
@@ -775,7 +775,7 @@ async function exportDiagnostics(instance) {
     }
 }
 
-function moreMenu(instance) {
+export function moreMenu(instance) {
     const item = (name, label, handler, extra = '') =>
         h('button', { type: 'button', role: 'menuitem', class: extra, onclick: (e) => { e.stopPropagation(); closeMenus(); handler(); } }, icon(name), label);
     const menu = h('div', { class: 'inst-menu', role: 'menu', hidden: true },
@@ -825,7 +825,7 @@ function closeMenus() {
     document.querySelectorAll('.inst-menu.floating').forEach((m) => m.remove());
 }
 
-async function playInstance(instance) {
+export async function playInstance(instance) {
     if (isPreparing()) return toast('正在準備遊戲，請等這次完成後再啟動', 'warn');
     await selectInstance(instance).catch(fail);
     location.hash = '#home';
@@ -834,8 +834,11 @@ async function playInstance(instance) {
 
 async function manageMods(instance) {
     await selectInstance(instance).catch(fail);
+    openStore(instance.loader === 'fabric' ? 'mod' : 'resourcepack', 'installed');
     location.hash = '#mods';
 }
+
+let clickTimer = 0;
 
 function card(instance) {
     const active = selectedInstance()?.id === instance.id;
@@ -859,7 +862,16 @@ function card(instance) {
         {
             class: `inst-card${active ? ' selected' : ''}`,
             'data-id': instance.id,
-            onclick: () => { if (!dragged()) selectInstance(instance).catch(fail); },
+            title: '點一下選擇，點兩下開啟模組與資源',
+            onclick: (e) => {
+                clearTimeout(clickTimer);
+                if (dragged() || e.detail > 1) return;
+                clickTimer = setTimeout(() => selectInstance(instance).catch(fail), 250);
+            },
+            ondblclick: () => {
+                clearTimeout(clickTimer);
+                if (!dragged()) manageMods(instance);
+            },
             onpointerdown: (e) => startDrag(e, e.currentTarget, { kind: 'instance', id: instance.id, label: instance.name })
         },
         h('div', { class: `inst-banner${instance.image && !isSvg(instance.image) ? ' has-image' : ''}`, style: instance.image && !isSvg(instance.image) ? `--cover:url("${fileSrc(instance.image)}")` : '' },
@@ -867,7 +879,7 @@ function card(instance) {
             h('div', { class: 'inst-flags' },
                 pinnedKey() === `i:${instance.id}` ? h('span', { class: 'badge' }, '置頂') : null,
                 running ? h('span', { class: 'badge warn' }, '執行中') : null,
-                active ? h('span', { class: 'badge' }, '使用中') : null)),
+                active ? h('span', { class: 'badge' }, '已選擇') : null)),
         h('div', { class: 'inst-body' },
             h('div', { class: 'inst-title', title: instance.name }, instance.name),
             h('div', { class: 'inst-tags' },
@@ -893,7 +905,7 @@ function card(instance) {
                 onclick: (e) => { e.stopPropagation(); playInstance(instance); }
             }, icon(running ? 'close' : 'play'), running ? '結束遊戲' : '開始遊戲'),
             tool('edit', '設定', () => editInstance(instance)),
-            fabric ? tool('zap', '模組與資源', () => manageMods(instance)) : null,
+            tool('zap', fabric ? '模組與資源' : '資源包與光影', () => manageMods(instance)),
             moreMenu(instance))
     );
 }
@@ -975,6 +987,88 @@ export async function shareNotice(instance, folder) {
     const members = store.instances.filter((i) => i.group === instance.group);
     return h('div', { class: 'share-notice' }, icon('folder'),
         `這個${folderLabel(folder)}資料夾與分組「${instance.group}」的 ${members.length} 個實例共用，新增或刪除會影響所有參與的實例。`);
+}
+
+async function sharedResources(group) {
+    const folders = SHARE_LABELS.filter(([v]) => group.shared.includes(v));
+    let folder = folders[0][0];
+    const tabs = h('div', { class: 'segmented share-tabs' });
+    const body = h('div', { class: 'share-body' });
+    const status = h('span', { class: 'hint' });
+    const addButton = h('button', { type: 'button', class: 'mc primary', onclick: async () => add(await pickFile('pack', { multiple: true }).catch(fail)) }, icon('plus'), '加入檔案');
+    const add = async (picked) => {
+        const files = (Array.isArray(picked) ? picked : picked ? [picked] : []).filter((p) => isType(p, 'pack'));
+        if (!files.length) return;
+        try {
+            const added = await api.shared_add({ key: group.key, folder, files });
+            toast(`已加入 ${added} 個${folderLabel(folder)}，分組裡的實例都看得到`);
+        } catch (error) {
+            fail(error);
+        }
+        load();
+    };
+    const remove = async (item, button) => {
+        if (!button.classList.contains('confirming')) {
+            button.classList.add('confirming', 'danger');
+            button.title = `再按一次即從共用資料夾移除「${item.title}」，分組「${group.name}」的所有實例都會少掉它（會移到共用資料夾的 trash）`;
+            const label = [...button.childNodes].find((n) => n.nodeType === 3);
+            const before = label?.textContent;
+            if (label) label.textContent = '再按一次移除';
+            setTimeout(() => {
+                button.classList.remove('confirming', 'danger');
+                if (label) label.textContent = before;
+            }, 3000);
+            return;
+        }
+        await api.shared_remove({ key: group.key, folder, names: [item.name] }).catch(fail);
+        toast(`已從共用資料夾移除「${item.title}」，可以在共用資料夾的 trash 找回`);
+        load();
+    };
+    const row = (item) => h('div', { class: 'row shared-row' },
+        item.icon ? h('img', { class: 'row-icon', src: item.icon.startsWith('data:') ? item.icon : fileSrc(item.icon), alt: '' }) : h('div', { class: 'row-icon' }, icon(folder === 'saves' ? 'map' : 'image')),
+        h('div', { class: 'grow' },
+            h('div', { class: 'name' }, item.title),
+            h('div', { class: 'meta' }, [fmtBytes(item.size), new Date(item.modified * 1000).toLocaleString('zh-TW', { hour12: false }), item.title !== item.name ? item.name : ''].filter(Boolean).join('｜'))),
+        h('button', { type: 'button', class: 'mc', onclick: (e) => remove(item, e.currentTarget) }, icon('trash'), '移除'));
+    const shot = (item) => h('figure', { class: 'shared-shot' },
+        h('img', { src: fileSrc(item.path), alt: item.name, loading: 'lazy' }),
+        h('figcaption', {}, item.name),
+        h('button', { type: 'button', class: 'mc icon-btn', title: '移除', 'aria-label': `移除 ${item.name}`, onclick: (e) => remove(item, e.currentTarget) }, icon('trash')));
+    async function load() {
+        for (const b of tabs.children) b.setAttribute('aria-selected', String(b.dataset.folder === folder));
+        addButton.hidden = !['resourcepacks', 'shaderpacks'].includes(folder);
+        clear(body).append(h('div', { class: 'empty-state' }, '讀取中⋯'));
+        const items = await api.shared_items({ key: group.key, folder }).catch((error) => (fail(error), []));
+        status.textContent = `${items.length} 個項目・${fmtBytes(items.reduce((sum, i) => sum + i.size, 0))}`;
+        const hint = {
+            resourcepacks: '可以在這裡加入或移除，也可以從「模組與資源」的商店安裝到這個分組的任一實例，都會出現在這裡。',
+            shaderpacks: '可以在這裡加入或移除，也可以從「模組與資源」的商店安裝到這個分組的任一實例，都會出現在這裡。',
+            saves: '在分組裡任一實例建立或匯入的世界都會出現在這裡。',
+            screenshots: '分組裡所有實例拍的截圖都集中在這裡，相簿也會一起顯示。'
+        }[folder];
+        const list = !items.length
+            ? h('div', { class: 'empty-state' }, `共用的${folderLabel(folder)}還是空的。`)
+            : folder === 'screenshots' ? h('div', { class: 'shared-shots' }, ...items.map(shot)) : h('div', { class: 'rows' }, ...items.map(row));
+        const zone = h('div', {}, h('p', { class: 'hint' }, hint), list);
+        if (!addButton.hidden) acceptFiles(zone, 'pack', add, { multiple: true });
+        clear(body).append(zone);
+    }
+    tabs.append(...folders.map(([value, label]) => h('button', { type: 'button', 'data-folder': value, onclick: () => { folder = value; load(); } }, label)));
+    load();
+    await dialog({
+        title: `共用資源｜${group.name}`,
+        wide: true,
+        content: h('div', { class: 'shared-resources' },
+            tabs,
+            h('div', { class: 'toolbar' },
+                addButton,
+                h('button', { type: 'button', class: 'mc', onclick: async () => api.open_path({ path: await api.shared_folder_path({ key: group.key }) + (navigator.userAgent.includes('Windows') ? '\\' : '/') + folder }).catch(fail) }, icon('folder'), '開啟資料夾'),
+                h('button', { type: 'button', class: 'mc', onclick: () => load() }, icon('reload'), '重新整理'),
+                h('span', { class: 'spacer' }),
+                status),
+            body),
+        buttons: [{ label: '關閉', value: null }]
+    });
 }
 
 async function applySharing(ids, quiet = false) {
@@ -1100,6 +1194,12 @@ function groupHeader(group, members, closed) {
         sharedNames(group).length ? h('span', { class: 'badge share-badge', title: '這個分組的實例共用這些資料夾；後面的數字是已經套用的實例數' }, `共用 ${sharedNames(group).join('、')}${members.length ? `・${members.filter((m) => !shareState.get(m.id)?.pending.length).length}/${members.length} 已套用` : ''}`) : null,
         h('span', { class: 'hint' }, `${members.length} 個實例${running ? `・${running} 個執行中` : ''}`),
         group.note ? h('span', { class: 'inst-group-note', title: group.note }, group.note) : null),
+    group.name && group.shared?.length && group.key ? h('button', {
+        type: 'button',
+        class: 'mc',
+        title: '管理這個分組共用的資源包、光影、存檔或截圖',
+        onclick: () => sharedResources(group).catch(fail)
+    }, icon('folder'), '共用資源') : null,
     group.name ? h('button', {
         type: 'button',
         class: 'mc',
@@ -1117,6 +1217,7 @@ function groupMenu(group, members, x, y) {
     const menu = h('div', { class: 'inst-menu floating', role: 'menu' },
         item('edit', '編輯分組⋯', () => groupDialog(group).catch(fail)),
         item('folder', '共用資料夾設定⋯', () => groupDialog(group).then(() => {}).catch(fail)),
+        group.shared?.length && group.key ? item('archive', '管理共用資源⋯', () => sharedResources(group).catch(fail)) : null,
         item('arrow-up', pinnedKey() === `g:${group.name}` ? '取消置頂' : '置頂分組', () => togglePin(`g:${group.name}`)),
         members.length ? item('play', '全部啟動', () => launchGroup(group.name, members).catch(fail)) : null,
         item('trash', '刪除分組（實例保留）', () => removeGroup(group).catch(fail), 'danger'));

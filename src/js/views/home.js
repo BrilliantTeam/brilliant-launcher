@@ -147,23 +147,27 @@ function renderPlayBar() {
     clear($('#home-instance')).append(...[h('span', { class: 'pick-title' }, instance ? instance.name : '尚未建立實例'), instance && account ? h('img', { class: 'name-face', src: avatarUrl(account), alt: '', title: account.name }) : null].filter(Boolean));
     $('#instance-pick').title = instance ? `${instance.name}｜Minecraft ${instance.mcVersion}${instance.loader === 'fabric' ? `・Fabric ${instance.loaderVersion || ''}` : '・原版'}${account ? `｜${account.name}` : ''}（點一下切換實例）` : '切換遊戲實例';
     clear($('#home-meta')).append(...(!instance
-        ? ['先到「實例」建立一個遊戲實例']
+        ? ['點右邊按鈕即可建立']
         : [
-            h('span', { class: 'meta-fixed' }, `${instance.mcVersion}・${instance.loader === 'fabric' ? 'Fabric' : '原版'}`),
-            account ? null : h('span', { class: 'meta-warn' }, '尚未登入'),
-            ready.has(instance.id) && !running ? h('span', { class: 'meta-ready' }, '已就緒') : null
-        ].filter(Boolean)));
+            h('span', { class: 'meta-fixed' }, `${instance.mcVersion}・${instance.loader === 'fabric' ? 'Fabric' : '原版'}`)
+        ]));
     renderUpgrade(instance);
     document.body.classList.toggle('launching', busy);
 
-    clear(button);
-    if (running) button.append('結束遊戲');
-    else if (busy) button.append('準備中⋯');
-    else if (target) button.append('開始遊戲', h('small', {}, `直連 ${target.label}`));
-    else button.append('開始遊戲', h('small', {}, '進入主畫面'));
-    button.classList.toggle('stop', !!running);
-    button.classList.toggle('busy', busy && !running);
-    button.disabled = !instance || !account || (busy && !running);
+    const action = running ? 'stop' : busy ? 'busy' : !instance ? 'create' : !account ? 'login' : 'play';
+    const where = target ? `直連 ${target.label}` : '進入主畫面';
+    const [label, sub] = {
+        stop: ['結束遊戲', ''],
+        busy: ['準備中⋯', ''],
+        create: ['建立實例', '一鍵建立輝煌實例'],
+        login: ['登入帳號', '尚未登入，無法開始遊戲'],
+        play: ['開始遊戲', ready.has(instance?.id) ? `已就緒・${where}` : where]
+    }[action];
+    clear(button).append(label, sub ? h('small', {}, sub) : null);
+    button.dataset.action = action;
+    button.classList.toggle('stop', action === 'stop');
+    button.classList.toggle('busy', action === 'busy');
+    button.disabled = action === 'busy';
     renderAccountChip();
     renderSetup(account, instance);
 }
@@ -569,7 +573,12 @@ function initFold() {
 
 export function initHome() {
     initFold();
-    $('#btn-play').addEventListener('click', () => play());
+    $('#btn-play').addEventListener('click', () => {
+        const action = $('#btn-play').dataset.action;
+        if (action === 'create') return quickCreate().catch(fail);
+        if (action === 'login') return loginMicrosoft().catch(fail);
+        play();
+    });
     on('launch', () => (busy ? toast('正在準備遊戲，請等這次完成後再啟動', 'warn') : play()));
     $('#instance-pick').classList.add('glass');
     $('#instance-pick').addEventListener('click', (e) => {

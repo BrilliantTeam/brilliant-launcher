@@ -1,8 +1,8 @@
 import { api, isType, listen, openUrl, pickFile, typeLabel, watchFolders } from '../api.js';
-import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtBytes, h, modalOpen, toast, guard } from '../ui.js';
-import { emit, loadInstances, on, selectedInstance, store } from '../store.js';
+import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtBytes, fmtDuration, h, modalOpen, toast, guard } from '../ui.js';
+import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
-import { selectInstance, shareNotice } from './instances.js';
+import { editInstance, moreMenu, playInstance, selectInstance, shareNotice } from './instances.js';
 import { renderMarkdown } from '../markdown.js';
 
 const FABRIC_API = 'P7dR8mSH';
@@ -49,7 +49,7 @@ export const PRESETS = [
     }
 ];
 
-const state = { kind: 'mod', tab: 'explore', category: '', offset: 0, total: 0, searchSeq: 0, listSeq: 0, searchedFor: '', filter: '' };
+const state = { kind: 'mod', tab: 'installed', category: '', offset: 0, total: 0, searchSeq: 0, listSeq: 0, searchedFor: '', filter: '' };
 const installed = { mod: null, resourcepack: null, shader: null };
 const busy = new Set();
 let timer = 0;
@@ -1007,49 +1007,82 @@ function renderInstalled() {
     box.append(...[profileBar(list), packPanel(), depBanner(list), ...list.map(installedRow)].filter(Boolean));
 }
 
-async function pickInstance() {
+function toggleTargetMenu(force) {
+    const menu = $('#store-instance .target-menu');
+    if (!menu) return;
+    const open = force ?? menu.hidden;
+    menu.hidden = !open;
+    menu.previousElementSibling.setAttribute('aria-expanded', String(open));
+    if (!open) return;
     const current = selectedInstance()?.id;
-    if (!store.instances.length) {
-        location.hash = '#instances';
-        return;
-    }
-    let chosen = null;
-    await dialog({
-        title: '切換實例',
-        content: h('div', { class: 'target-list' }, ...store.instances.map((instance) =>
-            h('button', {
-                type: 'button',
-                class: 'mc',
-                'aria-pressed': String(instance.id === current),
-                onclick: () => { chosen = instance.id; $('#dlg-foot button').click(); }
-            },
-            instanceVisual(instance),
-            h('span', { class: 'grow' }, instance.name),
-            h('span', { class: 'tag' }, `${instance.mcVersion}・${instance.loader === 'fabric' ? 'Fabric' : '原版'}`)))),
-        buttons: [{ label: '取消', value: null }]
-    });
-    const instance = store.instances.find((i) => i.id === chosen);
-    if (instance) await selectInstance(instance).catch(fail);
+    clear(menu).append(
+        ...store.instances.map((instance) => h('button', {
+            type: 'button',
+            role: 'menuitem',
+            'aria-current': String(instance.id === current),
+            onclick: async () => {
+                toggleTargetMenu(false);
+                if (instance.id !== current) await selectInstance(instance).catch(fail);
+            }
+        },
+        h('span', { class: 'inst-thumb' }, instanceVisual(instance)),
+        h('span', { class: 'menu-name' }, instance.name),
+        h('span', { class: 'sub' }, `${instance.mcVersion}・${instance.loader === 'fabric' ? 'Fabric' : '原版'}`))),
+        store.instances.length ? h('hr') : null,
+        h('button', { type: 'button', role: 'menuitem', onclick: () => { toggleTargetMenu(false); location.hash = '#instances'; } }, store.instances.length ? '管理實例⋯' : '建立實例⋯')
+    );
 }
+
+addEventListener('click', (e) => {
+    if (!e.target.closest('.target-pick')) toggleTargetMenu(false);
+});
+addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') toggleTargetMenu(false);
+});
 
 function renderHeader() {
     const instance = selectedInstance();
+    const running = instance && isRunning(instance.id);
+    const fabric = instance?.loader === 'fabric';
     clear($('#store-instance')).append(
-        h('div', { class: 'target-icon' }, instance ? instanceVisual(instance) : icon('warning-box')),
-        h('div', { class: 'target-text' },
-            h('div', { class: 'target-label' }, '安裝到這個實例'),
+        h('div', { class: 'inst-thumb inst-page-icon' }, instance ? instanceVisual(instance) : icon('warning-box')),
+        h('div', { class: 'inst-page-text' },
+            h('div', { class: 'target-pick' },
+                h('button', { type: 'button', class: 'inst-page-name', title: '切換實例', 'aria-haspopup': 'menu', 'aria-expanded': 'false', onclick: () => toggleTargetMenu() },
+                    h('h1', {}, instance ? instance.name : '尚未選擇實例'), icon('chevron-down')),
+                h('div', { class: 'account-menu target-menu glass', role: 'menu', hidden: true })),
             instance
-                ? h('div', { class: 'target-name' }, instance.name,
-                    h('span', { class: 'tag' }, `Minecraft ${instance.mcVersion}`),
-                    h('span', { class: 'tag' }, instance.loader === 'fabric' ? 'Fabric' : '原版'))
-                : h('div', { class: 'target-name' }, '尚未選擇實例')),
-        h('button', { type: 'button', class: 'mc', onclick: pickInstance }, icon('chevron-down'), '切換實例'));
+                ? h('div', { class: 'inst-page-meta' },
+                    h('span', {}, icon('zap'), `${fabric ? `Fabric${instance.loaderVersion ? ` ${instance.loaderVersion}` : ''}` : '原版'}・Minecraft ${instance.mcVersion}`),
+                    h('span', {}, icon('clock'), fmtDuration(instance.playSeconds)),
+                    instance.lastPlayed ? h('span', {}, `上次遊玩 ${new Date(instance.lastPlayed * 1000).toLocaleDateString('zh-TW')}`) : null)
+                : h('div', { class: 'inst-page-meta' }, '請先到「實例」建立或選擇一個實例')),
+        instance
+            ? h('div', { class: 'inst-page-actions' },
+                h('button', { type: 'button', class: `mc ${running ? 'danger' : 'primary'}`, onclick: () => playInstance(instance) }, icon(running ? 'close' : 'play'), running ? '結束遊戲' : '開始遊戲'),
+                h('button', { type: 'button', class: 'mc icon-btn', title: '實例設定', 'aria-label': '實例設定', onclick: () => editInstance(instance) }, icon('edit')),
+                moreMenu(instance))
+            : null);
     for (const button of $$('#kind-tabs button')) button.setAttribute('aria-selected', button.dataset.kind === state.kind ? 'true' : 'false');
     for (const button of $$('.store-tabs button')) button.setAttribute('aria-selected', button.dataset.tab === state.tab ? 'true' : 'false');
     $('#store-explore').hidden = state.tab !== 'explore';
     $('#store-installed').hidden = state.tab !== 'installed';
     $('#mod-search').placeholder = `搜尋 Modrinth 上的${KIND_LABEL[state.kind]}⋯⋯`;
     $('#installed-search').placeholder = `搜尋已安裝的${KIND_LABEL[state.kind]}⋯`;
+}
+
+export function openStore(kind, tab = state.tab) {
+    if (!KIND_LABEL[kind]) return;
+    state.tab = tab;
+    if (state.kind === kind) return renderAll();
+    state.kind = kind;
+    state.category = '';
+    state.filter = '';
+    $('#installed-search').value = '';
+    renderCategories();
+    renderAll();
+    reloadInstalled();
+    search();
 }
 
 function renderAll() {
@@ -1215,6 +1248,7 @@ export function initMods() {
         if (entries.some((e) => e.isIntersecting) && !$('#btn-more-mods').hidden && !state.loadingMore) search(false);
     }, { rootMargin: '300px' }).observe($('#btn-more-mods'));
     $('#btn-refresh-mods').addEventListener('click', guard(() => reloadInstalled()));
+    $('#btn-inst-back').addEventListener('click', () => { location.hash = '#instances'; });
     $('#installed-search').addEventListener('input', (e) => {
         state.filter = e.target.value;
         renderInstalled();
@@ -1250,6 +1284,7 @@ export function initMods() {
     });
 
     on('instances', onInstanceChange);
+    on('instances', () => { if (location.hash === '#mods') renderHeader(); });
     on('settings', onInstanceChange);
     addEventListener('hashchange', onInstanceChange);
     watchFolders(['mods', 'resourcepacks', 'shaderpacks'], () => (location.hash === '#mods' ? selectedInstance()?.id : undefined), reloadInstalled);

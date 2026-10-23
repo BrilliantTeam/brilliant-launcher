@@ -64,7 +64,7 @@ pub fn read_level(bytes: &[u8]) -> (Option<String>, i64, i32, bool) {
     (name, last, mode, hardcore)
 }
 
-fn dir_size(path: &Path) -> u64 {
+pub(crate) fn dir_size(path: &Path) -> u64 {
     std::fs::read_dir(path)
         .map(|d| {
             d.flatten()

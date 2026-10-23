@@ -29,7 +29,8 @@ export const FILE_TYPES = {
     world: { name: '世界壓縮檔', extensions: ['zip'] },
     mrpack: { name: 'Modrinth 模組包', extensions: ['mrpack'] },
     config: { name: '輝煌啟動器設定', extensions: ['zip'] },
-    content: { name: '模組、資源包或光影', extensions: ['jar', 'zip'] }
+    content: { name: '模組、資源包或光影', extensions: ['jar', 'zip'] },
+    pack: { name: '資源包或光影包', extensions: ['zip'] }
 };
 
 export const extOf = (path) => (/\.([^.\\/]+)$/.exec(String(path)) || [])[1]?.toLowerCase() ?? '';

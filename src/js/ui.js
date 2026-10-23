@@ -51,6 +51,15 @@ export function h(tag, props = {}, ...children) {
     return el;
 }
 
+for (const proto of [Element.prototype, DocumentFragment.prototype]) {
+    for (const name of ['append', 'prepend', 'replaceChildren']) {
+        const native = proto[name];
+        proto[name] = function (...nodes) {
+            return native.apply(this, nodes.filter((n) => n !== null && n !== undefined && n !== false));
+        };
+    }
+}
+
 export function clear(el) {
     el.replaceChildren();
     return el;
@@ -74,6 +83,8 @@ export function fail(error) {
 
 let closeOpenDialog = null;
 
+const DESTRUCTIVE = /刪除|移除|清除|解散|覆蓋|登出|重設|停用/;
+
 export function dialog({ title, content, wide = false, buttons = [{ label: '關閉', value: null }] }) {
     const dlg = $('#dlg');
     dlg.classList.toggle('wide', wide);
@@ -96,7 +107,7 @@ export function dialog({ title, content, wide = false, buttons = [{ label: '關�
 
         for (const btn of buttons) {
             foot.append(
-                h('button', { type: 'button', class: 'mc', onclick: () => close(btn.value) }, btn.label)
+                h('button', { type: 'button', class: `mc ${btn.kind ?? (DESTRUCTIVE.test(btn.label) && btn.value ? 'danger' : '')}`.trim(), onclick: () => close(btn.value) }, btn.label)
             );
         }
         dlg.showModal();
@@ -129,7 +140,7 @@ export async function confirm(message, okLabel = '確定') {
         content: h('p', {}, message),
         buttons: [
             { label: '取消', value: false },
-            { label: okLabel, value: true }
+            { label: okLabel, value: true, kind: DESTRUCTIVE.test(okLabel) ? 'danger' : 'primary' }
         ]
     });
     return answer === true;

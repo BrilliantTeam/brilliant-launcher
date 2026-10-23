@@ -227,6 +227,71 @@ function renderUpdate() {
     }
 }
 
+const PAGE_KEY = 'brilliant.settings.page';
+
+function initPages(view) {
+    const pages = [...view.querySelectorAll(':scope > h2')].map((title) => {
+        const page = h('section', { class: 'settings-page', 'data-page': title.id });
+        title.before(page);
+        for (let el = title; el && (el === title || el.nodeName !== 'H2') && el.id !== 'settings-empty';) {
+            const next = el.nextElementSibling;
+            page.append(el);
+            el = next;
+        }
+        return page;
+    });
+    const links = [...view.querySelectorAll('#settings-nav [data-jump]')];
+    const search = $('#settings-search');
+    let current = '';
+    try {
+        current = localStorage.getItem(PAGE_KEY) || '';
+    } catch {}
+    const render = () => {
+        const words = search.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+        view.classList.toggle('searching', words.length > 0);
+        let found = 0;
+        for (const page of pages) {
+            const title = page.querySelector('h2').textContent.toLowerCase();
+            let hit = false;
+            for (const block of page.children) {
+                if (block.nodeName === 'H2') continue;
+                const text = `${title} ${block.textContent.toLowerCase()}`;
+                const match = words.every((w) => text.includes(w));
+                block.classList.toggle('search-miss', !match);
+                hit ||= match;
+            }
+            page.hidden = words.length ? !hit : page.dataset.page !== current;
+            if (words.length && hit) found++;
+        }
+        for (const link of links) link.setAttribute('aria-current', String(!words.length && link.dataset.jump === current));
+        $('#settings-empty').hidden = !words.length || found > 0;
+    };
+    const show = (id) => {
+        current = pages.some((p) => p.dataset.page === id) ? id : pages[0].dataset.page;
+        try {
+            localStorage.setItem(PAGE_KEY, current);
+        } catch {}
+        search.value = '';
+        render();
+        view.scrollTop = 0;
+    };
+    $('#settings-nav').addEventListener('click', (e) => {
+        const link = e.target.closest('[data-jump]');
+        if (!link) return;
+        e.preventDefault();
+        show(link.dataset.jump);
+    });
+    search.addEventListener('input', render);
+    search.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && search.value) {
+            e.stopPropagation();
+            search.value = '';
+            render();
+        }
+    });
+    show(current);
+}
+
 export function initSettings() {
     on('update-status', renderUpdate);
     const syncAlpha = () => { $('#opt-alpha').hidden = !store.settings?.alphaUnlocked && store.settings?.updateChannel !== 'alpha'; };
@@ -261,12 +326,7 @@ export function initSettings() {
         persist(read());
     });
 
-    $('#settings-nav').addEventListener('click', (e) => {
-        const link = e.target.closest('[data-jump]');
-        if (!link) return;
-        e.preventDefault();
-        $(`#${link.dataset.jump}`).scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    initPages(view);
 
     const setMedia = (kind) => async (path) => {
         if (!path) return;
