@@ -3,6 +3,7 @@ import { h } from './ui.js';
 
 const loadImage = (src) => new Promise((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = 'anonymous';
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error('無法讀取這張圖片'));
     img.src = src;
