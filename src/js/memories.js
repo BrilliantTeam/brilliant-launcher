@@ -12,7 +12,7 @@ const THEMES = [
     { key: 'nether', titles: ['地獄之旅', '在烈焰之間', '深入地獄'], test: (m) => m.dimension === 'minecraft:the_nether' },
     { key: 'end', titles: ['終界遠征', '虛空的盡頭'], test: (m) => m.dimension === 'minecraft:the_end' },
     { key: 'cherry', titles: ['櫻花林的時光', '粉色的季節', '櫻花盛開'], test: biomeIs(/cherry/) },
-    { key: 'snow', titles: ['冰雪世界', '雪地裡的足跡', '白色的風景'], test: biomeIs(/snow|frozen|ice|grove|jagged|peaks/) },
+    { key: 'snow', titles: ['冰雪世界', '雪地裡的足跡', '白色的風景'], test: biomeIs(/snow|frozen|ice|:grove$|jagged/) },
     { key: 'ocean', titles: ['海與岸邊', '海風吹來的地方', '藍色的記憶'], test: biomeIs(/ocean|beach|river/) },
     { key: 'desert', titles: ['沙漠與惡地', '黃沙之上'], test: biomeIs(/desert|badlands/) },
     { key: 'jungle', titles: ['叢林探險', '綠意深處'], test: biomeIs(/jungle|bamboo/) },
