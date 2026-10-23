@@ -227,7 +227,7 @@ pub async fn inject(app: &AppHandle, instance: &Instance) -> R<Vec<String>> {
     tokio::fs::create_dir_all(&mods_dir).await?;
     let mc = instance.mc_version.as_str();
     let mut notes = Vec::new();
-    let key = instance.id.clone();
+    let key = format!("{}|{mc}", instance.id);
     if synced_recently(&key) && has_both(&mods_dir) {
         return Ok(notes);
     }

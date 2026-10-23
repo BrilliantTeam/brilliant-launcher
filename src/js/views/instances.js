@@ -155,7 +155,10 @@ async function editorDialog(title, source) {
         renderVersions();
         refreshLoaders();
     });
-    mcVersion.addEventListener('change', refreshLoaders);
+    mcVersion.addEventListener('change', () => {
+        loaderVersion.value = '';
+        refreshLoaders();
+    });
 
     const javaPath = h('select', {}, h('option', { value: '' }, '沿用全域設定'),
         source.javaPath ? h('option', { value: source.javaPath, selected: true }, source.javaPath) : '');

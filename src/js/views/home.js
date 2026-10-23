@@ -323,6 +323,7 @@ async function runFix(instance, fix) {
     if (fix.kind === 'install') return api.content_install({ id, kind: 'mod', project: fix.target });
     if (fix.kind === 'memory') return api.apply_perf({ id, options: {}, memoryMb: fix.target });
     if (fix.kind === 'java') return api.update_instance({ updated: { ...instance, javaMajor: fix.target } });
+    if (fix.kind === 'loader') return api.update_instance({ updated: { ...instance, loaderVersion: '' } });
     if (fix.kind === 'dgpu') return saveSettings({ preferDgpu: true });
     if (fix.kind === 'repair') return repairInstance(instance);
     if (fix.kind === 'update') {

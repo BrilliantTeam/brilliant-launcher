@@ -74,6 +74,7 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
     const add = (fix) => { if (!fixes.some((f) => f.kind === fix.kind && f.target === fix.target)) fixes.push(fix); };
     const disable = (mod, why) => mod && !mod.managed && add({ kind: 'disable', target: mod.file, label: `停用「${mod.name}」${why}` });
     const update = (mod) => mod && !mod.managed && add({ kind: 'update', target: mod.file, label: `更新「${mod.name}」到相容版本（找不到就停用）` });
+    const loader = () => add({ kind: 'loader', target: '', label: '把 Fabric Loader 更新到這個 Minecraft 版本的最新穩定版' });
 
     if (/Could not reserve enough space|Invalid maximum heap size|Initial heap size set to a larger value/.test(text) && memoryMb > recommendedMb) {
         add({ kind: 'memory', target: recommendedMb, label: `把記憶體上限調成建議的 ${recommendedMb} MB` });
@@ -91,11 +92,13 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
         const req = /Mod '[^']*' \(([\w-]+)\)[^\n]*? requires (?:.+?) of (?:mod '[^']*' \()?([\w-]+)\)?,? (which is missing|but only the wrong version)/.exec(line);
         if (req) {
             const [, owner, dep, how] = req;
-            if (NO_INSTALL.has(dep)) update(byId(owner));
+            if (dep === 'fabricloader') loader();
+            else if (NO_INSTALL.has(dep)) update(byId(owner));
             else if (how.startsWith('which') && !byId(dep)) add({ kind: 'install', target: dep, label: `安裝缺少的前置模組 ${dep}` });
             else update(byId(dep));
         }
         const install = /^\s*-\s*Install ([\w-]+),/.exec(line);
+        if (install?.[1] === 'fabricloader') loader();
         if (install && !NO_INSTALL.has(install[1]) && !byId(install[1])) add({ kind: 'install', target: install[1], label: `安裝缺少的前置模組 ${install[1]}` });
         const replace = /^\s*-\s*Replace mod '[^']*' \(([\w-]+)\)/.exec(line);
         if (replace) update(byId(replace[1]));
