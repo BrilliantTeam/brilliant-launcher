@@ -326,34 +326,33 @@ pub async fn shared_add(key: String, folder: String, files: Vec<String>) -> R<us
         bail!("這個共用資料夾不能直接加入檔案");
     }
     std::fs::create_dir_all(&dir)?;
-    let mut added = 0;
-    for file in files {
-        let src = PathBuf::from(&file);
-        let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        if !safe_item(&name) || !name.to_ascii_lowercase().ends_with(".zip") || !src.is_file() {
-            continue;
-        }
-        std::fs::copy(&src, dir.join(&name)).with_context(|| format!("複製 {name} 失敗"))?;
-        added += 1;
+    let picked: Vec<(PathBuf, String)> = files
+        .iter()
+        .map(PathBuf::from)
+        .filter_map(|src| {
+            let name = src.file_name()?.to_string_lossy().to_string();
+            (safe_item(&name) && name.to_ascii_lowercase().ends_with(".zip") && src.is_file()).then_some((src, name))
+        })
+        .collect();
+    let mut seen = std::collections::HashSet::new();
+    let clash: Vec<&str> = picked.iter().filter(|(_, n)| dir.join(n).exists() || !seen.insert(n.as_str())).map(|(_, n)| n.as_str()).collect();
+    if !clash.is_empty() {
+        bail!("共用資料夾裡已經有同名的檔案，為了避免覆蓋已取消加入：{}", clash.join("、"));
     }
-    Ok(added)
+    for (src, name) in &picked {
+        std::fs::copy(src, dir.join(name)).with_context(|| format!("複製 {name} 失敗"))?;
+    }
+    Ok(picked.len())
 }
 
 #[tauri::command]
 pub async fn shared_remove(key: String, folder: String, names: Vec<String>) -> R<usize> {
     let dir = shared_dir(&key, &folder)?;
-    let trash = group_base(&key).join("trash").join(format!("{folder}-{}", crate::config::now_secs()));
-    let mut moved = 0;
-    for name in names.iter().filter(|n| safe_item(n)) {
-        let src = dir.join(name);
-        if !src.exists() {
-            continue;
-        }
-        std::fs::create_dir_all(&trash)?;
-        std::fs::rename(&src, trash.join(name)).with_context(|| format!("移除 {name} 失敗"))?;
-        moved += 1;
+    let items: Vec<(PathBuf, &str)> = names.iter().filter(|n| safe_item(n) && dir.join(n).exists()).map(|n| (dir.join(n), n.as_str())).collect();
+    if !items.is_empty() {
+        paths::discard(&format!("共用{folder}"), &items).context("移到回收資料夾失敗")?;
     }
-    Ok(moved)
+    Ok(items.len())
 }
 
 pub fn group_base(key: &str) -> PathBuf {
@@ -644,6 +643,7 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
             continue;
         };
         instance.id = id;
+        instance.name = crate::instance::unique_name(&instance.name).await;
         instance.image = String::new();
         instance.memory_mb = if instance.memory_mb > 0 { fit_memory(instance.memory_mb, total_mb) } else { 0 };
         if !same_os && !instance.wrapper.trim().is_empty() {

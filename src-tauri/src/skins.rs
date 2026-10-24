@@ -141,16 +141,28 @@ pub async fn skin_library() -> Vec<LibrarySkin> {
         .collect()
 }
 
-fn add_bytes(bytes: &[u8], name: &str, kind: &str) -> R<LibrarySkin> {
+fn name_taken(list: &[LibrarySkin], name: &str, except: &str) -> bool {
+    list.iter().any(|s| s.file != except && s.name.trim() == name)
+}
+
+fn add_bytes(bytes: &[u8], name: &str, kind: &str, auto_name: bool) -> R<LibrarySkin> {
     valid_skin(bytes)?;
     let file = format!("{}.png", net::sha1_hex(bytes));
+    let mut list = load_library();
+    let base: String = name.trim().chars().take(28).collect();
+    let name = if !name_taken(&list, &base, &file) {
+        base
+    } else if auto_name {
+        (2..).map(|n| format!("{base} ({n})")).find(|n| !name_taken(&list, n, &file)).unwrap_or_default()
+    } else {
+        bail!("衣櫃裡已經有叫「{base}」的皮膚了，請換一個名稱");
+    };
     std::fs::create_dir_all(library_dir())?;
     std::fs::write(library_dir().join(&file), bytes)?;
-    let mut list = load_library();
     list.retain(|s| s.file != file);
     let entry = LibrarySkin {
         file: file.clone(),
-        name: name.trim().chars().take(32).collect::<String>(),
+        name,
         variant: variant(kind).into(),
         added: now_secs(),
         path: library_dir().join(&file).to_string_lossy().to_string(),
@@ -164,7 +176,11 @@ fn add_bytes(bytes: &[u8], name: &str, kind: &str) -> R<LibrarySkin> {
 pub async fn skin_add(path: String, name: String, variant: String) -> R<LibrarySkin> {
     let bytes = tokio::fs::read(&path).await.context("讀取圖片失敗")?;
     let fallback = PathBuf::from(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-    add_bytes(&bytes, if name.trim().is_empty() { &fallback } else { &name }, &variant)
+    if name.trim().is_empty() {
+        add_bytes(&bytes, &fallback, &variant, true)
+    } else {
+        add_bytes(&bytes, &name, &variant, false)
+    }
 }
 
 #[tauri::command]
@@ -181,7 +197,7 @@ pub async fn skin_save_current(id: String) -> R<LibrarySkin> {
     }
     let bytes = net::get_bytes(&url, false).await?;
     let name = format!("{} 的皮膚", profile.get("name").and_then(Value::as_str).unwrap_or("目前"));
-    add_bytes(&bytes, &name, active.get("variant").and_then(Value::as_str).unwrap_or("classic"))
+    add_bytes(&bytes, &name, active.get("variant").and_then(Value::as_str).unwrap_or("classic"), true)
 }
 
 #[tauri::command]
@@ -200,7 +216,7 @@ pub async fn skin_remove(file: String) -> R<()> {
     list.retain(|s| s.file != file);
     save_library(&list)?;
     if file.ends_with(".png") && !file.contains(['/', '\\']) && !file.contains("..") {
-        let _ = tokio::fs::remove_file(library_dir().join(file)).await;
+        let _ = paths::discard(&format!("皮膚 {file}"), &[(library_dir().join(&file), file.as_str())]);
     }
     Ok(())
 }
@@ -208,8 +224,12 @@ pub async fn skin_remove(file: String) -> R<()> {
 #[tauri::command]
 pub async fn skin_rename(file: String, name: String, variant: String) -> R<()> {
     let mut list = load_library();
+    let name: String = name.trim().chars().take(32).collect();
+    if name_taken(&list, &name, &file) {
+        bail!("衣櫃裡已經有叫「{name}」的皮膚了，請換一個名稱");
+    }
     let entry = list.iter_mut().find(|s| s.file == file).context("找不到這個皮膚")?;
-    entry.name = name.trim().chars().take(32).collect();
+    entry.name = name;
     entry.variant = self::variant(&variant).into();
     save_library(&list)
 }

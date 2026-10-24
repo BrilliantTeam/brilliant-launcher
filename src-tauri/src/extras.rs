@@ -141,7 +141,7 @@ pub async fn restore_backup(state: State<'_, AppState>, id: String, file: String
         backup_saves(&id, "before-restore", 3)?;
         let saves = paths::game_dir(&id).join("saves");
         if saves.exists() {
-            std::fs::remove_dir_all(&saves).context("清除目前存檔失敗")?;
+            paths::discard(&format!("還原備份前的存檔 {file}"), &[(&saves, "saves")]).context("把目前存檔移到回收資料夾失敗")?;
         }
         zip.extract(&saves).context("解壓縮備份失敗")?;
         Ok(())
@@ -155,7 +155,7 @@ pub async fn delete_backup(id: String, file: String) -> R<()> {
     if !safe_backup_name(&file) {
         bail!("備份檔名不正確");
     }
-    tokio::fs::remove_file(backups_dir(&id).join(file)).await.context("刪除備份失敗")?;
+    paths::discard(&format!("備份 {file}"), &[(backups_dir(&id).join(&file), file.as_str())]).context("刪除備份失敗")?;
     Ok(())
 }
 
@@ -229,6 +229,7 @@ pub async fn clean_cache(state: State<'_, AppState>) -> R<u64> {
         let thumbs = crate::insight::thumbs_dir();
         freed += dir_size(&thumbs);
         let _ = std::fs::remove_dir_all(&thumbs);
+        freed += paths::purge_trash(paths::TRASH_DAYS);
         let week_ago = now_secs() - 7 * 86_400;
         for entry in std::fs::read_dir(paths::logs()).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
             if mtime(&entry.path()) < week_ago {

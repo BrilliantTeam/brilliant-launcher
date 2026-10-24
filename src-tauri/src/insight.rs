@@ -470,7 +470,7 @@ pub async fn delete_screenshot(id: String, file: String) -> R<()> {
     if !safe_png(&file) {
         bail!("截圖檔名不正確");
     }
-    tokio::fs::remove_file(paths::game_dir(&id).join("screenshots").join(file)).await.context("刪除截圖失敗")?;
+    paths::discard(&format!("截圖 {file}"), &[(paths::game_dir(&id).join("screenshots").join(&file), file.as_str())]).context("刪除截圖失敗")?;
     Ok(())
 }
 

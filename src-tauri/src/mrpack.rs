@@ -200,8 +200,9 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
             inst
         }
         None => {
+            let base: String = if index.name.trim().is_empty() { format!("模組包 {mc}") } else { index.name.chars().take(36).collect() };
             let draft = Instance {
-                name: if index.name.trim().is_empty() { format!("模組包 {mc}") } else { index.name.chars().take(40).collect() },
+                name: crate::instance::unique_name(&base).await,
                 icon: "briefcase".into(),
                 mc_version: mc.clone(),
                 loader: if fabric.is_some() { "fabric".into() } else { "vanilla".into() },

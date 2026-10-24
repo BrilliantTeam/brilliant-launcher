@@ -36,6 +36,7 @@ addEventListener('change', (e) => {
 
 export function h(tag, props = {}, ...children) {
     const el = document.createElement(tag);
+    if (tag === 'input' || tag === 'textarea') el.setAttribute('autocomplete', 'off');
     for (const [key, value] of Object.entries(props || {})) {
         if (value === null || value === undefined || value === false) continue;
         if (key === 'onclick' && typeof value === 'function') el.addEventListener('click', guard(value));
@@ -59,6 +60,108 @@ for (const proto of [Element.prototype, DocumentFragment.prototype]) {
         };
     }
 }
+
+const HISTORY_MAX = 8;
+const historyKey = (input) => `brilliant.history.${input.id}`;
+const hasHistory = (el) => el instanceof HTMLInputElement && el.type === 'search' && !!el.id;
+let historyBox = null;
+let historyActive = -1;
+
+function readHistory(input) {
+    try {
+        const list = JSON.parse(localStorage.getItem(historyKey(input)));
+        return Array.isArray(list) ? list.filter((v) => typeof v === 'string') : [];
+    } catch {
+        return [];
+    }
+}
+
+function writeHistory(input, list) {
+    try {
+        localStorage.setItem(historyKey(input), JSON.stringify(list.slice(0, HISTORY_MAX)));
+    } catch {}
+}
+
+function rememberSearch(input) {
+    const value = input.value.trim();
+    if (value) writeHistory(input, [value, ...readHistory(input).filter((v) => v !== value)]);
+}
+
+function closeHistory() {
+    historyBox?.remove();
+    historyBox = null;
+    historyActive = -1;
+}
+
+function pickHistory(input, value) {
+    input.value = value;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    rememberSearch(input);
+    closeHistory();
+}
+
+function showHistory(input) {
+    closeHistory();
+    const query = input.value.trim().toLowerCase();
+    const items = readHistory(input).filter((v) => v.toLowerCase() !== query && (!query || v.toLowerCase().includes(query)));
+    if (!items.length) return;
+    const rect = input.getBoundingClientRect();
+    historyBox = h('div', { class: 'search-history', role: 'listbox', 'aria-label': '最近搜尋', style: `left:${rect.left}px;top:${rect.bottom + 4}px;width:${rect.width}px` },
+        h('div', { class: 'search-history-head' }, '最近搜尋'),
+        ...items.map((value) => h('div', { class: 'search-history-item', role: 'option', 'data-value': value },
+            h('button', { type: 'button', class: 'history-pick', tabindex: '-1', onmousedown: (e) => { e.preventDefault(); pickHistory(input, value); } }, value),
+            h('button', {
+                type: 'button',
+                class: 'history-forget',
+                tabindex: '-1',
+                title: '移除這筆紀錄',
+                'aria-label': `移除「${value}」這筆搜尋紀錄`,
+                onmousedown: (e) => {
+                    e.preventDefault();
+                    writeHistory(input, readHistory(input).filter((v) => v !== value));
+                    showHistory(input);
+                }
+            }, '×'))));
+    document.body.append(historyBox);
+}
+
+function moveHistory(step) {
+    const items = [...(historyBox?.querySelectorAll('.search-history-item') ?? [])];
+    if (!items.length) return;
+    historyActive = (historyActive + step + items.length) % items.length;
+    items.forEach((el, i) => el.setAttribute('aria-selected', String(i === historyActive)));
+}
+
+for (const el of document.querySelectorAll('input, textarea')) el.setAttribute('autocomplete', 'off');
+
+addEventListener('focusin', (e) => {
+    const el = e.target;
+    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) el.setAttribute('autocomplete', 'off');
+    if (hasHistory(el)) showHistory(el);
+});
+addEventListener('focusout', (e) => { if (hasHistory(e.target)) { rememberSearch(e.target); closeHistory(); } });
+addEventListener('input', (e) => { if (hasHistory(e.target) && document.activeElement === e.target) showHistory(e.target); });
+addEventListener('scroll', closeHistory, true);
+addEventListener('resize', closeHistory);
+addEventListener('keydown', (e) => {
+    if (!hasHistory(e.target)) return;
+    if (historyBox && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        moveHistory(e.key === 'ArrowDown' ? 1 : -1);
+    } else if (e.key === 'Enter') {
+        const active = historyBox?.querySelectorAll('.search-history-item')[historyActive];
+        if (active) {
+            e.preventDefault();
+            pickHistory(e.target, active.dataset.value);
+        } else {
+            rememberSearch(e.target);
+            closeHistory();
+        }
+    } else if (e.key === 'Escape' && historyBox) {
+        e.stopPropagation();
+        closeHistory();
+    }
+}, true);
 
 export function clear(el) {
     el.replaceChildren();

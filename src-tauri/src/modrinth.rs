@@ -787,7 +787,7 @@ pub async fn replace(app: &AppHandle, instance_id: &str, kind: Kind, old_file: &
     dl.size = update.size;
     net::download_all(app, "mods", vec![dl], false).await?;
     if old_file != target {
-        tokio::fs::remove_file(dir.join(old_file)).await.with_context(|| format!("移除舊版失敗：{old_file}"))?;
+        crate::paths::discard(&format!("舊版 {old_file}"), &[(dir.join(old_file), old_file)]).with_context(|| format!("移除舊版失敗：{old_file}"))?;
     }
     Ok(target)
 }
@@ -796,7 +796,7 @@ pub async fn remove(instance_id: &str, kind: Kind, file: &str) -> R<()> {
     if !safe_file(file, kind) {
         bail!("無效的檔名：{file}");
     }
-    tokio::fs::remove_file(kind.dir(instance_id).join(file)).await.context("刪除失敗")?;
+    crate::paths::discard(&format!("移除 {file}"), &[(kind.dir(instance_id).join(file), file)]).context("移到回收資料夾失敗")?;
     Ok(())
 }
 

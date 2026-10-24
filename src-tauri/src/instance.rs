@@ -175,7 +175,15 @@ pub async fn create(mut instance: Instance) -> R<Instance> {
     if instance.name.trim().is_empty() {
         bail!("實例名稱不能空白");
     }
-    instance.id = make_id(&instance.name);
+    instance.name = unique_name(&instance.name).await;
+    let base = make_id(&instance.name);
+    instance.id = base.clone();
+    for n in 2.. {
+        if !paths::instance_dir(&instance.id).exists() {
+            break;
+        }
+        instance.id = format!("{base}-{n}");
+    }
     instance.created_at = now_secs();
     if instance.icon.is_empty() {
         instance.icon = "zap".into();
@@ -190,14 +198,37 @@ pub async fn delete(id: &str) -> R<()> {
     if !dir.starts_with(paths::instances()) || !dir.join("instance.json").is_file() {
         bail!("不是有效的實例資料夾：{}", dir.display());
     }
-    tokio::fs::remove_dir_all(&dir)
+    let name = get(id).await.map(|i| i.name).unwrap_or_else(|_| id.to_string());
+    let folder = id.to_string();
+    tokio::task::spawn_blocking(move || paths::discard(&format!("實例 {name}"), &[(&dir, folder.as_str())]))
         .await
-        .with_context(|| format!("刪除失敗：{}", dir.display()))?;
+        .context("刪除工作中斷")?
+        .with_context(|| format!("移到回收資料夾失敗：{}", paths::instance_dir(id).display()))?;
     Ok(())
+}
+
+pub async fn unique_name(base: &str) -> String {
+    let taken: Vec<String> = list().await.into_iter().map(|i| i.name.trim().to_string()).collect();
+    pick_unique(base, &taken)
+}
+
+fn pick_unique(base: &str, taken: &[String]) -> String {
+    let base = base.trim();
+    if !taken.iter().any(|n| n == base) {
+        return base.to_string();
+    }
+    (2..).map(|n| format!("{base} ({n})")).find(|n| !taken.contains(n)).unwrap_or_default()
 }
 
 pub async fn duplicate(id: &str, new_name: &str) -> R<Instance> {
     let source = get(id).await?;
+    let new_name = new_name.trim();
+    if new_name.is_empty() {
+        bail!("請輸入新實例的名稱");
+    }
+    if list().await.iter().any(|i| i.name.trim() == new_name) {
+        bail!("已經有叫「{new_name}」的實例了，複本請取一個不同的名稱");
+    }
     let mut copy = source.clone();
     copy.name = new_name.to_string();
     copy.last_played = 0;
@@ -271,7 +302,7 @@ pub fn content_kind(source: &std::path::Path) -> R<(&'static str, &'static str)>
     bail!("{} 不是資源包也不是光影（找不到 pack.mcmeta 或 shaders 資料夾）", source.display())
 }
 
-pub async fn add_content(id: &str, source: &str) -> R<(String, String)> {
+pub fn content_dest(id: &str, source: &str) -> R<(&'static str, String, std::path::PathBuf)> {
     let src = std::path::Path::new(source);
     let (kind, dir) = content_kind(src)?;
     let name = src.file_name().map(|s| s.to_string_lossy().to_string()).context("檔名不正確")?;
@@ -279,6 +310,19 @@ pub async fn add_content(id: &str, source: &str) -> R<(String, String)> {
         bail!("無效的檔名：{name}");
     }
     let dest = paths::game_dir(id).join(dir).join(&name);
+    Ok((kind, name, dest))
+}
+
+pub fn content_exists(dest: &std::path::Path) -> bool {
+    dest.exists() || std::path::PathBuf::from(format!("{}.disabled", dest.display())).exists()
+}
+
+pub async fn add_content(id: &str, source: &str) -> R<(String, String)> {
+    let src = std::path::Path::new(source);
+    let (kind, name, dest) = content_dest(id, source)?;
+    if content_exists(&dest) {
+        bail!("「{name}」已經存在，請先移除舊的或改個檔名");
+    }
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
@@ -289,6 +333,14 @@ pub async fn add_content(id: &str, source: &str) -> R<(String, String)> {
 #[cfg(test)]
 mod content_kind_tests {
     use super::*;
+
+    #[test]
+    fn names_never_repeat() {
+        let taken: Vec<String> = ["輝煌 26.3", "輝煌 26.3 (2)", "原版"].map(String::from).to_vec();
+        assert_eq!(pick_unique("輝煌 26.3", &taken), "輝煌 26.3 (3)");
+        assert_eq!(pick_unique(" 原版 ", &taken), "原版 (2)");
+        assert_eq!(pick_unique("建築", &taken), "建築");
+    }
     use std::io::Write;
 
     fn zip_with(path: &std::path::Path, entries: &[&str]) {

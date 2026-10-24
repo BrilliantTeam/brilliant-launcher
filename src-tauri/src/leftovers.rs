@@ -1,4 +1,3 @@
-use crate::config::now_secs;
 use crate::err::R;
 use crate::{bail, paths};
 use anyhow::Context;
@@ -153,18 +152,15 @@ pub async fn mod_leftovers(id: String, file: String) -> R<Leftovers> {
 pub async fn remove_leftovers(id: String, mod_id: String, paths_to_remove: Vec<String>) -> R<usize> {
     let game_dir = paths::game_dir(&id);
     let allowed = find(&game_dir, &mod_id.to_ascii_lowercase(), &installed_ids(&game_dir));
-    let trash = paths::instance_dir(&id).join("trash").join(format!("mod-{}-{}", mod_id.replace(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_', ""), now_secs()));
-    let mut moved = 0;
-    for rel in paths_to_remove.iter().filter(|p| allowed.iter().any(|a| &a.path == *p)) {
-        let src: PathBuf = game_dir.join(rel);
-        let dest = trash.join(rel);
-        if let Some(parent) = dest.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::rename(&src, &dest).with_context(|| format!("移動 {rel} 失敗"))?;
-        moved += 1;
+    let items: Vec<(PathBuf, &str)> = paths_to_remove
+        .iter()
+        .filter(|p| allowed.iter().any(|a| &a.path == *p))
+        .map(|rel| (game_dir.join(rel), rel.as_str()))
+        .collect();
+    if !items.is_empty() {
+        paths::discard(&format!("模組殘留 {mod_id}"), &items).context("移到回收資料夾失敗")?;
     }
-    Ok(moved)
+    Ok(items.len())
 }
 
 #[cfg(test)]

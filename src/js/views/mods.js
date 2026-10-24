@@ -123,7 +123,7 @@ async function remove(kind, entry) {
         content: h('div', {},
             h('p', {}, `確定移除「${entry.name}」？${warning}`),
             picks.length ? h('div', { class: 'leftovers' },
-                h('p', { class: 'hint' }, `找到 ${picks.length} 個這個模組留下的設定或資料（共 ${fmtBytes(picks.reduce((sum, p) => sum + p.item.size, 0))}），預設會保留；想一起清掉的請勾選，勾選的會移到實例的 trash 資料夾，需要時還能找回：`),
+                h('p', { class: 'hint' }, `找到 ${picks.length} 個這個模組留下的設定或資料（共 ${fmtBytes(picks.reduce((sum, p) => sum + p.item.size, 0))}），預設會保留；想一起清掉的請勾選，勾選的會和模組一起移到回收資料夾，30 天內都能找回：`),
                 h('div', { class: 'leftover-list' }, ...picks.map(({ item, input }) => {
                     const row = h(item.dir && item.children.length ? 'div' : 'label', { class: 'leftover', title: item.path },
                         input,

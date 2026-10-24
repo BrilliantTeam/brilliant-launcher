@@ -94,16 +94,18 @@ pub async fn read_log(id: String, path: String) -> R<String> {
 #[tauri::command]
 pub async fn delete_logs(state: State<'_, AppState>, id: String, paths_to_delete: Vec<String>) -> R<usize> {
     let running = state.is_running(&id).await;
-    let mut removed = 0;
+    let mut items = Vec::new();
     for rel in &paths_to_delete {
         if running && rel.eq_ignore_ascii_case("logs/latest.log") {
             continue;
         }
-        let file = resolve(&id, rel)?;
-        std::fs::remove_file(&file).with_context(|| format!("刪除 {rel} 失敗"))?;
-        removed += 1;
+        items.push((resolve(&id, rel)?, rel.as_str()));
     }
-    Ok(removed)
+    if !items.is_empty() {
+        let name = crate::instance::get(&id).await.map(|i| i.name).unwrap_or_else(|_| id.clone());
+        paths::discard(&format!("紀錄檔 {name}"), &items).context("刪除紀錄檔失敗")?;
+    }
+    Ok(items.len())
 }
 
 #[tauri::command]

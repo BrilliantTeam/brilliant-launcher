@@ -36,6 +36,7 @@ pub fn launcher_paths() -> Vec<(String, String)> {
         ("共用快取".into(), paths::shared().to_string_lossy().to_string()),
         ("實例".into(), paths::instances().to_string_lossy().to_string()),
         ("日誌".into(), paths::logs().to_string_lossy().to_string()),
+        ("回收資料夾".into(), paths::trash().to_string_lossy().to_string()),
     ]
 }
 
@@ -176,6 +177,9 @@ pub async fn login_microsoft(app: AppHandle, state: State<'_, AppState>, browser
 #[tauri::command]
 pub async fn add_offline_account(state: State<'_, AppState>, name: String) -> R<Account> {
     let account = auth::make_offline(&name)?;
+    if config::load_accounts().await.iter().any(|a| a.name.eq_ignore_ascii_case(&account.name)) {
+        bail!("已經有叫「{}」的帳號了", account.name);
+    }
     upsert_account(&state, account.clone()).await?;
     Ok(account)
 }
@@ -319,6 +323,13 @@ pub async fn prefetch_upgrade(app: AppHandle, id: String, mc: String) -> R<()> {
 pub async fn update_instance(updated: Instance) -> R<()> {
     let current = instance::get(&updated.id).await?;
     let mut updated = updated;
+    updated.name = updated.name.trim().to_string();
+    if updated.name.is_empty() {
+        bail!("實例名稱不能空白");
+    }
+    if updated.name != current.name.trim() && instance::list().await.iter().any(|i| i.id != updated.id && i.name.trim() == updated.name) {
+        bail!("已經有叫「{}」的實例了，請換一個名稱", updated.name);
+    }
     if updated.mc_version != current.mc_version
         || updated.loader != current.loader
         || updated.loader_version != current.loader_version
@@ -743,6 +754,17 @@ pub async fn import_config(path: String) -> R<ImportSummary> {
 #[tauri::command]
 pub async fn add_content(id: String, files: Vec<String>) -> R<Vec<(String, String)>> {
     instance::get(&id).await?;
+    let mut seen = std::collections::HashSet::new();
+    let mut clash = Vec::new();
+    for file in &files {
+        let (_, name, dest) = instance::content_dest(&id, file)?;
+        if instance::content_exists(&dest) || !seen.insert(dest) {
+            clash.push(name);
+        }
+    }
+    if !clash.is_empty() {
+        bail!("這些檔案已經存在，為了避免覆蓋已取消安裝：{}\n請先移除舊的，或把要加入的檔案改個名稱。", clash.join("、"));
+    }
     let mut added = Vec::new();
     for file in files {
         added.push(instance::add_content(&id, &file).await?);

@@ -225,6 +225,10 @@ async function editorDialog(title, source) {
         toast('請輸入實例名稱', 'error');
         return null;
     }
+    if (nameTaken(name.value, source.id)) {
+        toast(`已經有叫「${name.value.trim()}」的實例了，請換一個名稱`, 'error');
+        return null;
+    }
     return {
         ...source,
         name: name.value.trim(),
@@ -257,6 +261,8 @@ const BLANK = {
     injectRichPresence: null, general: false, join: '', createdAt: 0, lastPlayed: 0, playSeconds: 0,
     javaMajor: 0, wrapper: '', envVars: '', useShared: false, modChannel: '', freezeMods: false
 };
+
+const nameTaken = (name, exceptId = '') => store.instances.some((i) => i.id !== exceptId && i.name.trim() === name.trim());
 
 async function applyImage(id, pickedImage) {
     if (pickedImage === undefined) return;
@@ -314,8 +320,11 @@ async function duplicateInstance(instance) {
         buttons: [{ label: '取消', value: false }, { label: '複製', value: true }]
     });
     if (ok !== true) return;
+    const name = input.value.trim();
+    if (!name) return toast('請輸入新實例的名稱', 'warn');
+    if (nameTaken(name)) return toast(`已經有叫「${name}」的實例了，複本請取一個不同的名稱`, 'warn');
     try {
-        await api.duplicate_instance({ id: instance.id, name: input.value.trim() });
+        await api.duplicate_instance({ id: instance.id, name });
         await loadInstances();
         toast('已複製');
     } catch (error) {
@@ -324,7 +333,7 @@ async function duplicateInstance(instance) {
 }
 
 async function removeInstance(instance) {
-    if (!(await confirm(`確定要刪除「${instance.name}」嗎？\n這個實例的存檔與模組都會一起消失，無法復原。`, '刪除'))) return;
+    if (!(await confirm(`確定要刪除「${instance.name}」嗎？\n整個實例（存檔、模組、設定）會移到啟動器的回收資料夾，30 天內都能從「關於 → 回收資料夾」找回。`, '刪除'))) return;
     try {
         await api.delete_instance({ id: instance.id });
         await loadInstances();
@@ -406,7 +415,11 @@ export async function upgradeFlow(instance, target) {
         let targetInstance = instance;
         if (mode.value === 'copy') {
             toast('正在複製實例⋯');
-            targetInstance = await api.duplicate_instance({ id: instance.id, name: `${instance.name}（${target}）` });
+            const base = `${instance.name}（${target}）`;
+            const taken = new Set(store.instances.map((i) => i.name.trim()));
+            let copyName = base;
+            for (let n = 2; taken.has(copyName); n++) copyName = `${base} (${n})`;
+            targetInstance = await api.duplicate_instance({ id: instance.id, name: copyName });
         } else {
             await api.backup_now({ id: instance.id }).catch(() => {});
         }
@@ -521,6 +534,7 @@ export async function importFlow() {
         buttons: [{ label: '取消', value: false }, { label: '開始匯入', value: true }]
     });
     if (ok !== true) return;
+    if (target.value === 'new' && name.value.trim() && nameTaken(name.value)) return toast(`已經有叫「${name.value.trim()}」的實例了，請換一個名稱`, 'error');
     const parts = checks.map((label) => label.querySelector('input')).filter((i) => i.checked).map((i) => i.value);
     try {
         let instance = selectedInstance();
@@ -1010,7 +1024,7 @@ async function sharedResources(group) {
     const remove = async (item, button) => {
         if (!button.classList.contains('confirming')) {
             button.classList.add('confirming', 'danger');
-            button.title = `再按一次即從共用資料夾移除「${item.title}」，分組「${group.name}」的所有實例都會少掉它（會移到共用資料夾的 trash）`;
+            button.title = `再按一次即從共用資料夾移除「${item.title}」，分組「${group.name}」的所有實例都會少掉它（會移到回收資料夾）`;
             const label = [...button.childNodes].find((n) => n.nodeType === 3);
             const before = label?.textContent;
             if (label) label.textContent = '再按一次移除';
@@ -1022,7 +1036,7 @@ async function sharedResources(group) {
         }
         try {
             await api.shared_remove({ key: group.key, folder, names: [item.name] });
-            toast(`已從共用資料夾移除「${item.title}」，可以在共用資料夾的 trash 找回`);
+            toast(`已從共用資料夾移除「${item.title}」，可以在回收資料夾找回`);
         } catch (error) {
             fail(error);
         }

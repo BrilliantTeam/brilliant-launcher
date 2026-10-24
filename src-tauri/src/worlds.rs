@@ -170,11 +170,8 @@ pub async fn world_delete(state: State<'_, AppState>, id: String, folder: String
     if !src.is_dir() {
         bail!("找不到這個世界");
     }
-    let trash = paths::instance_dir(&id).join("trash");
-    std::fs::create_dir_all(&trash)?;
-    let dest = trash.join(format!("{folder}-{}", now_secs()));
-    std::fs::rename(&src, &dest).context("移到資源回收區失敗")?;
-    Ok(dest.to_string_lossy().to_string())
+    let bin = paths::discard(&format!("世界 {folder}"), &[(&src, folder.as_str())]).context("移到回收資料夾失敗")?;
+    Ok(bin.join(&folder).to_string_lossy().to_string())
 }
 
 fn world_root(dir: &Path) -> Option<PathBuf> {

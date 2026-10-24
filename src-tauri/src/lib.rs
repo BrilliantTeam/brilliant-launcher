@@ -67,6 +67,7 @@ pub fn run() {
             advanced::handle_cli(app.handle(), &std::env::args().collect::<Vec<_>>());
             extras::setup_tray(app)?;
             std::thread::spawn(commands::cleanup_updates);
+            std::thread::spawn(|| paths::purge_trash(paths::TRASH_DAYS));
             tauri::async_runtime::spawn(launch::adopt(app.handle().clone()));
             if let Err(e) = app.asset_protocol_scope().allow_directory(paths::root(), true) {
                 eprintln!("[setup] 開放資料夾給介面讀取失敗：{e}");

@@ -1445,3 +1445,13 @@ dialog::backdrop { cursor: move; }
 .inst-page-actions { display: flex; align-items: stretch; gap: 6px; flex: none; }
 .inst-card { cursor: pointer; }
 .inst-thumb:has(> img, > .custom-svg) { background: transparent; }
+
+.search-history { position: fixed; z-index: 90; max-height: 280px; overflow-y: auto; padding: 4px; background: var(--panel-face); border: 2px solid; border-color: var(--bevel-up); box-shadow: 0 8px 24px var(--shadow); animation: rise-in 0.12s ease; }
+.search-history-head { padding: 4px 8px 6px; font-size: 11px; letter-spacing: 1px; color: var(--text-faint); }
+.search-history-item { display: flex; align-items: stretch; }
+.search-history-item button { font: inherit; color: var(--text); background: none; border: 0; cursor: pointer; }
+.history-pick { flex: 1 1 auto; min-width: 0; padding: 6px 8px; font-size: 13px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.history-forget { flex: none; width: 30px; font-size: 16px; color: var(--text-subtle) !important; }
+.search-history-item:hover, .search-history-item[aria-selected="true"] { background: var(--content-bg-sunken); }
+.search-history-item:hover .history-pick, .search-history-item[aria-selected="true"] .history-pick { color: var(--accent); }
+.history-forget:hover { color: var(--danger) !important; }
