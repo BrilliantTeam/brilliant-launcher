@@ -140,7 +140,15 @@ pub async fn restore_backup(state: State<'_, AppState>, id: String, file: String
         let mut zip = zip::ZipArchive::new(std::fs::File::open(&archive).context("找不到備份檔")?)?;
         backup_saves(&id, "before-restore", 3)?;
         let saves = paths::game_dir(&id).join("saves");
-        if saves.exists() {
+        if crate::advanced::is_link(&saves) {
+            let worlds: Vec<(PathBuf, String)> = std::fs::read_dir(&saves)
+                .map(|d| d.flatten().map(|e| (e.path(), format!("saves/{}", e.file_name().to_string_lossy()))).collect())
+                .unwrap_or_default();
+            let items: Vec<(&PathBuf, &str)> = worlds.iter().map(|(p, r)| (p, r.as_str())).collect();
+            if !items.is_empty() {
+                paths::discard(&format!("還原備份前的共用存檔 {file}"), &items).context("把目前存檔移到回收資料夾失敗")?;
+            }
+        } else if saves.exists() {
             paths::discard(&format!("還原備份前的存檔 {file}"), &[(&saves, "saves")]).context("把目前存檔移到回收資料夾失敗")?;
         }
         zip.extract(&saves).context("解壓縮備份失敗")?;

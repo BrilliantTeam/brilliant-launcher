@@ -101,8 +101,18 @@ pub fn prefer_dgpu(cmd: &mut tokio::process::Command, java: &Path) {
     }
 }
 
-fn is_link(path: &Path) -> bool {
+pub fn is_link(path: &Path) -> bool {
     std::fs::symlink_metadata(path).map(|m| m.file_type().is_symlink()).unwrap_or(false)
+}
+
+pub fn unlink_shared(game: &Path) -> std::io::Result<()> {
+    for name in SHAREABLE {
+        let link = game.join(name);
+        if is_link(&link) {
+            remove_link(&link)?;
+        }
+    }
+    Ok(())
 }
 
 fn remove_link(path: &Path) -> std::io::Result<()> {

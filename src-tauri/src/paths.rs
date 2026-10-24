@@ -96,7 +96,11 @@ fn copy_tree(src: &Path, dest: &Path) -> std::io::Result<()> {
     std::fs::create_dir_all(dest)?;
     for entry in std::fs::read_dir(src)?.flatten() {
         let to = dest.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            continue;
+        }
+        if kind.is_dir() {
             copy_tree(&entry.path(), &to)?;
         } else {
             std::fs::copy(entry.path(), &to)?;
