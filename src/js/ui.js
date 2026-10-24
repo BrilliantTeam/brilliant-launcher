@@ -193,7 +193,7 @@ addEventListener('unhandledrejection', (e) => {
     fail(e.reason);
 });
 
-const DESTRUCTIVE = /刪除|移除|清除|解散|覆蓋|登出|重設|停用/;
+const DESTRUCTIVE = /刪除|移除|清除|解散|覆蓋|登出|重設|停用|強制/;
 
 export function dialog({ title, content, wide = false, buttons = [{ label: '關閉', value: null }] }) {
     const dlg = $('#dlg');
@@ -221,10 +221,21 @@ export function dialog({ title, content, wide = false, buttons = [{ label: '關�
             );
         }
         dlg.showModal();
-        const first = foot.querySelector('button');
-        if (first) first.focus();
+        const field = body.querySelector('input[type="text"]:not([disabled])');
+        (field ?? foot.querySelector('button'))?.focus();
     });
 }
+
+addEventListener('keydown', (e) => {
+    const input = e.target;
+    if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229 || !(input instanceof HTMLInputElement) || !['text', 'number'].includes(input.type)) return;
+    const dlg = input.closest('#dlg');
+    const buttons = dlg?.open ? [...dlg.querySelectorAll('#dlg-foot button')] : [];
+    const primary = buttons.at(-1);
+    if (buttons.length < 2 || primary.classList.contains('danger')) return;
+    e.preventDefault();
+    primary.click();
+});
 
 export const dismissDialog = (value) => closeOpenDialog?.(value);
 

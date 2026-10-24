@@ -253,8 +253,20 @@ async fn install_adoptium(app: &AppHandle, component: &str, release: &AdoptiumRe
         .map(|e| e.path())
         .find(|p| p.join("bin").join(exe_name()).is_file() || p.join("Contents/Home/bin").join(exe_name()).is_file())
         .context("下載的 Java 內容不完整")?;
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::rename(&home, &dir)?;
+    let old = dir.with_extension("old");
+    let _ = std::fs::remove_dir_all(&old);
+    if dir.exists() {
+        if let Err(error) = std::fs::rename(&dir, &old) {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(anyhow::Error::from(error).context("目前的 Java 正被執行中的遊戲使用，先不更新").into());
+        }
+    }
+    if let Err(error) = std::fs::rename(&home, &dir) {
+        let _ = std::fs::rename(&old, &dir);
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(anyhow::Error::from(error).context("安裝新版 Java 失敗，已還原原本的 Java").into());
+    }
+    let _ = std::fs::remove_dir_all(&old);
     let _ = std::fs::remove_dir_all(&staging);
     let exe = runtime_exe(&dir);
     probe(&exe).await.context("下載的 Java 無法執行")?;
@@ -310,6 +322,13 @@ async fn install_mojang_runtime(app: &AppHandle, component: &str, mirror: bool) 
     for (target, rel) in links {
         let Some(parent) = target.parent() else { continue };
         let source = parent.join(&rel);
+        let inside = match (source.canonicalize(), dir.canonicalize()) {
+            (Ok(s), Ok(d)) => s.starts_with(d),
+            _ => false,
+        };
+        if !inside {
+            continue;
+        }
         let size = |p: &Path| std::fs::metadata(p).map(|m| m.len()).ok();
         if !source.is_file() || size(&target) == size(&source) {
             continue;

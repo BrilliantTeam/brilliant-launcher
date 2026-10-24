@@ -1,7 +1,7 @@
 import { api, fileSrc, pickFile } from '../api.js';
 import { $, acceptFiles, clear, confirm, dialog, dismissDialog, fail, h, toast, guard, RECYCLE_NOTE } from '../ui.js';
 import { icon } from '../icons.js';
-import { avatarUrl, emit, loadAccounts, on, refreshAvatar, selectedAccount, store } from '../store.js';
+import { avatarUrl, emit, loadAccounts, loadInstances, on, refreshAvatar, selectedAccount, store } from '../store.js';
 
 const profiles = new Map();
 
@@ -76,8 +76,16 @@ async function select(account) {
 }
 
 async function remove(account) {
-    if (!(await confirm(`確定要移除「${account.name}」嗎？`, '移除'))) return;
-    await api.remove_account({ id: account.id }).catch(fail);
+    const bound = store.instances.filter((i) => i.account === account.id);
+    const note = bound.length ? `\n${bound.map((i) => `「${i.name}」`).join('、')}指定用這個帳號啟動，移除後會改用目前選擇的帳號。` : '';
+    if (!(await confirm(`確定要移除「${account.name}」嗎？${note}`, '移除'))) return;
+    try {
+        await api.remove_account({ id: account.id });
+    } catch (error) {
+        return fail(error);
+    }
+    for (const instance of bound) await api.update_instance({ updated: { ...instance, account: '' } }).catch(fail);
+    if (bound.length) await loadInstances().catch(() => {});
     await loadAccounts();
     emit('settings');
 }
@@ -347,6 +355,7 @@ async function changeName(account, profile) {
             h('div', { class: 'hint' }, 'Mojang 規定每 30 天只能改一次名稱。')),
         buttons: [{ label: '取消', value: false }, { label: '確定改名', value: true }]
     });
+    clearTimeout(timer);
     const name = input.value.trim();
     if (ok === true && name !== profile.name) {
         try {

@@ -38,7 +38,12 @@ struct RawIndex {
     map_to_resources: Option<bool>,
 }
 
+pub fn valid_hash(hash: &str) -> bool {
+    hash.len() == 40 && hash.chars().all(|c| c.is_ascii_hexdigit())
+}
+
 pub fn object_path(hash: &str) -> PathBuf {
+    let hash = if valid_hash(hash) { hash } else { "0000000000000000000000000000000000000000" };
     paths::assets().join("objects").join(&hash[..2]).join(hash)
 }
 
@@ -46,6 +51,9 @@ pub async fn ensure_index(version: &Resolved, mirror: bool) -> R<AssetIndex> {
     let Some(index_ref) = &version.asset_index else {
         bail!("{} 缺少 assetIndex", version.id);
     };
+    if index_ref.id.is_empty() || index_ref.id.contains(['/', '\\']) || index_ref.id.contains("..") {
+        bail!("資源索引名稱不正確：{}", index_ref.id);
+    }
     let file = paths::assets().join("indexes").join(format!("{}.json", index_ref.id));
 
     let bytes = match tokio::fs::read(&file).await {
@@ -78,7 +86,7 @@ pub fn jobs(index: &AssetIndex) -> Vec<DlFile> {
     index
         .objects
         .values()
-        .filter(|o| seen.insert(o.hash.clone()))
+        .filter(|o| valid_hash(&o.hash) && seen.insert(o.hash.clone()))
         .map(|o| {
             DlFile::new(format!("{RESOURCES}/{}/{}", &o.hash[..2], o.hash), object_path(&o.hash))
                 .sha1(Some(o.hash.clone()))
@@ -107,6 +115,9 @@ pub async fn materialise_legacy(
 
     net::emit_stage(app, "assets", "整理舊版資源檔");
     for (name, obj) in &index.objects {
+        if !valid_hash(&obj.hash) || crate::mrpack::safe_relative(name).is_none() {
+            continue;
+        }
         let target = dest.join(name);
         if tokio::fs::metadata(&target).await.map(|m| m.len()).ok() == Some(obj.size) {
             continue;
@@ -119,4 +130,17 @@ pub async fn materialise_legacy(
             .with_context(|| format!("複製資源失敗：{name}"))?;
     }
     Ok(Some(dest))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bad_hashes_never_panic_or_escape() {
+        assert!(valid_hash("a94a8fe5ccb19ba61c4c0873d391e987982fbbd3") && !valid_hash("a") && !valid_hash("../../../../../../../../../../../../evil"));
+        for bad in ["", "a", "../x"] {
+            assert!(object_path(bad).starts_with(paths::assets().join("objects")));
+        }
+    }
 }

@@ -1,5 +1,5 @@
 use crate::err::R;
-use crate::{net, paths};
+use crate::{bail, net, paths};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
@@ -51,6 +51,9 @@ pub async fn install(game: &str, loader: &str, mirror: bool) -> R<String> {
         .and_then(|v| v.as_str())
         .unwrap_or(&id)
         .to_string();
+    if !paths::valid_version_id(&real_id) {
+        bail!("Fabric 回傳的版本名稱不正確：{real_id}");
+    }
     net::write_file(&paths::version_json(&real_id), &bytes, false).await?;
     Ok(real_id)
 }

@@ -12,6 +12,20 @@ pub struct AppState {
     pub accounts_lock: Mutex<()>,
     pub prep_lock: Mutex<()>,
     pub launching: std::sync::Mutex<HashSet<String>>,
+    pub background: std::sync::Mutex<HashSet<String>>,
+}
+
+pub struct BackgroundWork<'a> {
+    state: &'a AppState,
+    id: String,
+}
+
+impl Drop for BackgroundWork<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut set) = self.state.background.lock() {
+            set.remove(&self.id);
+        }
+    }
 }
 
 pub struct LaunchClaim<'a> {
@@ -44,7 +58,16 @@ impl AppState {
         if preparing || self.is_running(instance_id).await {
             crate::bail!("遊戲正在執行或準備中，檔案被遊戲使用著，請先關閉遊戲再進行這個操作");
         }
+        if self.background.lock().map(|s| s.contains(instance_id)).unwrap_or(false) {
+            crate::bail!("啟動器正在背景下載這個實例的遊戲檔案，請等幾秒後再試一次");
+        }
         Ok(())
+    }
+    pub fn background_work(&self, instance_id: &str) -> BackgroundWork<'_> {
+        if let Ok(mut set) = self.background.lock() {
+            set.insert(instance_id.to_string());
+        }
+        BackgroundWork { state: self, id: instance_id.to_string() }
     }
     pub async fn running_ids(&self) -> Vec<String> {
         self.running.lock().await.keys().cloned().collect()

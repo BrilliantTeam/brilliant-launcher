@@ -22,13 +22,18 @@ pub fn shared() -> PathBuf {
 pub fn versions() -> PathBuf {
     shared().join("versions")
 }
+pub fn valid_version_id(id: &str) -> bool {
+    !id.trim().is_empty() && id.len() <= 100 && !id.contains("..") && id.chars().all(|c| c.is_ascii_alphanumeric() || " ._-+".contains(c))
+}
 pub fn version_dir(id: &str) -> PathBuf {
-    versions().join(id)
+    versions().join(if valid_version_id(id) { id } else { "_invalid" })
 }
 pub fn version_json(id: &str) -> PathBuf {
+    let id = if valid_version_id(id) { id } else { "_invalid" };
     version_dir(id).join(format!("{id}.json"))
 }
 pub fn version_jar(id: &str) -> PathBuf {
+    let id = if valid_version_id(id) { id } else { "_invalid" };
     version_dir(id).join(format!("{id}.jar"))
 }
 pub fn libraries() -> PathBuf {
@@ -38,7 +43,7 @@ pub fn assets() -> PathBuf {
     shared().join("assets")
 }
 pub fn natives(version_id: &str) -> PathBuf {
-    shared().join("natives").join(version_id)
+    shared().join("natives").join(if valid_version_id(version_id) { version_id } else { "_invalid" })
 }
 pub fn java_root() -> PathBuf {
     shared().join("java")
@@ -168,6 +173,15 @@ pub fn game_dir(id: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn version_paths_never_leave_their_folders() {
+        assert!(valid_version_id("1.21.11") && valid_version_id("fabric-loader-0.19.5-26.3") && valid_version_id("1.14 Pre-Release 1") && valid_version_id("25w14a"));
+        for bad in ["../../evil", "a/b", "..", "", "x\\y"] {
+            assert!(!valid_version_id(bad), "{bad}");
+            assert!(version_json(bad).starts_with(versions()) && natives(bad).starts_with(shared().join("natives")));
+        }
+    }
 
     #[test]
     fn instance_dir_never_leaves_instances_folder() {

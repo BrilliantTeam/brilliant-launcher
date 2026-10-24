@@ -17,7 +17,7 @@ pub async fn get_settings() -> Settings {
 }
 
 #[tauri::command]
-pub async fn save_settings(settings: Settings) -> R<()> {
+pub async fn save_settings(settings: Settings) -> R<Settings> {
     let before = config::load_settings().await;
     if before.autostart != settings.autostart {
         crate::extras::set_autostart(settings.autostart)?;
@@ -26,7 +26,8 @@ pub async fn save_settings(settings: Settings) -> R<()> {
     if before.proxy.trim() != settings.proxy.trim() {
         crate::net::set_proxy(&settings.proxy)?;
     }
-    config::save_settings(&settings).await
+    config::save_settings(&settings).await?;
+    Ok(config::load_settings().await)
 }
 
 #[tauri::command]
@@ -83,7 +84,9 @@ async fn browser_code(app: &AppHandle) -> R<(String, auth::msa::Pkce)> {
     let (url, pkce) = auth::msa::authorize_url(config::MSA_CLIENT_ID, &redirect);
     let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
     if let Ok(mut slot) = LOGIN_CANCEL.lock() {
-        *slot = Some(cancel_tx);
+        if let Some(previous) = slot.replace(cancel_tx) {
+            let _ = previous.send(());
+        }
     }
     app.opener().open_url(url, None::<&str>).context("無法開啟瀏覽器")?;
     let wait = async {
@@ -279,6 +282,9 @@ pub async fn list_instances(state: State<'_, AppState>) -> R<(Vec<Instance>, Vec
 pub(crate) async fn resolve_version(draft: &mut Instance, settings: &Settings) -> R<()> {
     if draft.mc_version.trim().is_empty() {
         bail!("請先選擇 Minecraft 版本");
+    }
+    if !paths::valid_version_id(&draft.mc_version) || !(draft.loader_version.is_empty() || paths::valid_version_id(&draft.loader_version)) {
+        bail!("版本號格式不正確：{} {}", draft.mc_version, draft.loader_version);
     }
     draft.version_id = if draft.loader == "fabric" {
         if draft.loader_version.trim().is_empty() {

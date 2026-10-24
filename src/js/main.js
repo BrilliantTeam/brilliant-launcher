@@ -153,6 +153,9 @@ function initChrome() {
     const mac = navigator.userAgent.includes('Mac');
     if (mac) $$('kbd.mod-key').forEach((k) => { k.textContent = '⌘'; });
     document.addEventListener('keydown', (e) => {
+        if (e.key === 'F5' || e.key === 'BrowserRefresh') e.preventDefault();
+    });
+    document.addEventListener('keydown', (e) => {
         if (e.isComposing || e.keyCode === 229 || e.altKey || (mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey)) return;
         const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
         if (e.code === 'Enter' || e.code === 'NumpadEnter') {
@@ -245,7 +248,7 @@ function updateChip() {
     if (!updater.downloading) $('#update-label').textContent = updater.path ? `重新啟動以更新 v${latest.version}` : `更新 v${latest.version}`;
 }
 
-async function downloadUpdate() {
+async function downloadUpdate(manual = false) {
     const latest = pendingUpdate?.latest;
     if (!latest || !canSelfUpdate(latest) || updater.downloading || (updater.path && updater.version === latest.version)) return;
     updater.downloading = true;
@@ -258,7 +261,7 @@ async function downloadUpdate() {
         notifyOnce(`launcher-ready:${latest.version}`, `輝煌啟動器 v${latest.version} 已準備好`, '點右上角「重新啟動以更新」，幾秒內就會完成並重新開啟。');
     } catch (error) {
         updater.path = null;
-        if (/簽章/.test(String(error?.message ?? error))) fail(error);
+        if (manual || /簽章/.test(String(error?.message ?? error))) fail(error);
     } finally {
         updater.downloading = false;
         updateChip();
@@ -315,7 +318,7 @@ async function checkUpdate(manual = false) {
             buttons
         });
         if (go === 'apply') await applyUpdate();
-        else if (go === 'retry') downloadUpdate();
+        else if (go === 'retry') downloadUpdate(true);
         else if (go === 'web') openUrl(latest.page);
     }));
 }

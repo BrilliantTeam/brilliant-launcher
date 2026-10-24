@@ -127,12 +127,13 @@ fn make_link(link: &Path, target: &Path) -> R<()> {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
+        let (l, t) = (link.to_string_lossy(), target.to_string_lossy());
+        if [&l, &t].iter().any(|p| p.contains(['%', '"'])) {
+            bail!("資料夾路徑含有 % 或 \" 符號，Windows 無法為它建立共用連結：{}", link.display());
+        }
         let status = std::process::Command::new("cmd")
             .arg("/C")
-            .arg("mklink")
-            .arg("/J")
-            .arg(link.as_os_str())
-            .arg(target.as_os_str())
+            .raw_arg(format!("mklink /J \"{l}\" \"{t}\""))
             .creation_flags(0x0800_0000)
             .stdout(std::process::Stdio::null())
             .status()
@@ -151,6 +152,9 @@ fn copy_dir(src: &Path, dst: &Path) -> R<()> {
     for entry in std::fs::read_dir(src)?.flatten() {
         let from = entry.path();
         let to = dst.join(entry.file_name());
+        if entry.file_type().is_ok_and(|t| t.is_symlink()) {
+            continue;
+        }
         if from.is_dir() {
             copy_dir(&from, &to)?;
         } else {
@@ -296,7 +300,7 @@ pub async fn shared_items(key: String, folder: String) -> R<Vec<SharedItem>> {
             let (keep, title, icon) = match folder.as_str() {
                 "saves" => {
                     let level = path.join("level.dat");
-                    let title = std::fs::read(&level).ok().and_then(|b| crate::worlds::read_level(&b).0).unwrap_or_else(|| name.clone());
+                    let title = crate::worlds::read_level_file(&level).0.unwrap_or_else(|| name.clone());
                     let icon = path.join("icon.png");
                     (level.is_file(), title, icon.is_file().then(|| icon.to_string_lossy().to_string()))
                 }
@@ -305,7 +309,7 @@ pub async fn shared_items(key: String, folder: String) -> R<Vec<SharedItem>> {
                     let pack = meta.is_dir() || lower.ends_with(".zip");
                     let icon = if !meta.is_dir() && meta.len() < 64 << 20 {
                         std::fs::read(&path).ok().and_then(|b| crate::modrinth::embedded_icon(&b, false))
-                    } else if meta.is_dir() && path.join("pack.png").is_file() {
+                    } else if meta.is_dir() && std::fs::metadata(path.join("pack.png")).is_ok_and(|m| m.is_file() && m.len() < 2 << 20) {
                         std::fs::read(path.join("pack.png")).ok().map(|b| {
                             use base64::Engine;
                             format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(b))
@@ -508,8 +512,7 @@ fn add_file(zip: &mut zip::ZipWriter<std::fs::File>, name: &str, path: &Path, li
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes)?;
     text.push_str(&String::from_utf8_lossy(&bytes));
-    let clean: Vec<String> = text.lines().map(redact).collect();
-    add_text(zip, name, &clean.join("\n"))
+    add_text(zip, name, &crate::insight::scrub_report(&text))
 }
 
 fn safe_name(text: &str) -> String {
@@ -546,16 +549,16 @@ pub fn export_diagnostics(instance: &Instance, settings: &Settings, java: &str) 
         instance.jvm(settings),
         instance.wrapper_cmd(settings).join(" "),
         instance.channel(settings),
-        if instance.use_shared { settings.shared_folders.join("、") } else { "未使用".into() },
+        settings.instance_groups.iter().find(|g| !instance.group.is_empty() && g.name == instance.group && !g.shared.is_empty()).map(|g| format!("分組「{}」共用 {}", g.name, g.shared.join("、"))).unwrap_or_else(|| "未使用".into()),
         sorted.len(),
         sorted.join("\n")
     );
-    add_text(&mut zip, "摘要.txt", &summary)?;
-    if let Ok(json) = serde_json::to_string_pretty(instance) {
-        add_text(&mut zip, "instance.json", &json)?;
-    }
-    if let Ok(json) = serde_json::to_string_pretty(settings) {
-        add_text(&mut zip, "launcher-settings.json", &json)?;
+    add_text(&mut zip, "摘要.txt", &crate::insight::scrub_report(&summary))?;
+    for (name, value) in [("instance.json", serde_json::to_value(instance)), ("launcher-settings.json", serde_json::to_value(settings))] {
+        if let Ok(mut value) = value {
+            crate::insight::strip_secrets(&mut value);
+            add_text(&mut zip, name, &crate::insight::scrub_report(&serde_json::to_string_pretty(&value).unwrap_or_default()))?;
+        }
     }
     let latest = game.join("logs").join("latest.log");
     if latest.is_file() {
@@ -611,7 +614,7 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
         }
         let name = entry.name().replace('\\', "/");
         let mut text = String::new();
-        if entry.read_to_string(&mut text).is_err() {
+        if (&mut entry).take(4 << 20).read_to_string(&mut text).is_err() {
             continue;
         }
         if name == format!("{CONFIG_ROOT}/config.json") {
@@ -766,6 +769,10 @@ fn launch_command() -> R<(String, Vec<String>)> {
     Ok((exe.to_string_lossy().to_string(), Vec::new()))
 }
 
+pub fn ps_quote(text: &str) -> String {
+    text.chars().flat_map(|c| if "'\u{2018}\u{2019}\u{201A}\u{201B}".contains(c) { vec![c, c] } else { vec![c] }).collect()
+}
+
 pub fn create_shortcut(instance: &Instance, join: Option<String>) -> R<PathBuf> {
     if cfg!(target_os = "macos") {
         bail!("macOS 版暫不支援建立桌面捷徑");
@@ -783,7 +790,7 @@ pub fn create_shortcut(instance: &Instance, join: Option<String>) -> R<PathBuf> 
     {
         use std::os::windows::process::CommandExt;
         let path = desktop.join(format!("{title}.lnk"));
-        let quote = |s: &str| s.replace('\'', "''");
+        let quote = ps_quote;
         let script = format!(
             "$s=(New-Object -ComObject WScript.Shell).CreateShortcut('{}');$s.TargetPath='{}';$s.Arguments='{}';$s.IconLocation='{},0';$s.Description='{}';$s.Save()",
             quote(&path.to_string_lossy()),
@@ -821,6 +828,13 @@ pub fn create_shortcut(instance: &Instance, join: Option<String>) -> R<PathBuf> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn powershell_quotes_cannot_be_escaped() {
+        assert_eq!(ps_quote("a'b"), "a''b");
+        assert_eq!(ps_quote("x\u{2019};calc;\u{2018}"), "x\u{2019}\u{2019};calc;\u{2018}\u{2018}");
+        assert_eq!(ps_quote("輝煌 26.3"), "輝煌 26.3");
+    }
 
     #[test]
     fn env_lines_are_validated() {
@@ -910,7 +924,7 @@ mod tests {
     #[test]
     #[ignore = "改動 BRILLIANT_LAUNCHER_HOME，需單獨執行：cargo test --lib group_share_moves_existing_files -- --ignored"]
     fn group_share_moves_existing_files() {
-        let root = std::env::temp_dir().join(format!("brilliant-group-share-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("brilliant-group-share-{} A&B", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::env::set_var("BRILLIANT_LAUNCHER_HOME", &root);
         let packs = paths::game_dir("a").join("resourcepacks");

@@ -26,7 +26,7 @@ pub fn embedded_icon(bytes: &[u8], is_mod: bool) -> Option<String> {
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
     let path = if is_mod {
         let mut raw = String::new();
-        zip.by_name("fabric.mod.json").ok()?.read_to_string(&mut raw).ok()?;
+        zip.by_name("fabric.mod.json").ok()?.take(1 << 20).read_to_string(&mut raw).ok()?;
         let clean: String = raw.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
         let meta: serde_json::Value = serde_json::from_str(&clean).ok()?;
         match meta.get("icon")? {
@@ -42,12 +42,12 @@ pub fn embedded_icon(bytes: &[u8], is_mod: bool) -> Option<String> {
         "pack.png".to_string()
     };
     let path = path.trim_start_matches("./").trim_start_matches('/');
-    let mut entry = zip.by_name(path).ok()?;
+    let entry = zip.by_name(path).ok()?;
     if entry.size() > 512 << 10 {
         return None;
     }
     let mut png = Vec::new();
-    entry.read_to_end(&mut png).ok()?;
+    entry.take(512 << 10).read_to_end(&mut png).ok()?;
     png.starts_with(b"\x89PNG").then(|| format!("data:image/png;base64,{}", base64::engine::general_purpose::STANDARD.encode(&png)))
 }
 

@@ -247,9 +247,11 @@ const STAGE_TEXT = {
 async function play(relogged = false, join = null) {
     const instance = selectedInstance();
     if (!instance) return;
+    if (busy && relogged !== true) return toast('正在準備遊戲，請等這次完成', 'warn');
 
     if (isRunning(instance.id)) {
-        await api.stop_game({ id: instance.id }).catch(fail);
+        if (!(await confirm(`要強制結束「${instance.name}」嗎？\n強制結束不會存檔，單人世界最近的進度可能遺失；建議先在遊戲裡按「儲存並離開」或關閉遊戲視窗。`, '強制結束'))) return;
+        await api.stop_game({ id: instance.id }).then(() => toast(`已強制結束「${instance.name}」`), fail);
         return;
     }
 

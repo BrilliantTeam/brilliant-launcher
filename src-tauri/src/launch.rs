@@ -240,13 +240,7 @@ async fn prepare(
     if cfg!(target_os = "macos") {
         args.push("-XstartOnFirstThread".into());
     }
-    args.extend(
-        instance
-            .jvm(settings)
-            .split_whitespace()
-            .filter(|s| !s.is_empty())
-            .map(str::to_string),
-    );
+    args.extend(crate::advanced::split_args(&instance.jvm(settings)));
     args.extend(expand(&resolved.arguments.jvm, &features, &vars));
     args.push(resolved.main_class.clone());
     let mut game_args = expand(&resolved.arguments.game, &features, &vars);
@@ -274,6 +268,7 @@ pub async fn prefetch(app: &AppHandle, instance_id: &str) -> R<()> {
     let Ok(_guard) = state.prep_lock.try_lock() else {
         return Ok(());
     };
+    let _work = state.background_work(instance_id);
     let settings = crate::config::load_settings().await;
     let instance = crate::instance::get(instance_id).await?;
     prepare(app, &instance, &settings, None, false).await?;
@@ -288,6 +283,7 @@ pub async fn prefetch_upgrade(app: &AppHandle, instance_id: &str, mc: &str) -> R
     let Ok(_guard) = state.prep_lock.try_lock() else {
         return Ok(());
     };
+    let _work = state.background_work(instance_id);
     let settings = crate::config::load_settings().await;
     let mut draft = crate::instance::get(instance_id).await?;
     draft.mc_version = mc.to_string();
@@ -462,9 +458,16 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         let log_file = log_file.clone();
         tokio::spawn(async move {
             use tokio::io::AsyncWriteExt;
-            let mut lines = BufReader::new(reader).lines();
+            let mut reader = BufReader::new(reader);
             let mut out = open_log(&log_file).await;
-            while let Ok(Some(line)) = lines.next_line().await {
+            let mut raw = Vec::new();
+            loop {
+                raw.clear();
+                match reader.read_until(b'\n', &mut raw).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                let line = String::from_utf8_lossy(&raw).trim_end_matches(['\r', '\n']).to_string();
                 if let Some(f) = out.as_mut() {
                     let _ = f.write_all(format!("{line}\n").as_bytes()).await;
                 }

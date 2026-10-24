@@ -135,7 +135,8 @@ export async function refreshReports() {
         toast(`管理員回覆了你的錯誤回報，到「日誌 → 我的回報」查看`);
         if (store.settings?.notifications) api.notify_user({ title: '輝煌管理員回覆了你的回報', body: byId.get(fresh[0].id).messages.filter((m) => m.kind === 'admin').at(-1).text.slice(0, 120) }).catch(() => {});
     }
-    const kept = mine.filter((m) => byId.has(m.id)).map((m) => ({ ...m, cause: byId.get(m.id).cause, alerted: replies(byId.get(m.id)) }));
+    const recent = (m) => Date.now() - (m.at || 0) < 35 * 86400000;
+    const kept = mine.filter((m) => byId.has(m.id) || recent(m)).map((m) => (byId.has(m.id) ? { ...m, cause: byId.get(m.id).cause, alerted: replies(byId.get(m.id)) } : m));
     if (fresh.length || kept.length !== mine.length) await saveSettings({ myReports: kept }).catch(() => {});
     store.reports = reports;
     emit('reports');

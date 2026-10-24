@@ -43,9 +43,17 @@ fn find_tag<'a>(nbt: &'a [u8], kind: u8, name: &str) -> Option<&'a [u8]> {
     nbt.get(at + needle.len()..)
 }
 
+pub fn read_level_file(path: &Path) -> (Option<String>, i64, i32, bool) {
+    let mut bytes = Vec::new();
+    match std::fs::File::open(path).map(|f| f.take(16 << 20).read_to_end(&mut bytes)) {
+        Ok(Ok(_)) => read_level(&bytes),
+        _ => (None, 0, 0, false),
+    }
+}
+
 pub fn read_level(bytes: &[u8]) -> (Option<String>, i64, i32, bool) {
     let mut nbt = Vec::new();
-    if flate2::read::GzDecoder::new(bytes).read_to_end(&mut nbt).is_err() {
+    if flate2::read::GzDecoder::new(bytes).take(16 << 20).read_to_end(&mut nbt).is_err() {
         nbt = bytes.to_vec();
     }
     let name = find_tag(&nbt, 8, "LevelName").and_then(|rest| {
@@ -68,7 +76,11 @@ pub(crate) fn dir_size(path: &Path) -> u64 {
     std::fs::read_dir(path)
         .map(|d| {
             d.flatten()
-                .map(|e| if e.path().is_dir() { dir_size(&e.path()) } else { e.metadata().map(|m| m.len()).unwrap_or(0) })
+                .map(|e| match e.file_type() {
+                    Ok(t) if t.is_symlink() => 0,
+                    Ok(t) if t.is_dir() => dir_size(&e.path()),
+                    _ => e.metadata().map(|m| m.len()).unwrap_or(0),
+                })
                 .sum()
         })
         .unwrap_or(0)
@@ -95,7 +107,7 @@ pub async fn list_worlds(id: String) -> Vec<World> {
             .filter(|e| e.path().join("level.dat").is_file())
             .map(|e| {
                 let folder = e.file_name().to_string_lossy().to_string();
-                let (name, last, mode, hardcore) = std::fs::read(e.path().join("level.dat")).map(|b| read_level(&b)).unwrap_or((None, 0, 0, false));
+                let (name, last, mode, hardcore) = read_level_file(&e.path().join("level.dat"));
                 let icon = e.path().join("icon.png");
                 World {
                     name: name.filter(|n| !n.is_empty()).unwrap_or_else(|| folder.clone()),
@@ -213,6 +225,14 @@ fn import_world(src: &Path, staging: &Path, dest_dir: &Path) -> R<String> {
     Ok(name)
 }
 
+pub fn read_options(path: &Path) -> R<String> {
+    match std::fs::read(path) {
+        Ok(bytes) => String::from_utf8(bytes).map_err(|_| anyhow::anyhow!("options.txt 含有無法辨識的文字編碼，為了不弄壞遊戲設定，這次不修改").into()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(anyhow::Error::from(e).context("讀取 options.txt 失敗，為了不弄壞遊戲設定，這次不修改").into()),
+    }
+}
+
 fn options_path(id: &str) -> PathBuf {
     paths::game_dir(id).join("options.txt")
 }
@@ -253,7 +273,7 @@ pub async fn set_pack_order(state: State<'_, AppState>, id: String, enabled: Vec
         bail!("資源包清單不正確");
     }
     let path = options_path(&id);
-    let options = std::fs::read_to_string(&path).unwrap_or_default();
+    let options = read_options(&path)?;
     let current = options.lines().find_map(|l| l.strip_prefix("resourcePacks:")).map(parse_pack_list).unwrap_or_default();
     let line = format!("resourcePacks:{}", serde_json::to_string(&merge_order(&current, &enabled))?);
     let mut lines: Vec<String> = options.lines().map(str::to_string).collect();
@@ -276,6 +296,18 @@ pub async fn set_pack_order(state: State<'_, AppState>, id: String, enabled: Vec
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unreadable_options_are_never_treated_as_empty() {
+        let dir = std::env::temp_dir().join(format!("options-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(read_options(&dir.join("missing.txt")).unwrap(), "");
+        std::fs::write(dir.join("ok.txt"), "fov:1\nlang:zh_tw\n").unwrap();
+        assert!(read_options(&dir.join("ok.txt")).unwrap().contains("lang:zh_tw"));
+        std::fs::write(dir.join("bad.txt"), b"fov:1\nlastServer:\xa7\xda\n").unwrap();
+        assert!(read_options(&dir.join("bad.txt")).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
     use std::io::Write;
 

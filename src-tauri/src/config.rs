@@ -157,7 +157,12 @@ pub fn clean_choice(value: &mut String, allowed: &[&str], fallback: &str) {
 
 pub fn clean_jvm_args(value: &mut String) {
     *value = value.chars().take(4096).map(|c| if c.is_control() { ' ' } else { c }).collect::<String>();
-    *value = value.split_whitespace().filter(|t| t.starts_with('-') && t.len() > 1).collect::<Vec<_>>().join(" ");
+    *value = crate::advanced::split_args(value)
+        .into_iter()
+        .filter(|t| t.starts_with('-') && t.len() > 1)
+        .map(|t| if t.contains(char::is_whitespace) { format!("\"{t}\"") } else { t })
+        .collect::<Vec<_>>()
+        .join(" ");
 }
 
 pub fn clean_env_vars(value: &mut String) {
@@ -230,6 +235,14 @@ impl Settings {
         self.instance_groups.retain(|g| !g.name.is_empty() && seen.insert(g.name.clone()));
         self.instance_groups.truncate(100);
         clean_line(&mut self.pinned, 80);
+        for (field, max) in [(&mut self.selected_account, 128), (&mut self.selected_instance, 128), (&mut self.last_announcement, 256)] {
+            clean_line(field, max);
+        }
+        let extra = self.notified.len().saturating_sub(30);
+        self.notified.drain(..extra);
+        self.notified.iter_mut().for_each(|n| clean_line(n, 256));
+        self.my_reports.retain(|r| r.is_object() && r.to_string().len() <= 4096);
+        self.my_reports.truncate(20);
         self.shared_folders.retain(|f| crate::advanced::SHAREABLE.contains(&f.as_str()));
         self.shared_folders.dedup();
     }

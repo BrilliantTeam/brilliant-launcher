@@ -70,9 +70,26 @@ impl Instance {
         }
         clean_jvm_args(&mut self.jvm_args);
         clean_env_vars(&mut self.env_vars);
-        for (field, max) in [(&mut self.java_path, 1024), (&mut self.wrapper, 1024), (&mut self.image, 1024), (&mut self.icon, 1024), (&mut self.group, 24), (&mut self.account, 64)] {
+        for (field, max) in [(&mut self.java_path, 1024), (&mut self.wrapper, 1024), (&mut self.image, 1024), (&mut self.icon, 1024), (&mut self.group, 24), (&mut self.account, 64), (&mut self.active_profile, 24)] {
             clean_line(field, max);
         }
+        if !["vanilla", "fabric"].contains(&self.loader.as_str()) {
+            self.loader = "vanilla".into();
+        }
+        for field in [&mut self.mc_version, &mut self.loader_version, &mut self.version_id] {
+            if !field.is_empty() && !paths::valid_version_id(field) {
+                field.clear();
+            }
+        }
+        self.pinned.retain(|p| p.len() <= 64 && p.chars().all(|c| c.is_ascii_alphanumeric()));
+        self.pinned.truncate(1000);
+        self.mod_profiles.truncate(30);
+        for profile in self.mod_profiles.iter_mut() {
+            clean_line(&mut profile.name, 24);
+            profile.enabled.truncate(2000);
+            profile.known.truncate(2000);
+        }
+        self.mod_profiles.retain(|p| !p.name.is_empty());
     }
 
     pub fn memory(&self, s: &Settings) -> u32 {
@@ -380,7 +397,7 @@ mod content_kind_tests {
         let _ = std::fs::remove_dir_all(&root);
         std::env::set_var("BRILLIANT_LAUNCHER_HOME", &root);
         let mut settings = crate::config::Settings::default();
-        settings.instance_groups = vec![crate::config::InstanceGroup { name: "輝煌".into(), key: "k1".into(), shared: vec!["resourcepacks".into(), "saves".into()], ..Default::default() }];
+        settings.instance_groups = vec![crate::config::InstanceGroup { name: "輝煌".into(), key: "k1".into(), shared: vec!["resourcepacks".into(), "saves".into(), "screenshots".into()], ..Default::default() }];
         crate::config::save_settings(&settings).await.unwrap();
         let source = create(Instance { name: "輝煌生存".into(), mc_version: "26.3".into(), group: "輝煌".into(), ..Default::default() }).await.unwrap();
         crate::advanced::sync_shared(&source, &settings).unwrap();
@@ -392,6 +409,8 @@ mod content_kind_tests {
         let game = paths::game_dir(&copy.id);
         assert_eq!(std::fs::read_to_string(game.join("options.txt")).unwrap(), "fov:1");
         assert!(crate::advanced::is_link(&game.join("resourcepacks")) && game.join("resourcepacks/Faithful.zip").is_file());
+        std::fs::write(shared.join("screenshots/2026-10-24_10.00.00.png"), "png").unwrap();
+        assert_eq!(crate::insight::list_all_screenshots().await.len(), 1);
         delete(&copy.id).await.unwrap();
         assert!(!paths::instance_dir(&copy.id).exists());
         assert!(shared.join("resourcepacks/Faithful.zip").is_file());
@@ -466,14 +485,27 @@ mod general_tests {
         assert_eq!((s.ui_scale, s.download_threads, s.backup_keep, s.music_volume), (80, 1, 1, 100));
         assert_eq!((s.theme.as_str(), s.after_launch.as_str(), s.quick_join.as_str(), s.accent.as_str()), ("auto", "hide", "", ""));
         assert_eq!(s.jvm_args, "-Xss4m -Dx=1");
+        s.jvm_args = r#"-Xmx2G -Djava.io.tmpdir="D:\My Folder" stray"#.into();
+        s.clean();
+        assert_eq!(s.jvm_args, r#"-Xmx2G "-Djava.io.tmpdir=D:\My Folder""#);
+        assert_eq!(crate::advanced::split_args(&s.jvm_args), vec!["-Xmx2G", r"-Djava.io.tmpdir=D:\My Folder"]);
         assert_eq!(s.env_vars, "# 註解\nGOOD=1\n_OK=x");
         assert_eq!(s.shared_folders, vec!["saves".to_string()]);
+        s.notified = (0..100).map(|n| n.to_string()).collect();
+        s.my_reports = (0..50).map(|n| serde_json::json!({ "id": n })).chain([serde_json::json!("x"), serde_json::json!({ "big": "a".repeat(5000) })]).collect();
+        s.clean();
+        assert_eq!((s.notified.len(), s.notified[0].as_str(), s.my_reports.len()), (30, "70", 20));
         let mut ok = Settings { quick_join: "s2.brilliantw.net:25565".into(), accent: "#ff9ac8".into(), ..Default::default() };
         ok.clean();
         assert_eq!((ok.quick_join.as_str(), ok.accent.as_str()), ("s2.brilliantw.net:25565", "#ff9ac8"));
         let mut i = Instance { name: "\u{7}\u{7}".into(), width: 99_999, height: 0, memory_mb: 100, java_major: 3, mod_channel: "evil".into(), ..Default::default() };
         i.clean();
         assert_eq!((i.name.as_str(), i.width, i.height, i.memory_mb, i.java_major, i.mod_channel.as_str()), ("未命名實例", 0, 0, 1024, 0, ""));
+        let mut odd = Instance { loader: "forge".into(), mc_version: "../../x".into(), loader_version: "0.19.5".into(), pinned: vec!["P7dR8mSH".into(), "../x".into()], ..Default::default() };
+        odd.mod_profiles = (0..40).map(|n| ModProfile { name: if n == 0 { String::new() } else { format!("組合{n}") }, ..Default::default() }).collect();
+        odd.clean();
+        assert_eq!((odd.loader.as_str(), odd.mc_version.as_str(), odd.loader_version.as_str()), ("vanilla", "", "0.19.5"));
+        assert_eq!((odd.pinned.clone(), odd.mod_profiles.len()), (vec!["P7dR8mSH".to_string()], 29));
         let mut keep = Instance { name: "  我的世界  ".into(), memory_mb: 0, width: 1280, height: 720, java_major: 21, ..Default::default() };
         keep.clean();
         assert_eq!((keep.name.as_str(), keep.memory_mb, keep.width, keep.height, keep.java_major), ("我的世界", 0, 1280, 720, 21));

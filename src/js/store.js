@@ -25,8 +25,15 @@ export async function loadSettings() {
 }
 
 export async function saveSettings(patch = {}) {
+    const before = store.settings;
     store.settings = { ...store.settings, ...patch };
-    await api.save_settings({ settings: store.settings });
+    try {
+        store.settings = await api.save_settings({ settings: store.settings });
+    } catch (error) {
+        store.settings = before;
+        emit('settings');
+        throw error;
+    }
     emit('settings');
 }
 
@@ -38,7 +45,12 @@ export async function loadInstances() {
 }
 
 export async function loadAccounts() {
-    store.accounts = await api.list_accounts();
+    const [accounts, settings] = await Promise.all([api.list_accounts(), api.get_settings()]);
+    store.accounts = accounts;
+    if (store.settings && settings.selectedAccount !== store.settings.selectedAccount) {
+        store.settings.selectedAccount = settings.selectedAccount;
+        emit('settings');
+    }
     emit('accounts');
 }
 

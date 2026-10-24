@@ -4,7 +4,6 @@ use crate::state::AppState;
 use crate::{bail, paths};
 use anyhow::Context;
 use serde::Serialize;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
 
@@ -44,7 +43,15 @@ fn zip_dir(src: &Path, dest: &Path) -> R<()> {
 
 pub fn zip_folder(src: &Path, dest: &Path, prefix: Option<&str>) -> R<()> {
     let tmp = dest.with_extension("part");
-    let mut zip = zip::ZipWriter::new(std::fs::File::create(&tmp)?);
+    let result = write_zip(src, &tmp, prefix).and_then(|_| std::fs::rename(&tmp, dest).context("儲存壓縮檔失敗").map_err(Into::into));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result
+}
+
+fn write_zip(src: &Path, tmp: &Path, prefix: Option<&str>) -> R<()> {
+    let mut zip = zip::ZipWriter::new(std::fs::File::create(tmp).with_context(|| format!("建立 {} 失敗", tmp.display()))?);
     let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
     let mut stack = vec![src.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -55,17 +62,21 @@ pub fn zip_folder(src: &Path, dest: &Path, prefix: Option<&str>) -> R<()> {
                 Some(p) => format!("{p}/{rel}"),
                 None => rel,
             };
-            if path.is_dir() {
+            let kind = entry.file_type().with_context(|| format!("讀取 {} 失敗", path.display()))?;
+            if kind.is_symlink() {
+                continue;
+            }
+            if kind.is_dir() {
                 zip.add_directory(format!("{rel}/"), options)?;
                 stack.push(path);
             } else if entry.file_name() != "session.lock" {
                 zip.start_file(rel, options)?;
-                zip.write_all(&std::fs::read(&path).with_context(|| format!("讀取 {} 失敗", path.display()))?)?;
+                let mut file = std::fs::File::open(&path).with_context(|| format!("讀取 {} 失敗", path.display()))?;
+                std::io::copy(&mut file, &mut zip).with_context(|| format!("壓縮 {} 失敗", path.display()))?;
             }
         }
     }
     zip.finish()?;
-    std::fs::rename(&tmp, dest)?;
     Ok(())
 }
 
@@ -136,9 +147,7 @@ pub async fn restore_backup(state: State<'_, AppState>, id: String, file: String
     if !safe_backup_name(&file) {
         bail!("備份檔名不正確");
     }
-    if state.is_running(&id).await {
-        bail!("請先關閉遊戲再還原存檔");
-    }
+    state.ensure_idle(&id).await?;
     tokio::task::spawn_blocking(move || -> R<()> {
         let archive = backups_dir(&id).join(&file);
         let mut zip = zip::ZipArchive::new(std::fs::File::open(&archive).context("找不到備份檔")?)?;
@@ -219,15 +228,6 @@ pub async fn dir_stamp(subs: Vec<String>, id: Option<String>) -> R<String> {
     .map_err(Into::into)
 }
 
-fn dir_size(path: &Path) -> u64 {
-    std::fs::read_dir(path)
-        .map(|d| d.flatten().map(|e| {
-            let p = e.path();
-            if p.is_dir() { dir_size(&p) } else { e.metadata().map(|m| m.len()).unwrap_or(0) }
-        }).sum())
-        .unwrap_or(0)
-}
-
 #[tauri::command]
 pub async fn clean_cache(state: State<'_, AppState>) -> R<u64> {
     if !state.running_ids().await.is_empty() {
@@ -236,10 +236,10 @@ pub async fn clean_cache(state: State<'_, AppState>) -> R<u64> {
     tokio::task::spawn_blocking(|| {
         let mut freed = 0;
         let natives = paths::shared().join("natives");
-        freed += dir_size(&natives);
+        freed += crate::worlds::dir_size(&natives);
         let _ = std::fs::remove_dir_all(&natives);
         let thumbs = crate::insight::thumbs_dir();
-        freed += dir_size(&thumbs);
+        freed += crate::worlds::dir_size(&thumbs);
         let _ = std::fs::remove_dir_all(&thumbs);
         freed += paths::purge_trash(paths::TRASH_DAYS);
         let week_ago = now_secs() - 7 * 86_400;
@@ -497,6 +497,8 @@ mod tests {
         std::fs::create_dir_all(&src).unwrap();
         std::fs::write(src.join("r.0.0.mca"), b"chunk").unwrap();
         std::fs::write(base.join("saves/World/session.lock"), b"lock").unwrap();
+        #[cfg(windows)]
+        assert!(std::process::Command::new("cmd").arg("/C").arg("mklink").arg("/J").arg(base.join("saves").join("World").join("loop")).arg(base.join("saves")).stdout(std::process::Stdio::null()).status().unwrap().success());
         let archive = base.join("out.zip");
         zip_dir(&base.join("saves"), &archive).unwrap();
         let out = base.join("restored");

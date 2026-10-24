@@ -127,7 +127,7 @@ function jump(step) {
 async function uploadCurrent() {
     const text = currentText();
     if (!text.trim()) return toast('目前沒有內容可以上傳', 'warn');
-    if (!(await confirm('要把這份紀錄上傳到 mclo.gs 嗎？\n上傳後任何拿到連結的人都能看到內容，適合貼給開發者或管理員協助除錯。\n啟動器會先遮掉登入權杖，mclo.gs 也會遮掉 IP 等敏感資訊。', '上傳'))) return;
+    if (!(await confirm('要把這份紀錄上傳到 mclo.gs 嗎？\n上傳後任何拿到連結的人都能看到內容，適合貼給開發者或管理員協助除錯。\n啟動器會先遮掉登入權杖與電腦使用者名稱，mclo.gs 也會遮掉 IP 等敏感資訊。', '上傳'))) return;
     try {
         const url = await api.upload_log({ content: text });
         await navigator.clipboard.writeText(url).catch(() => {});

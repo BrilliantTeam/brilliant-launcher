@@ -80,9 +80,9 @@ fn read_meta(path: &Path, classes: &HashSet<String>) -> ModMeta {
     let Ok(mut zip) = std::fs::File::open(path).map_err(anyhow::Error::from).and_then(|f| Ok(zip::ZipArchive::new(f)?)) else {
         return meta;
     };
-    if let Ok(mut entry) = zip.by_name("fabric.mod.json") {
+    if let Ok(entry) = zip.by_name("fabric.mod.json") {
         let mut raw = String::new();
-        let _ = entry.read_to_string(&mut raw);
+        let _ = entry.take(1 << 20).read_to_string(&mut raw);
         let clean: String = raw.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&clean) {
             let get = |k: &str| json.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -216,7 +216,7 @@ pub fn scrub_report(text: &str) -> String {
     out
 }
 
-fn strip_secrets(value: &mut serde_json::Value) {
+pub(crate) fn strip_secrets(value: &mut serde_json::Value) {
     let Some(map) = value.as_object_mut() else { return };
     for key in ["selectedAccount", "notified", "lastAnnouncement", "image", "myReports"] {
         map.remove(key);
@@ -315,8 +315,7 @@ pub struct PerfReport {
 }
 
 fn read_options(path: &Path) -> HashMap<String, String> {
-    std::fs::read_to_string(path)
-        .unwrap_or_default()
+    String::from_utf8_lossy(&std::fs::read(path).unwrap_or_default())
         .lines()
         .filter_map(|l| l.split_once(':'))
         .filter(|(k, _)| PERF_KEYS.contains(k))
@@ -369,15 +368,13 @@ pub async fn perf_report(id: String) -> R<PerfReport> {
 
 #[tauri::command]
 pub async fn apply_perf(state: State<'_, AppState>, id: String, options: HashMap<String, String>, memory_mb: Option<u32>) -> R<()> {
-    if state.is_running(&id).await {
-        bail!("請先關閉遊戲再套用，遊戲結束時會覆寫設定");
-    }
+    state.ensure_idle(&id).await?;
     if options.iter().any(|(k, v)| !valid_option(k, v)) {
         bail!("設定值不正確");
     }
     if !options.is_empty() {
         let file = paths::game_dir(&id).join("options.txt");
-        let text = tokio::fs::read_to_string(&file).await.unwrap_or_default();
+        let text = crate::worlds::read_options(&file)?;
         tokio::fs::create_dir_all(paths::game_dir(&id)).await?;
         paths::write_atomic(&file, patch_options(&text, &options).as_bytes()).context("寫入遊戲設定失敗")?;
     }
@@ -413,9 +410,7 @@ pub async fn record_session(session: Session) {
 
 #[tauri::command]
 pub async fn play_history(since: i64) -> Vec<Session> {
-    tokio::fs::read_to_string(sessions_file())
-        .await
-        .unwrap_or_default()
+    String::from_utf8_lossy(&tokio::fs::read(sessions_file()).await.unwrap_or_default())
         .lines()
         .filter_map(|l| serde_json::from_str::<Session>(l).ok())
         .filter(|s| s.start >= since)
@@ -445,6 +440,7 @@ fn thumb_path(id: &str, file: &str, time: i64) -> std::path::PathBuf {
 #[tauri::command]
 pub async fn list_all_screenshots() -> Vec<Shot> {
     let mut out = Vec::new();
+    let mut seen = HashSet::new();
     for instance in crate::instance::list().await {
         let metas: serde_json::Map<String, serde_json::Value> = tokio::fs::read_to_string(paths::game_dir(&instance.id).join("config/brilliant-server-mod/screenshots.json"))
             .await
@@ -452,6 +448,9 @@ pub async fn list_all_screenshots() -> Vec<Shot> {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
         for shot in crate::extras::list_screenshots(instance.id.clone()).await {
+            if !seen.insert(std::fs::canonicalize(&shot.path).unwrap_or_else(|_| PathBuf::from(&shot.path))) {
+                continue;
+            }
             let meta = metas.get(&shot.name).cloned();
             let thumb = Some(thumb_path(&instance.id, &shot.name, shot.time)).filter(|p| p.is_file()).map(|p| p.to_string_lossy().to_string());
             out.push(Shot { instance: instance.id.clone(), instance_name: instance.name.clone(), path: shot.path, name: shot.name, time: shot.time, meta, thumb });

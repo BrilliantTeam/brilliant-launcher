@@ -32,7 +32,14 @@ fn library_index() -> PathBuf {
 }
 
 fn load_library() -> Vec<LibrarySkin> {
-    std::fs::read(library_index()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+    let Ok(bytes) = std::fs::read(library_index()) else { return Vec::new() };
+    serde_json::from_slice(&bytes).unwrap_or_else(|_| {
+        let keep = library_index().with_extension("broken.json");
+        if !keep.exists() {
+            let _ = std::fs::copy(library_index(), keep);
+        }
+        Vec::new()
+    })
 }
 
 fn save_library(list: &[LibrarySkin]) -> R<()> {
@@ -174,6 +181,9 @@ fn add_bytes(bytes: &[u8], name: &str, kind: &str, auto_name: bool) -> R<Library
 
 #[tauri::command]
 pub async fn skin_add(path: String, name: String, variant: String) -> R<LibrarySkin> {
+    if tokio::fs::metadata(&path).await.context("讀取圖片失敗")?.len() > 1 << 20 {
+        bail!("皮膚圖片太大了，Minecraft 皮膚是 64×64 的小 PNG 檔");
+    }
     let bytes = tokio::fs::read(&path).await.context("讀取圖片失敗")?;
     let fallback = PathBuf::from(&path).file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
     if name.trim().is_empty() {
@@ -348,12 +358,14 @@ pub async fn share_screenshot(id: String, file: String, description: String) -> 
     if !file.to_ascii_lowercase().ends_with(".png") || file.contains(['/', '\\']) || file.contains("..") {
         bail!("截圖檔名不正確");
     }
-    let bytes = tokio::fs::read(paths::game_dir(&id).join("screenshots").join(&file)).await.context("讀取截圖失敗")?;
-    if bytes.len() > 10 * 1024 * 1024 {
+    let shot = paths::game_dir(&id).join("screenshots").join(&file);
+    if tokio::fs::metadata(&shot).await.context("讀取截圖失敗")?.len() > 10 * 1024 * 1024 {
         bail!("截圖超過 10 MB，無法投稿");
     }
+    let bytes = tokio::fs::read(&shot).await.context("讀取截圖失敗")?;
     let settings = config::load_settings().await;
-    let account = fresh(crate::commands::active_account(&settings).await?, 300).await?;
+    let preferred = crate::instance::get(&id).await.map(|i| i.account).unwrap_or_default();
+    let account = fresh(crate::commands::account_for(&settings, &preferred).await?, 300).await?;
     if account.kind != "msa" {
         bail!("投稿需要微軟正版帳號，離線帳號無法驗證身分");
     }

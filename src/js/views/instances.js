@@ -1243,6 +1243,16 @@ function groupMenu(group, members, x, y) {
         item('folder', '共用資料夾設定⋯', () => groupDialog(group).then(() => {}).catch(fail)),
         group.shared?.length && group.key ? item('archive', '管理共用資源⋯', () => sharedResources(group).catch(fail)) : null,
         item('arrow-up', pinnedKey() === `g:${group.name}` ? '取消置頂' : '置頂分組', () => togglePin(`g:${group.name}`)),
+        ...[[-1, '往前移'], [1, '往後移']].map(([step, label]) => {
+            const groups = groupList();
+            const from = groups.findIndex((g) => g.name === group.name);
+            const to = from + step;
+            if (from < 0 || to < 0 || to >= groups.length) return null;
+            return item(step < 0 ? 'arrow-up' : 'chevron-down', label, () => {
+                groups.splice(to, 0, ...groups.splice(from, 1));
+                saveGroups(groups).catch(fail);
+            });
+        }),
         members.length ? item('play', '全部啟動', () => launchGroup(group.name, members).catch(fail)) : null,
         item('trash', '刪除分組（實例保留）', () => removeGroup(group).catch(fail), 'danger'));
     document.body.append(menu);

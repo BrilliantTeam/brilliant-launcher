@@ -40,6 +40,9 @@ fn tree(path: &Path, budget: &mut usize) -> Vec<Node> {
         }
         *budget -= 1;
         let p = entry.path();
+        if entry.file_type().is_ok_and(|t| t.is_symlink()) {
+            continue;
+        }
         let dir = p.is_dir();
         out.push(Node { name: entry.file_name().to_string_lossy().to_string(), size: size_of(&p), dir, children: if dir { tree(&p, budget) } else { Vec::new() } });
     }
@@ -62,7 +65,7 @@ pub struct Leftovers {
 pub fn mod_id(jar: &Path) -> Option<String> {
     let mut zip = zip::ZipArchive::new(std::fs::File::open(jar).ok()?).ok()?;
     let mut raw = String::new();
-    zip.by_name("fabric.mod.json").ok()?.read_to_string(&mut raw).ok()?;
+    zip.by_name("fabric.mod.json").ok()?.take(1 << 20).read_to_string(&mut raw).ok()?;
     let clean: String = raw.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     let json: serde_json::Value = serde_json::from_str(&clean).ok()?;
     json.get("id")?.as_str().map(|s| s.to_ascii_lowercase())
@@ -104,7 +107,9 @@ fn owned_by(name: &str, target: &str, others: &[String]) -> bool {
 }
 
 fn size_of(path: &Path) -> u64 {
-    if path.is_dir() {
+    if std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink()) {
+        0
+    } else if path.is_dir() {
         std::fs::read_dir(path).map(|d| d.flatten().map(|e| size_of(&e.path())).sum()).unwrap_or(0)
     } else {
         std::fs::metadata(path).map(|m| m.len()).unwrap_or(0)

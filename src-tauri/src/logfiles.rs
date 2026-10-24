@@ -113,7 +113,7 @@ pub async fn upload_log(content: String) -> R<String> {
     if content.trim().is_empty() {
         bail!("紀錄檔是空的");
     }
-    let mut text = crate::advanced::redact(&content);
+    let mut text = crate::insight::scrub_report(&content);
     if text.len() > 10 << 20 {
         let cut = text.len() - (10 << 20);
         let cut = (cut..text.len()).find(|&i| text.is_char_boundary(i)).unwrap_or(text.len());

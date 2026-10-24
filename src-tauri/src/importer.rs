@@ -381,6 +381,13 @@ pub struct ImportRequest {
 }
 
 pub fn copy_tree(from: &Path, to: &Path) -> std::io::Result<u64> {
+    copy_tree_at(from, to, 0)
+}
+
+fn copy_tree_at(from: &Path, to: &Path, depth: u32) -> std::io::Result<u64> {
+    if depth > 48 {
+        return Err(std::io::Error::other(format!("資料夾層數太深，可能有循環的捷徑：{}", from.display())));
+    }
     if from.is_file() {
         if let Some(parent) = to.parent() {
             std::fs::create_dir_all(parent)?;
@@ -393,12 +400,15 @@ pub fn copy_tree(from: &Path, to: &Path) -> std::io::Result<u64> {
         if entry.file_name() == "session.lock" {
             continue;
         }
-        total += copy_tree(&entry.path(), &to.join(entry.file_name()))?;
+        total += copy_tree_at(&entry.path(), &to.join(entry.file_name()), depth + 1)?;
     }
     Ok(total)
 }
 
 fn overlaps(from: &Path, to: &Path, rel: &str, out: &mut Vec<(PathBuf, String)>) {
+    if rel.matches('/').count() > 48 {
+        return;
+    }
     if from.is_file() {
         let len = |p: &Path| std::fs::metadata(p).map(|m| m.len()).ok();
         if to.is_file() && (len(from) != len(to) || std::fs::read(from).ok() != std::fs::read(to).ok()) {
