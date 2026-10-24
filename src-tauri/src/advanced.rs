@@ -137,7 +137,7 @@ fn make_link(link: &Path, target: &Path) -> R<()> {
 }
 
 fn copy_dir(src: &Path, dst: &Path) -> R<()> {
-    std::fs::create_dir_all(dst)?;
+    std::fs::create_dir_all(dst).with_context(|| format!("建立 {} 失敗", dst.display()))?;
     for entry in std::fs::read_dir(src)?.flatten() {
         let from = entry.path();
         let to = dst.join(entry.file_name());
@@ -151,7 +151,7 @@ fn copy_dir(src: &Path, dst: &Path) -> R<()> {
 }
 
 fn move_into(src: &Path, dst: &Path, tag: &str) -> R<()> {
-    std::fs::create_dir_all(dst)?;
+    std::fs::create_dir_all(dst).with_context(|| format!("建立 {} 失敗", dst.display()))?;
     for entry in std::fs::read_dir(src)?.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         let mut target = dst.join(&name);
@@ -166,12 +166,13 @@ fn move_into(src: &Path, dst: &Path, tag: &str) -> R<()> {
             }
         }
         if std::fs::rename(entry.path(), &target).is_err() {
-            if entry.path().is_dir() {
-                copy_dir(&entry.path(), &target)?;
-                std::fs::remove_dir_all(entry.path())?;
+            let from = entry.path();
+            if from.is_dir() {
+                copy_dir(&from, &target)?;
+                std::fs::remove_dir_all(&from).with_context(|| format!("把 {} 搬進共用資料夾後，無法刪除原本的資料夾", from.display()))?;
             } else {
-                std::fs::copy(entry.path(), &target)?;
-                std::fs::remove_file(entry.path())?;
+                std::fs::copy(&from, &target).with_context(|| format!("把 {} 搬進共用資料夾失敗", from.display()))?;
+                std::fs::remove_file(&from).with_context(|| format!("把 {} 搬進共用資料夾後，無法刪除原本的檔案", from.display()))?;
             }
         }
     }
@@ -372,7 +373,7 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 
 pub fn sync_shared(instance: &Instance, settings: &Settings) -> R<Vec<String>> {
     let game = paths::game_dir(&instance.id);
-    std::fs::create_dir_all(&game)?;
+    std::fs::create_dir_all(&game).with_context(|| format!("建立 {} 失敗", game.display()))?;
     let group = settings.instance_groups.iter().find(|g| !instance.group.is_empty() && g.name == instance.group && !g.key.is_empty());
     let mut notes = Vec::new();
     for name in SHAREABLE {
@@ -389,14 +390,14 @@ pub fn sync_shared(instance: &Instance, settings: &Settings) -> R<Vec<String>> {
             if old.is_dir() {
                 copy_dir(old, &link)?;
             } else {
-                std::fs::create_dir_all(&link)?;
+                std::fs::create_dir_all(&link).with_context(|| format!("建立 {} 失敗", link.display()))?;
             }
             if want.is_none() {
                 notes.push(format!("「{name}」已改回這個實例自己的資料夾（複製了一份共用內容）"));
             }
         }
         if let Some(target) = &want {
-            std::fs::create_dir_all(target)?;
+            std::fs::create_dir_all(target).with_context(|| format!("建立共用資料夾 {} 失敗", target.display()))?;
             if link.exists() {
                 move_into(&link, target, &instance.name)?;
             }
@@ -699,7 +700,7 @@ pub fn handle_cli(app: &AppHandle, args: &[String]) {
             return;
         };
         let result = crate::commands::launch_game(app.clone(), instance.id.clone(), join).await;
-        let error = result.err().map(|e| format!("{:#}", e.0));
+        let error = result.err().map(|e| crate::err::message(&e.0));
         if let Some(message) = &error {
             crate::boost::notify(&app, "無法啟動遊戲", message);
         }
