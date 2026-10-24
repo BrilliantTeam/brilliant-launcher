@@ -13,6 +13,7 @@ import { initExplore } from './views/explore.js';
 import { notifyOnce, startServices } from './services.js';
 import { initLog } from './views/logview.js';
 import { initReports } from './report.js';
+import { initTours } from './tour.js';
 
 const TITLES = {
     profile: '我的輝煌',
@@ -104,6 +105,37 @@ function applyTheme() {
         for (const key of ['--accent', '--accent-hover', '--accent-ink']) root.style.removeProperty(key);
     }
     root.dataset.motion = store.settings?.reduceMotion ? 'off' : 'on';
+    const look = store.settings ?? {};
+    root.dataset.buttons = look.buttonStyle === 'flat' ? 'flat' : 'pixel';
+    root.dataset.corners = look.corners === 'rounded' ? 'rounded' : 'square';
+    root.dataset.cards = look.cardSize === 'compact' ? 'compact' : 'comfy';
+    root.dataset.rail = look.railLabels === false ? 'icons' : 'labels';
+    root.dataset.news = look.showNews === false ? 'off' : 'on';
+    const alpha = Math.min(100, Math.max(60, Number(look.panelOpacity) || 100));
+    root.style.setProperty('--panel-alpha', `${alpha}%`);
+    root.dataset.glassy = alpha < 100 ? 'on' : 'off';
+    root.style.setProperty('--bg-dim', String(Math.min(80, Math.max(0, Number(look.bgDim) || 0)) / 100));
+    root.dataset.width = ['wide', 'full'].includes(look.contentWidth) ? look.contentWidth : 'standard';
+    root.dataset.density = look.density === 'compact' ? 'compact' : 'comfy';
+    root.dataset.bar = ['thin', 'none'].includes(look.accentBar) ? look.accentBar : 'thick';
+    const blur = Math.min(20, Math.max(0, Number(look.bgBlur) || 0));
+    root.style.setProperty('--bg-blur', `${blur}px`);
+    root.dataset.blurred = blur > 0 ? 'on' : 'off';
+    root.dataset.bgmotion = look.bgMotion ? 'on' : 'off';
+    root.dataset.scroll = look.thinScrollbars ? 'thin' : 'normal';
+    root.dataset.carddetails = look.cardDetails === false ? 'off' : 'on';
+    root.dataset.brand = look.showBrand === false ? 'off' : 'on';
+    root.dataset.railstyle = ['solid', 'accent'].includes(look.railStyle) ? look.railStyle : 'glass';
+    root.dataset.cover = ['short', 'tall'].includes(look.coverHeight) ? look.coverHeight : 'normal';
+    root.dataset.cursor = look.cursorStyle === 'pixel' ? 'pixel' : 'system';
+    root.dataset.layout = look.homeLayout === 'mirrored' ? 'mirrored' : 'standard';
+    const tones = { mono: 'grayscale(1)', sepia: 'sepia(0.75) saturate(1.1)', cool: 'saturate(0.9) hue-rotate(12deg) brightness(0.97)', warm: 'sepia(0.25) saturate(1.3)', vivid: 'saturate(1.5) contrast(1.08)' };
+    root.style.setProperty('--bg-tone', tones[look.bgFilter] ?? 'saturate(1)');
+    $('#home-clock').hidden = !look.showClock;
+    tickClock();
+    const tagline = $('.home-brand .tagline');
+    tagline.dataset.default ??= tagline.textContent;
+    tagline.textContent = (look.homeTagline || '').trim() || tagline.dataset.default;
     const scale = (store.settings?.uiScale || 100) / 100;
     if (scale !== appliedScale) {
         appliedScale = scale;
@@ -111,6 +143,32 @@ function applyTheme() {
     }
     const font = $('#font-toggle');
     font.title = root.dataset.font === 'system' ? '字型：系統字型（點一下改為點陣字型）' : '字型：點陣字型（點一下改為系統字型）';
+}
+
+function tickClock() {
+    if ($('#home-clock').hidden) return;
+    const now = new Date();
+    $('#clock-time').textContent = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+    $('#clock-date').textContent = now.toLocaleDateString('zh-TW', { month: 'long', day: 'numeric', weekday: 'long' });
+}
+
+let clickAudio = null;
+function clickSound(e) {
+    if (!store.settings?.clickSound || e.button !== 0 || !e.target.closest?.('button:not(:disabled), .rail a, [role="menuitem"], .look-preset')) return;
+    try {
+        clickAudio ??= new AudioContext();
+        const t = clickAudio.currentTime;
+        const osc = clickAudio.createOscillator();
+        const gain = clickAudio.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(620, t);
+        osc.frequency.exponentialRampToValueAtTime(240, t + 0.05);
+        gain.gain.setValueAtTime(0.05, t);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+        osc.connect(gain).connect(clickAudio.destination);
+        osc.start(t);
+        osc.stop(t + 0.08);
+    } catch {}
 }
 
 function mountIcons() {
@@ -363,6 +421,9 @@ async function boot() {
     initExplore();
     initLog();
     initReports();
+    initTours();
+    setInterval(tickClock, 10_000);
+    addEventListener('pointerdown', clickSound, true);
 
     emit('settings');
     show(location.hash.slice(1) || 'home');

@@ -68,12 +68,14 @@ for (const proto of [Element.prototype, DocumentFragment.prototype]) {
 
 const HISTORY_MAX = 8;
 const historyKey = (input) => `brilliant.history.${input.id}`;
-const hasHistory = (el) => el instanceof HTMLInputElement && el.type === 'search' && !!el.id;
+const suggests = (el) => el instanceof HTMLInputElement && 'suggest' in el.dataset;
+const hasHistory = (el) => suggests(el) || (el instanceof HTMLInputElement && el.type === 'search' && !!el.id);
 let historyBox = null;
 let historyActive = -1;
 
 function readHistory(input) {
     try {
+        if (suggests(input)) return JSON.parse(input.dataset.suggest).filter((v) => typeof v === 'string');
         const list = JSON.parse(localStorage.getItem(historyKey(input)));
         return Array.isArray(list) ? list.filter((v) => typeof v === 'string') : [];
     } catch {
@@ -88,6 +90,7 @@ function writeHistory(input, list) {
 }
 
 function rememberSearch(input) {
+    if (suggests(input)) return;
     const value = input.value.trim();
     if (value) writeHistory(input, [value, ...readHistory(input).filter((v) => v !== value)]);
 }
@@ -111,11 +114,12 @@ function showHistory(input) {
     const items = readHistory(input).filter((v) => v.toLowerCase() !== query && (!query || v.toLowerCase().includes(query)));
     if (!items.length) return;
     const rect = input.getBoundingClientRect();
-    historyBox = h('div', { class: 'search-history', role: 'listbox', 'aria-label': '最近搜尋', style: `left:${rect.left}px;top:${rect.bottom + 4}px;width:${rect.width}px` },
-        h('div', { class: 'search-history-head' }, '最近搜尋'),
+    const suggest = suggests(input);
+    historyBox = h('div', { class: 'search-history', role: 'listbox', 'aria-label': suggest ? '建議' : '最近搜尋', style: `left:${rect.left}px;top:${rect.bottom + 4}px;width:${rect.width}px` },
+        h('div', { class: 'search-history-head' }, suggest ? '現有分組' : '最近搜尋'),
         ...items.map((value) => h('div', { class: 'search-history-item', role: 'option', 'data-value': value },
             h('button', { type: 'button', class: 'history-pick', tabindex: '-1', onmousedown: (e) => { e.preventDefault(); pickHistory(input, value); } }, value),
-            h('button', {
+            suggest ? null : h('button', {
                 type: 'button',
                 class: 'history-forget',
                 tabindex: '-1',
@@ -127,7 +131,14 @@ function showHistory(input) {
                     showHistory(input);
                 }
             }, '×'))));
+    historyBox.popover = 'manual';
     document.body.append(historyBox);
+    historyBox.showPopover();
+    const box = historyBox;
+    Promise.all(input.closest('dialog')?.getAnimations().map((a) => a.finished) ?? []).then(() => {
+        const r = input.getBoundingClientRect();
+        Object.assign(box.style, { left: `${r.left}px`, top: `${r.bottom + 4}px`, width: `${r.width}px` });
+    }, () => {});
 }
 
 function moveHistory(step) {
@@ -157,6 +168,7 @@ addEventListener('keydown', (e) => {
         const active = historyBox?.querySelectorAll('.search-history-item')[historyActive];
         if (active) {
             e.preventDefault();
+            e.stopPropagation();
             pickHistory(e.target, active.dataset.value);
         } else {
             rememberSearch(e.target);

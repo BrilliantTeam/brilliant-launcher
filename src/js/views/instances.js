@@ -896,6 +896,7 @@ function card(instance) {
         },
         h('div', { class: `inst-banner${instance.image && !isSvg(instance.image) ? ' has-image' : ''}`, style: instance.image && !isSvg(instance.image) ? `--cover:url("${fileSrc(instance.image)}")` : '' },
             isSvg(instance.image) ? svgFromFile(instance.image, 'cover-svg') : instance.image ? null : iconOf(instance.icon),
+            instance.image ? h('span', { class: 'inst-thumb inst-badge-icon', title: '實例圖示' }, iconOf(instance.icon)) : null,
             h('div', { class: 'inst-flags' },
                 pinnedKey() === `i:${instance.id}` ? h('span', { class: 'badge' }, '置頂') : null,
                 running ? h('span', { class: 'badge warn' }, '執行中') : null,
@@ -1460,10 +1461,8 @@ async function launchGroup(name, members) {
 }
 
 function groupInput(value = '') {
-    const list = h('datalist', { id: `groups-${Math.random().toString(36).slice(2)}` },
-        ...groupList().map((g) => h('option', { value: g.name })));
-    const input = h('input', { type: 'text', value, maxlength: '24', placeholder: '例如：輝煌、建築、朋友的伺服器', list: list.id });
-    const box = h('span', { class: 'group-input' }, input, list);
+    const input = h('input', { type: 'text', value, maxlength: '24', placeholder: '例如：輝煌、建築、朋友的伺服器', 'data-suggest': JSON.stringify(groupList().map((g) => g.name)) });
+    const box = h('span', { class: 'group-input' }, input);
     box.input = input;
     return box;
 }

@@ -44,8 +44,53 @@ const FIELDS = {
     openLogOnLaunch: '#set-open-log',
     launcherUpdate: '#set-launcher-update',
     updateChannel: '#set-update-channel',
-    modUpdate: '#set-mod-update'
+    modUpdate: '#set-mod-update',
+    buttonStyle: '#set-buttons',
+    corners: '#set-corners',
+    cardSize: '#set-cards',
+    panelOpacity: '#set-panel',
+    bgDim: '#set-dim',
+    railLabels: '#set-rail-labels',
+    showNews: '#set-news',
+    contentWidth: '#set-content-width',
+    density: '#set-density',
+    accentBar: '#set-accent-bar',
+    bgBlur: '#set-blur',
+    bgMotion: '#set-bg-motion',
+    thinScrollbars: '#set-thin-scroll',
+    cardDetails: '#set-card-details',
+    showBrand: '#set-brand',
+    homeTagline: '#set-tagline',
+    railStyle: '#set-rail-style',
+    coverHeight: '#set-cover-height',
+    cursorStyle: '#set-cursor',
+    bgFilter: '#set-bg-filter',
+    homeLayout: '#set-home-layout',
+    showClock: '#set-clock',
+    clickSound: '#set-click-sound'
 };
+
+const LOOK_PRESETS = [
+    ['輝煌經典', 'Minecraft 方塊按鈕、金色邊條，原汁原味', {}],
+    ['現代玻璃', '扁平按鈕、圓角、霧化面板與緩慢縮放的背景', { buttonStyle: 'flat', corners: 'rounded', panelOpacity: 75, bgDim: 20, bgBlur: 4, bgMotion: true, accentBar: 'thin' }],
+    ['極簡', '收起標誌與公告，只留下必要的資訊', { buttonStyle: 'flat', corners: 'rounded', accentBar: 'none', showNews: false, showBrand: false, railLabels: false, cardDetails: false }],
+    ['緊湊效率', '寬版、緊湊間距，一次看到更多實例與模組', { contentWidth: 'wide', density: 'compact', cardSize: 'compact', railLabels: false, thinScrollbars: true, coverHeight: 'short' }],
+    ['像素懷舊', '方塊按鈕、懷舊色調、像素游標與點擊音效', { bgFilter: 'sepia', cursorStyle: 'pixel', clickSound: true, railStyle: 'solid', coverHeight: 'tall', bgDim: 15 }]
+];
+
+const LOOK_DEFAULTS = { accent: '', buttonStyle: 'pixel', corners: 'square', cardSize: 'comfy', panelOpacity: 100, bgDim: 0, railLabels: true, showNews: true, uiScale: 100, reduceMotion: false, contentWidth: 'standard', density: 'comfy', accentBar: 'thick', bgBlur: 0, bgMotion: false, thinScrollbars: false, cardDetails: true, showBrand: true, homeTagline: '', railStyle: 'glass', coverHeight: 'normal', cursorStyle: 'system', bgFilter: 'none', homeLayout: 'standard', showClock: false, clickSound: false };
+
+function renderLookPresets() {
+    clear($('#look-presets')).append(...LOOK_PRESETS.map(([name, hint, patch]) => h('button', {
+        type: 'button',
+        class: 'look-preset',
+        onclick: async () => {
+            const { homeTagline, accent, uiScale, ...look } = LOOK_DEFAULTS;
+            await persist({ ...look, ...patch });
+            toast(`已套用「${name}」風格`);
+        }
+    }, h('b', {}, name), h('small', {}, hint))));
+}
 
 export const JVM_PRESETS = [
     ['G1 調校（預設）', '平衡穩定，適合大多數電腦', '-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC -XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 -XX:G1HeapRegionSize=32M -XX:-UseAdaptiveSizePolicy -XX:-OmitStackTraceInFastThrow'],
@@ -101,7 +146,10 @@ const LABELS = {
     '#set-slide': (v) => (Number(v) ? `${v} 秒` : '不輪播'),
     '#set-scale': (v) => `${v}%`,
     '#set-threads': (v) => `${v} 個`,
-    '#set-volume': (v) => (Number(v) ? `${v}%` : '靜音')
+    '#set-volume': (v) => (Number(v) ? `${v}%` : '靜音'),
+    '#set-panel': (v) => `${v}%`,
+    '#set-dim': (v) => (Number(v) ? `${v}%` : '不暗化'),
+    '#set-blur': (v) => (Number(v) ? `${v}` : '不模糊')
 };
 
 let javaReady = false;
@@ -151,10 +199,22 @@ function read() {
 function renderAccent() {
     const current = (store.settings?.accent ?? '').toLowerCase();
     const custom = current && !ACCENTS.some(([value]) => value.toLowerCase() === current);
-    const picker = h('input', {
-        type: 'color',
-        value: custom ? current : '#8491ff',
-        onchange: (e) => persist({ accent: e.target.value })
+    const pop = colorPopover(custom ? current : '#8491ff');
+    const trigger = h('button', {
+        type: 'button',
+        class: 'swatch custom',
+        title: '自訂顏色',
+        'aria-label': '自訂顏色',
+        'aria-pressed': String(!!custom),
+        'aria-haspopup': 'dialog',
+        style: custom ? `--swatch:${current}` : '',
+        onclick: () => {
+            const r = trigger.getBoundingClientRect();
+            pop.style.left = `${Math.min(r.left, innerWidth - 300)}px`;
+            pop.style.top = `${r.bottom + 330 > innerHeight ? Math.max(8, r.top - 330) : r.bottom + 8}px`;
+            pop.showPopover();
+            pop.querySelector('input').focus();
+        }
     });
     clear($('#set-accent')).append(
         ...ACCENTS.map(([value, label]) => h('button', {
@@ -166,8 +226,85 @@ function renderAccent() {
             'aria-pressed': String(value.toLowerCase() === current),
             onclick: () => persist({ accent: value })
         })),
-        h('label', { class: 'swatch custom', title: '自訂顏色', 'aria-pressed': String(!!custom), style: custom ? `--swatch:${current}` : '' }, picker)
+        trigger,
+        pop
     );
+}
+
+const hslToHex = (hue, sat, light) => {
+    const a = (sat / 100) * Math.min(light / 100, 1 - light / 100);
+    const f = (n) => {
+        const k = (n + hue / 30) % 12;
+        return Math.round((light / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255).toString(16).padStart(2, '0');
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
+};
+
+function hexToHsl(hex) {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const light = (max + min) / 2;
+    const d = max - min;
+    if (!d) return [0, 0, Math.round(light * 100)];
+    const sat = d / (1 - Math.abs(2 * light - 1));
+    const hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [Math.round((hue * 60 + 360) % 360), Math.round(sat * 100), Math.round(light * 100)];
+}
+
+function colorPopover(start) {
+    const slider = (label, max) => h('input', { type: 'range', min: '0', max: String(max), 'aria-label': label });
+    const hue = slider('色相', 359);
+    const sat = slider('飽和度', 100);
+    const light = slider('亮度', 100);
+    const hex = h('input', { type: 'text', maxlength: '7', spellcheck: 'false', 'aria-label': '色碼' });
+    const preview = h('div', { class: 'color-preview' });
+    const pop = h('div', { class: 'color-pop', popover: 'auto', role: 'dialog', 'aria-label': '自訂顏色' });
+    let exact = null;
+    const paint = (from) => {
+        const value = exact ?? hslToHex(+hue.value, +sat.value, +light.value);
+        if (from !== hex) hex.value = value;
+        preview.style.setProperty('--swatch', value);
+        sat.style.setProperty('--track', `linear-gradient(to right, ${hslToHex(+hue.value, 0, +light.value)}, ${hslToHex(+hue.value, 100, +light.value)})`);
+        light.style.setProperty('--track', `linear-gradient(to right, #000, ${hslToHex(+hue.value, +sat.value, 50)}, #fff)`);
+    };
+    const load = (value) => {
+        [hue.value, sat.value, light.value] = hexToHsl(value).map(String);
+        exact = value;
+        paint();
+    };
+    for (const el of [hue, sat, light]) el.addEventListener('input', () => {
+        exact = null;
+        paint();
+    });
+    hex.addEventListener('input', () => {
+        const value = hex.value.trim().replace(/^(?!#)/, '#');
+        if (/^#[0-9a-f]{6}$/i.test(value)) {
+            [hue.value, sat.value, light.value] = hexToHsl(value).map(String);
+            exact = value.toLowerCase();
+            paint(hex);
+        }
+    });
+    const apply = async () => {
+        const value = exact ?? hslToHex(+hue.value, +sat.value, +light.value);
+        pop.hidePopover();
+        await persist({ accent: value });
+    };
+    pop.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.isComposing) apply();
+    });
+    pop.addEventListener('toggle', (e) => e.newState === 'open' && load(start));
+    pop.append(
+        h('div', { class: 'color-head' }, preview, h('label', {}, '色碼', hex)),
+        h('label', {}, '色相', hue),
+        h('label', {}, '飽和度', sat),
+        h('label', {}, '亮度', light),
+        h('div', { class: 'color-actions' },
+            h('button', { type: 'button', class: 'mc', onclick: () => pop.hidePopover() }, '取消'),
+            h('button', { type: 'button', class: 'mc primary', onclick: apply }, '套用'))
+    );
+    load(start);
+    return pop;
 }
 
 function write() {
@@ -176,8 +313,9 @@ function write() {
     for (const [key, sel] of Object.entries(FIELDS)) {
         const el = $(sel);
         if (el === $('#set-java') || el === document.activeElement) continue;
-        if (el.type === 'checkbox') el.checked = !!settings[key];
-        else el.value = settings[key] ?? '';
+        const value = settings[key] ?? LOOK_DEFAULTS[key];
+        if (el.type === 'checkbox') el.checked = !!value;
+        else el.value = value ?? '';
     }
     $('#set-backup-keep').disabled = !settings.backupOnLaunch;
     renderSharedSummary();
@@ -327,6 +465,12 @@ export function initSettings() {
     });
 
     initPages(view);
+    renderLookPresets();
+    $('#btn-look-reset').addEventListener('click', guard(async () => {
+        if (!(await confirm('要把主題色、按鈕風格、邊角、透明度、側欄等外觀設定還原成預設嗎？\n背景圖片與音樂不會被移除。', '還原'))) return;
+        await persist(LOOK_DEFAULTS);
+        toast('已還原預設外觀');
+    }));
 
     const setMedia = (kind) => async (path) => {
         if (!path) return;

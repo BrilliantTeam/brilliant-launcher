@@ -1,7 +1,7 @@
-import { api, isType, listen, openUrl, pickFile, typeLabel, watchFolders } from '../api.js';
+import { api, fileSrc, isType, listen, openUrl, pickFile, typeLabel, watchFolders } from '../api.js';
 import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtBytes, fmtDuration, h, modalOpen, toast, guard } from '../ui.js';
 import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../store.js';
-import { icon, instanceIconName, instanceVisual } from '../icons.js';
+import { icon, iconOf, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
 import { editInstance, moreMenu, playInstance, selectInstance, shareNotice } from './instances.js';
 import { renderMarkdown } from '../markdown.js';
 
@@ -1044,8 +1044,13 @@ function renderHeader() {
     const instance = selectedInstance();
     const running = instance && isRunning(instance.id);
     const fabric = instance?.loader === 'fabric';
-    clear($('#store-instance')).append(
-        h('div', { class: 'inst-thumb inst-page-icon' }, instance ? instanceVisual(instance) : icon('warning-box')),
+    const cover = instance?.image || '';
+    const vector = /\.svg$/i.test(cover);
+    const head = $('#store-instance');
+    head.classList.toggle('has-cover', !!cover);
+    clear(head).append(
+        cover ? h('div', { class: 'inst-page-cover', 'aria-hidden': 'true', style: vector ? '' : `background-image:url("${fileSrc(cover)}")` }, vector ? svgFromFile(cover, 'cover-svg') : null) : null,
+        h('div', { class: 'inst-thumb inst-page-icon' }, instance ? iconOf(instance.icon) : icon('warning-box')),
         h('div', { class: 'inst-page-text' },
             h('div', { class: 'target-pick' },
                 h('button', { type: 'button', class: 'inst-page-name', title: '切換實例', 'aria-haspopup': 'menu', 'aria-expanded': 'false', onclick: () => toggleTargetMenu() },

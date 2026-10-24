@@ -63,6 +63,30 @@ pub struct Settings {
     pub alpha_unlocked: bool,
     pub instance_groups: Vec<InstanceGroup>,
     pub pinned: String,
+    pub button_style: String,
+    pub corners: String,
+    pub panel_opacity: u32,
+    pub bg_dim: u32,
+    pub rail_labels: bool,
+    pub card_size: String,
+    pub show_news: bool,
+    pub tours_seen: Vec<String>,
+    pub content_width: String,
+    pub density: String,
+    pub accent_bar: String,
+    pub bg_blur: u32,
+    pub bg_motion: bool,
+    pub thin_scrollbars: bool,
+    pub card_details: bool,
+    pub show_brand: bool,
+    pub home_tagline: String,
+    pub bg_filter: String,
+    pub home_layout: String,
+    pub rail_style: String,
+    pub cover_height: String,
+    pub cursor_style: String,
+    pub click_sound: bool,
+    pub show_clock: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -133,6 +157,30 @@ impl Default for Settings {
             alpha_unlocked: false,
             instance_groups: Vec::new(),
             pinned: String::new(),
+            button_style: "pixel".into(),
+            corners: "square".into(),
+            panel_opacity: 100,
+            bg_dim: 0,
+            rail_labels: true,
+            card_size: "comfy".into(),
+            show_news: true,
+            tours_seen: Vec::new(),
+            content_width: "standard".into(),
+            density: "comfy".into(),
+            accent_bar: "thick".into(),
+            bg_blur: 0,
+            bg_motion: false,
+            thin_scrollbars: false,
+            card_details: true,
+            show_brand: true,
+            home_tagline: String::new(),
+            bg_filter: "none".into(),
+            home_layout: "standard".into(),
+            rail_style: "glass".into(),
+            cover_height: "normal".into(),
+            cursor_style: "system".into(),
+            click_sound: false,
+            show_clock: false,
         }
     }
 }
@@ -207,6 +255,25 @@ impl Settings {
         clean_choice(&mut self.launcher_update, &["auto", "notify", "off"], "auto");
         clean_choice(&mut self.mod_update, &["auto", "keep"], "auto");
         clean_choice(&mut self.update_channel, &["stable", "beta", "alpha"], "stable");
+        clean_choice(&mut self.button_style, &["pixel", "flat"], "pixel");
+        clean_choice(&mut self.corners, &["square", "rounded"], "square");
+        clean_choice(&mut self.card_size, &["comfy", "compact"], "comfy");
+        self.panel_opacity = self.panel_opacity.clamp(60, 100);
+        clean_choice(&mut self.content_width, &["standard", "wide", "full"], "standard");
+        clean_choice(&mut self.density, &["comfy", "compact"], "comfy");
+        clean_choice(&mut self.accent_bar, &["thick", "thin", "none"], "thick");
+        self.bg_blur = self.bg_blur.min(20);
+        clean_line(&mut self.home_tagline, 60);
+        clean_choice(&mut self.bg_filter, &["none", "mono", "sepia", "cool", "warm", "vivid"], "none");
+        clean_choice(&mut self.home_layout, &["standard", "mirrored"], "standard");
+        clean_choice(&mut self.rail_style, &["glass", "solid", "accent"], "glass");
+        clean_choice(&mut self.cover_height, &["short", "normal", "tall"], "normal");
+        clean_choice(&mut self.cursor_style, &["system", "pixel"], "system");
+        self.bg_dim = self.bg_dim.min(80);
+        self.tours_seen.retain(|t| t.len() <= 32 && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+        self.tours_seen.sort();
+        self.tours_seen.dedup();
+        self.tours_seen.truncate(30);
         clean_jvm_args(&mut self.jvm_args);
         clean_env_vars(&mut self.env_vars);
         for (field, max) in [(&mut self.java_path, 1024), (&mut self.pre_launch_cmd, 1024), (&mut self.post_exit_cmd, 1024), (&mut self.wrapper, 1024), (&mut self.proxy, 512), (&mut self.background, 1024), (&mut self.music, 1024), (&mut self.quick_join, 260)] {

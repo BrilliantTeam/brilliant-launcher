@@ -33,6 +33,7 @@
             <button type="button" class="account-more" id="account-more" title="快速切換帳號" aria-label="快速切換帳號" aria-haspopup="menu" aria-expanded="false"><i data-icon="chevron-down"></i></button>
             <div class="account-menu glass" id="account-menu" role="menu" hidden></div>
         </div>
+        <button type="button" class="tool" id="tour-btn" title="這一頁的操作教學" aria-label="這一頁的操作教學" hidden><i data-icon="book"></i></button>
         <button type="button" class="tool" id="walker-toggle" aria-pressed="false" title="開啟虛擬夥伴" aria-label="開啟虛擬夥伴"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 1h6v6H5zM4 8h8v4H4zM5 12h2v3H5zM9 12h2v3H9zM2 8h2v3H2zM12 8h2v3h-2z"/></svg></button>
         <button type="button" class="tool" id="font-toggle" title="切換點陣／系統字型" aria-label="切換點陣／系統字型"><i data-icon="art-text"></i></button>
         <button type="button" class="tool" id="theme-toggle" title="主題" aria-label="主題"></button>
@@ -63,6 +64,7 @@
             <div class="tagline">台灣 Minecraft 麥塊生存伺服器｜願所有麥塊玩家都能在此締造輝煌</div>
         </div>
 
+        <div class="home-clock" id="home-clock" hidden><b id="clock-time"></b><span id="clock-date"></span></div>
         <div class="news">
             <div class="news-tabs" id="news-tabs"></div>
             <ul class="news-list" id="news-list"></ul>
@@ -346,8 +348,151 @@
 
                 <h2 id="set-look">外觀</h2>
                 <div class="field">
+                    <label>風格組合</label>
+                    <div class="look-presets" id="look-presets"></div>
+                    <div class="hint">一鍵套用整組外觀，套用後仍可以在下面逐項微調。</div>
+                </div>
+                <div class="field">
                     <label>主題色</label>
                     <div class="swatches" id="set-accent"></div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-buttons">按鈕風格</label>
+                        <select id="set-buttons">
+                            <option value="pixel">方塊（Minecraft 立體按鈕）</option>
+                            <option value="flat">扁平（現代簡約）</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-corners">邊角</label>
+                        <select id="set-corners">
+                            <option value="square">方正</option>
+                            <option value="rounded">圓潤</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-cards">實例卡片</label>
+                        <select id="set-cards">
+                            <option value="comfy">舒適</option>
+                            <option value="compact">緊湊</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-content-width">內容寬度</label>
+                        <select id="set-content-width">
+                            <option value="standard">標準</option>
+                            <option value="wide">寬版</option>
+                            <option value="full">全寬</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-density">介面密度</label>
+                        <select id="set-density">
+                            <option value="comfy">舒適</option>
+                            <option value="compact">緊湊</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-accent-bar">強調色邊條</label>
+                        <select id="set-accent-bar">
+                            <option value="thick">粗</option>
+                            <option value="thin">細</option>
+                            <option value="none">無</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-rail-style">側欄樣式</label>
+                        <select id="set-rail-style">
+                            <option value="glass">玻璃</option>
+                            <option value="solid">實色</option>
+                            <option value="accent">主題色</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-cover-height">實例封面高度</label>
+                        <select id="set-cover-height">
+                            <option value="short">矮</option>
+                            <option value="normal">標準</option>
+                            <option value="tall">高</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-cursor">滑鼠游標</label>
+                        <select id="set-cursor">
+                            <option value="system">系統</option>
+                            <option value="pixel">像素（Minecraft 風格）</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-bg-filter">背景色調</label>
+                        <select id="set-bg-filter">
+                            <option value="none">原色</option>
+                            <option value="mono">黑白</option>
+                            <option value="sepia">懷舊</option>
+                            <option value="cool">冷色</option>
+                            <option value="warm">暖色</option>
+                            <option value="vivid">鮮豔</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-home-layout">主頁版面</label>
+                        <select id="set-home-layout">
+                            <option value="standard">標準（公告在左、分流在右）</option>
+                            <option value="mirrored">左右對調</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="set-panel">內容面板不透明度：<b id="set-panel-value"></b></label>
+                    <input type="range" id="set-panel" min="60" max="100" step="5">
+                    <div class="hint">調低後會透出主頁背景，面板加上霧化效果，文字仍保持清楚。</div>
+                </div>
+                <div class="field">
+                    <label for="set-dim">背景暗化：<b id="set-dim-value"></b></label>
+                    <input type="range" id="set-dim" min="0" max="80" step="5">
+                    <div class="hint">背景圖片太亮、看不清公告或分流資訊時調高。</div>
+                </div>
+                <div class="field">
+                    <label for="set-blur">背景模糊：<b id="set-blur-value"></b></label>
+                    <input type="range" id="set-blur" min="0" max="20" step="2">
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-bg-motion">背景緩慢縮放（讓靜態背景圖有呼吸感，「減少動畫效果」開啟時不會動）</label>
+                </div>
+                <div class="field">
+                    <label for="set-tagline">主頁標語</label>
+                    <input type="text" id="set-tagline" maxlength="60" placeholder="留空使用輝煌預設標語">
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-brand">主頁顯示輝煌標誌與標語</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-card-details">實例卡片顯示版本標籤與遊玩時數</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-thin-scroll">細捲軸</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-clock">主頁顯示時鐘</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-click-sound">按鈕點擊音效</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-rail-labels">左側欄顯示文字</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-news">主頁顯示公告欄</label>
+                </div>
+                <div class="toolbar">
+                    <button type="button" class="mc" id="btn-look-reset"><i data-icon="reload"></i>還原預設外觀</button>
                 </div>
                 <div class="field">
                     <label>主頁背景</label>
