@@ -503,6 +503,7 @@ function renderUpdate() {
 }
 
 const PAGE_KEY = 'brilliant.settings.page';
+const GROUP_KEY = 'brilliant.settings.lookGroup';
 
 function initPages(view) {
     const pages = [...view.querySelectorAll(':scope > h2')].map((title) => {
@@ -517,6 +518,32 @@ function initPages(view) {
     });
     const links = [...view.querySelectorAll('#settings-nav [data-jump]')];
     const search = $('#settings-search');
+    const lookPage = pages.find((p) => p.dataset.page === 'set-look');
+    const groupNames = ['風格'];
+    for (const block of [...lookPage.children].slice(1)) {
+        if (block.matches('h3.look-group')) groupNames.push(block.textContent);
+        block.dataset.group = String(groupNames.length - 1);
+    }
+    let group = '0';
+    try {
+        group = localStorage.getItem(GROUP_KEY) || '0';
+    } catch {}
+    if (!groupNames[group]) group = '0';
+    const groupTabs = h('div', { class: 'segmented look-tabs', role: 'tablist', 'aria-label': '外觀分類' },
+        ...groupNames.map((name, i) => h('button', {
+            type: 'button',
+            role: 'tab',
+            'data-group': String(i),
+            onclick: () => {
+                group = String(i);
+                try {
+                    localStorage.setItem(GROUP_KEY, group);
+                } catch {}
+                render();
+                $('.page-wrap').scrollTop = 0;
+            }
+        }, name)));
+    lookPage.querySelector('h2').after(groupTabs);
     let current = '';
     try {
         current = localStorage.getItem(PAGE_KEY) || '';
@@ -529,16 +556,19 @@ function initPages(view) {
             const title = page.querySelector('h2').textContent.toLowerCase();
             let hit = false;
             for (const block of page.children) {
-                if (block.nodeName === 'H2') continue;
+                if (block.nodeName === 'H2' || block === groupTabs) continue;
                 const text = `${title} ${block.textContent.toLowerCase()}`;
                 const match = words.every((w) => text.includes(w));
                 block.classList.toggle('search-miss', !match);
+                block.classList.toggle('group-off', !words.length && block.dataset.group !== undefined && (block.dataset.group !== group || block.matches('h3.look-group')));
                 hit ||= match;
             }
             page.hidden = words.length ? !hit : page.dataset.page !== current;
             if (words.length && hit) found++;
         }
         for (const link of links) link.setAttribute('aria-current', String(!words.length && link.dataset.jump === current));
+        groupTabs.hidden = words.length > 0;
+        for (const tab of groupTabs.children) tab.setAttribute('aria-selected', String(tab.dataset.group === group));
         $('#settings-empty').hidden = !words.length || found > 0;
     };
     const show = (id) => {

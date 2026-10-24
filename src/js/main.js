@@ -30,8 +30,12 @@ const TITLES = {
     about: '關於啟動器'
 };
 
+const scrollMemory = {};
+
 function show(view) {
     const name = TITLES[view] ? view : 'home';
+    const wrap = $('.page-wrap');
+    if (document.body.dataset.view) scrollMemory[document.body.dataset.view] = wrap.scrollTop;
     document.body.dataset.view = name;
     document.title = name === 'home' ? '輝煌啟動器' : `${TITLES[name]}｜輝煌啟動器`;
     $$('.view').forEach((el) => el.classList.toggle('active', el.id === `view-${name}`));
@@ -42,7 +46,7 @@ function show(view) {
         active.enterTimer = setTimeout(() => active.classList.remove('entering'), 700);
     }
     $$('.rail a').forEach((el) => el.classList.toggle('active', el.dataset.view === (name === 'mods' ? 'instances' : name)));
-    $('.page-wrap').scrollTop = 0;
+    wrap.scrollTop = scrollMemory[name] ?? 0;
 }
 
 const THEMES = {

@@ -1747,3 +1747,8 @@ h3.look-group { margin: 28px 0 12px; padding: 6px 10px; font-size: calc(14px * v
 :root[data-corners="rounded"] .bg-pin { border-radius: 8px; }
 .look-author { margin-left: 8px; font-size: calc(11px * var(--fs, 1)); font-weight: 400; color: var(--text-subtle); }
 .look-code { width: 100%; min-height: 96px; font-family: monospace; font-size: calc(12px * var(--fs, 1)); word-break: break-all; }
+
+.group-off { display: none !important; }
+.look-tabs { display: flex; flex-wrap: wrap; margin: 4px 0 16px; }
+.look-tabs[hidden] { display: none; }
+.look-tabs button { flex: 1 1 auto; }
