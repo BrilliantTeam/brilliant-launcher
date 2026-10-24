@@ -2,6 +2,7 @@ import { api, fileSrc, pickFile } from '../api.js';
 import { $, acceptFiles, clear, confirm, dialog, dismissDialog, fail, h, toast, guard, RECYCLE_NOTE } from '../ui.js';
 import { icon } from '../icons.js';
 import { avatarUrl, emit, loadAccounts, loadInstances, on, refreshAvatar, selectedAccount, store } from '../store.js';
+import { provide } from '../commands.js';
 
 const profiles = new Map();
 
@@ -68,7 +69,7 @@ export async function addOffline() {
     }
 }
 
-async function select(account) {
+export async function select(account) {
     await api.select_account({ id: account.id }).catch(fail);
     store.settings.selectedAccount = account.id;
     emit('accounts');
@@ -223,7 +224,8 @@ function stage(seq, { skin, slim, cape, name, fallback }) {
         viewer.autoRotateSpeed = 0.5;
         viewer.controls.enableZoom = false;
         viewer.controls.addEventListener('start', () => { if (viewer) viewer.autoRotate = false; });
-        if (name) viewer.nameTag = name;
+        viewerName = name;
+        if (name && !store.settings?.streamerMode) viewer.nameTag = name;
         viewer.renderPaused = document.body.dataset.view !== 'accounts';
         const play = (key) => {
             animationKey = key;
@@ -554,7 +556,13 @@ export async function refreshSessions() {
     if (broken.length) toast(`${broken.join('、')} 的登入已失效，請到「帳號」頁重新登入。`, 'warn');
 }
 
+let viewerName = '';
+
 export function initAccounts() {
+    on('settings', () => {
+        if (viewer) viewer.nameTag = viewerName && !store.settings?.streamerMode ? viewerName : null;
+    });
+    provide('selectAccount', select);
     $('#btn-login-msa').addEventListener('click', guard(loginMicrosoft));
     $('#btn-login-offline').addEventListener('click', guard(addOffline));
     on('accounts', render);

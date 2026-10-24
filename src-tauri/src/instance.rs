@@ -47,6 +47,7 @@ pub struct Instance {
     pub account: String,
     pub group: String,
     pub accent: String,
+    pub note: String,
 }
 
 impl Instance {
@@ -72,6 +73,7 @@ impl Instance {
         clean_jvm_args(&mut self.jvm_args);
         clean_env_vars(&mut self.env_vars);
         crate::config::clean_hex(&mut self.accent);
+        crate::config::clean_text(&mut self.note, 2000);
         for (field, max) in [(&mut self.java_path, 1024), (&mut self.wrapper, 1024), (&mut self.image, 1024), (&mut self.icon, 1024), (&mut self.group, 24), (&mut self.account, 64), (&mut self.active_profile, 24)] {
             clean_line(field, max);
         }
@@ -522,13 +524,65 @@ mod general_tests {
         s.toast_seconds = 0;
         s.slide_seconds = 9999;
         s.dark_from = 99;
-        s.font = "comic".into();
+        s.font = "custom".into();
         s.theme = "schedule".into();
         s.clean();
         assert_eq!((s.weather.as_str(), s.bg_color.as_str(), s.bg_color2.as_str(), s.bg_pin.as_str(), s.play_text.chars().count()), ("none", "", "#00ff00", "", 12));
         assert_eq!(s.hidden_shards, vec!["s1.brilliantw.net".to_string()]);
         assert_eq!((s.rail_order.clone(), s.rail_hidden.clone(), s.hidden_tools.clone()), (vec!["home".to_string(), "log".to_string()], vec!["album".to_string()], vec!["font-toggle".to_string()]));
         assert_eq!((s.font_scale, s.toast_seconds, s.slide_seconds, s.dark_from, s.font.as_str(), s.theme.as_str()), (130, 2, 300, 23, "pixel", "schedule"));
+        s.font = "custom".into();
+        s.custom_font = "C:/media/font-1.ttf".into();
+        s.clean();
+        assert_eq!(s.font, "custom");
+        s.shortcuts.insert("play".into(), "Ctrl+Enter".into());
+        s.shortcuts.insert("bad".into(), "Ctrl+<script>".into());
+        s.shortcuts.insert("../x".into(), "Ctrl+K".into());
+        s.global_shortcut = "Ctrl+Alt+B".into();
+        s.rail_links = vec![
+            crate::config::RailLink { name: "Wiki".into(), target: "https://www.brilliantw.net/".into() },
+            crate::config::RailLink { name: "壞".into(), target: "javascript:alert(1)".into() },
+            crate::config::RailLink { name: "資料夾".into(), target: "D:\\Minecraft\\maps".into() },
+            crate::config::RailLink { name: "檔".into(), target: "file:///C:/x".into() },
+        ];
+        s.profiles = vec![crate::config::Profile { name: "筆電".into(), data: serde_json::json!({"memoryMb": 2048}) }, crate::config::Profile { name: "壞".into(), data: serde_json::json!([1]) }];
+        s.clean();
+        assert_eq!(s.shortcuts.get("play").map(String::as_str), Some("Ctrl+Enter"));
+        assert_eq!(s.shortcuts.get("bad").map(String::as_str), Some(""));
+        assert!(!s.shortcuts.contains_key("../x"));
+        assert_eq!(s.global_shortcut, "Ctrl+Alt+B");
+        assert_eq!(s.rail_links.iter().map(|l| l.name.as_str()).collect::<Vec<_>>(), vec!["Wiki", "資料夾"]);
+        assert_eq!(s.profiles[1].data, serde_json::json!({}));
+        s.home_widgets = vec![
+            crate::config::WidgetPos { id: "clock".into(), x: 250.0, y: -3.0, scale: 9.0, visible: true },
+            crate::config::WidgetPos { id: "evil".into(), x: 1.0, y: 1.0, scale: 1.0, visible: true },
+            crate::config::WidgetPos { id: "clock".into(), x: 5.0, y: 5.0, scale: 1.0, visible: true },
+            crate::config::WidgetPos { id: "note".into(), x: f64::NAN, y: 10.0, scale: 0.0, visible: true },
+        ];
+        s.color_overrides.insert("dark.text".into(), "#ffffff".into());
+        s.color_overrides.insert("dark.evil".into(), "#000000".into());
+        s.color_overrides.insert("light.border".into(), "red".into());
+        s.countdown_at = -5;
+        s.clean();
+        assert_eq!(s.home_widgets.iter().map(|w| (w.id.as_str(), w.x, w.y, w.scale)).collect::<Vec<_>>(), vec![("clock", 100.0, 0.0, 2.0), ("note", 0.0, 10.0, 1.0)]);
+        assert_eq!(s.color_overrides.len(), 1);
+        assert_eq!(s.countdown_at, 0);
+        assert_eq!(s.fonts, vec![crate::config::MediaItem { path: "C:/media/font-1.ttf".into(), name: "自訂字型".into() }]);
+        s.music = "C:/media/music-1.mp3".into();
+        s.music_mode = "party".into();
+        s.clean();
+        assert_eq!((s.playlist.len(), s.music_mode.as_str()), (1, "loop"));
+        s.playlist.push(crate::config::MediaItem { path: "C:/media/music-1.mp3".into(), name: "重複".into() });
+        s.playlist.push(crate::config::MediaItem { path: "C:/media/music-2.mp3".into(), name: String::new() });
+        s.music = "C:/gone.mp3".into();
+        s.clean();
+        assert_eq!(s.playlist.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), vec!["自訂音樂", "自訂音樂"]);
+        assert_eq!(s.music, "C:/media/music-1.mp3");
+        s.fonts.clear();
+        s.custom_font = "C:/media/font-9.ttf".into();
+        s.fonts.push(crate::config::MediaItem { path: "C:/media/font-2.ttf".into(), name: "圓體".into() });
+        s.clean();
+        assert_eq!(s.custom_font, "C:/media/font-2.ttf");
         assert_eq!((s.button_style.as_str(), s.corners.as_str(), s.card_size.as_str(), s.panel_opacity, s.bg_dim), ("pixel", "square", "comfy", 60, 80));
         assert_eq!(s.tours_seen, vec!["instances".to_string()]);
         assert_eq!((s.content_width.as_str(), s.density.as_str(), s.accent_bar.as_str(), s.bg_blur), ("standard", "comfy", "thick", 20));

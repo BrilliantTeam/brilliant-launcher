@@ -134,6 +134,86 @@ pub struct Settings {
     pub toast_position: String,
     pub toast_seconds: u32,
     pub launch_splash: bool,
+    pub custom_font: String,
+    pub fonts: Vec<MediaItem>,
+    pub playlist: Vec<MediaItem>,
+    pub music_mode: String,
+    pub shortcuts: std::collections::BTreeMap<String, String>,
+    pub global_shortcut: String,
+    pub rail_links: Vec<RailLink>,
+    pub profiles: Vec<Profile>,
+    pub streamer_mode: bool,
+    pub instance_order: Vec<String>,
+    pub options_sync: bool,
+    pub options_sync_groups: Vec<String>,
+    pub window_mode: String,
+    pub window_monitor: String,
+    pub remember_window: bool,
+    pub mod_snapshots: bool,
+    pub home_widgets: Vec<WidgetPos>,
+    pub home_note: String,
+    pub countdown_title: String,
+    pub countdown_at: i64,
+    pub color_overrides: std::collections::BTreeMap<String, String>,
+    pub language: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct WidgetPos {
+    pub id: String,
+    pub x: f64,
+    pub y: f64,
+    pub scale: f64,
+    pub visible: bool,
+}
+
+pub const WIDGETS: [&str; 9] = ["brand", "clock", "news", "dock", "social", "credit", "stats", "note", "countdown"];
+
+pub const COLOR_TOKENS: [&str; 12] = ["content-bg", "content-bg-alt", "content-bg-sunken", "text", "text-subtle", "border", "border-soft", "panel-face", "chrome-bg", "chrome-ink", "glass-bg", "glass-ink"];
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct RailLink {
+    pub name: String,
+    pub target: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct Profile {
+    pub name: String,
+    pub data: serde_json::Value,
+}
+
+fn clean_combo(value: &mut String) {
+    clean_line(value, 40);
+    if !value.chars().all(|c| c.is_ascii_alphanumeric() || "+,.;/-=[]'`\\".contains(c)) {
+        value.clear();
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct MediaItem {
+    pub path: String,
+    pub name: String,
+}
+
+fn clean_media(list: &mut Vec<MediaItem>, legacy: &str, fallback: &str) {
+    if list.is_empty() && !legacy.is_empty() {
+        list.push(MediaItem { path: legacy.to_string(), name: fallback.to_string() });
+    }
+    let mut seen = std::collections::HashSet::new();
+    for item in list.iter_mut() {
+        clean_line(&mut item.path, 1024);
+        clean_line(&mut item.name, 80);
+        if item.name.is_empty() {
+            item.name = fallback.to_string();
+        }
+    }
+    list.retain(|item| !item.path.is_empty() && seen.insert(item.path.clone()));
+    list.truncate(50);
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -275,6 +355,28 @@ impl Default for Settings {
             toast_position: "bottom-right".into(),
             toast_seconds: 6,
             launch_splash: false,
+            custom_font: String::new(),
+            fonts: Vec::new(),
+            playlist: Vec::new(),
+            music_mode: "loop".into(),
+            shortcuts: Default::default(),
+            global_shortcut: String::new(),
+            rail_links: Vec::new(),
+            profiles: Vec::new(),
+            streamer_mode: false,
+            instance_order: Vec::new(),
+            options_sync: false,
+            options_sync_groups: crate::gameopts::GROUPS.iter().map(|g| g.to_string()).collect(),
+            window_mode: "normal".into(),
+            window_monitor: String::new(),
+            remember_window: false,
+            mod_snapshots: false,
+            home_widgets: Vec::new(),
+            home_note: String::new(),
+            countdown_title: String::new(),
+            countdown_at: 0,
+            color_overrides: Default::default(),
+            language: "zh-TW".into(),
         }
     }
 }
@@ -292,6 +394,8 @@ pub fn clean_text(value: &mut String, max: usize) {
 }
 
 pub const RAIL_VIEWS: &[&str] = &["home", "profile", "album", "instances", "explore", "accounts", "log", "settings", "about"];
+
+pub static STREAMER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 pub fn clean_hex(value: &mut String) {
     if !(value.len() == 7 && value.starts_with('#') && value[1..].chars().all(|c| c.is_ascii_hexdigit())) {
@@ -357,7 +461,62 @@ impl Settings {
         self.music_volume = self.music_volume.min(100);
         clean_choice(&mut self.after_launch, &["hide", "keep", "exit"], "hide");
         clean_choice(&mut self.theme, &["auto", "light", "dark", "schedule"], "auto");
-        clean_choice(&mut self.font, &["pixel", "system", "naikai", "serif"], "pixel");
+        clean_choice(&mut self.font, &["pixel", "system", "naikai", "serif", "custom"], "pixel");
+        clean_line(&mut self.custom_font, 1024);
+        clean_media(&mut self.fonts, &self.custom_font, "自訂字型");
+        if !self.fonts.iter().any(|f| f.path == self.custom_font) {
+            self.custom_font = self.fonts.first().map(|f| f.path.clone()).unwrap_or_default();
+        }
+        if self.font == "custom" && self.custom_font.is_empty() {
+            self.font = "pixel".into();
+        }
+        clean_choice(&mut self.music_mode, &["loop", "shuffle", "one"], "loop");
+        self.shortcuts.retain(|k, _| k.len() <= 40 && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
+        self.shortcuts.values_mut().for_each(clean_combo);
+        while self.shortcuts.len() > 80 {
+            let last = self.shortcuts.keys().last().cloned().unwrap_or_default();
+            self.shortcuts.remove(&last);
+        }
+        clean_combo(&mut self.global_shortcut);
+        for link in self.rail_links.iter_mut() {
+            clean_line(&mut link.name, 12);
+            clean_line(&mut link.target, 1024);
+        }
+        self.rail_links.retain(|l| {
+            let lower = l.target.to_ascii_lowercase();
+            !l.name.is_empty() && (lower.starts_with("https://") || lower.starts_with("http://") || !lower.contains("://") && !lower.starts_with("javascript:") && !lower.starts_with("data:"))
+        });
+        self.rail_links.retain(|l| !l.target.is_empty());
+        self.rail_links.truncate(8);
+        for profile in self.profiles.iter_mut() {
+            clean_line(&mut profile.name, 24);
+            if !profile.data.is_object() || profile.data.to_string().len() > 65536 {
+                profile.data = serde_json::json!({});
+            }
+        }
+        self.profiles.retain(|p| !p.name.is_empty());
+        self.profiles.truncate(10);
+        self.instance_order.retain(|id| id.len() <= 128);
+        self.instance_order.dedup();
+        self.instance_order.truncate(500);
+        clean_list(&mut self.options_sync_groups, &crate::gameopts::GROUPS);
+        clean_choice(&mut self.window_mode, &["normal", "borderless"], "normal");
+        clean_line(&mut self.window_monitor, 64);
+        let mut seen = std::collections::HashSet::new();
+        self.home_widgets.retain(|w| WIDGETS.contains(&w.id.as_str()) && seen.insert(w.id.clone()));
+        for w in self.home_widgets.iter_mut() {
+            w.x = if w.x.is_finite() { w.x.clamp(0.0, 100.0) } else { 0.0 };
+            w.y = if w.y.is_finite() { w.y.clamp(0.0, 100.0) } else { 0.0 };
+            w.scale = if w.scale.is_finite() && w.scale > 0.0 { w.scale.clamp(0.5, 2.0) } else { 1.0 };
+        }
+        clean_text(&mut self.home_note, 500);
+        clean_line(&mut self.countdown_title, 40);
+        self.countdown_at = self.countdown_at.max(0);
+        self.color_overrides.retain(|key, _| key.split_once('.').is_some_and(|(mode, token)| (mode == "light" || mode == "dark") && COLOR_TOKENS.contains(&token)));
+        self.color_overrides.values_mut().for_each(clean_hex);
+        self.color_overrides.retain(|_, v| !v.is_empty());
+        clean_choice(&mut self.language, &["zh-TW", "zh-CN", "en"], "zh-TW");
+        STREAMER.store(self.streamer_mode, std::sync::atomic::Ordering::Relaxed);
         clean_choice(&mut self.mod_channel, &["release", "beta", "alpha"], "release");
         clean_choice(&mut self.launcher_update, &["auto", "notify", "off"], "auto");
         clean_choice(&mut self.mod_update, &["auto", "keep"], "auto");
@@ -425,6 +584,10 @@ impl Settings {
         clean_env_vars(&mut self.env_vars);
         for (field, max) in [(&mut self.java_path, 1024), (&mut self.pre_launch_cmd, 1024), (&mut self.post_exit_cmd, 1024), (&mut self.wrapper, 1024), (&mut self.proxy, 512), (&mut self.background, 1024), (&mut self.music, 1024), (&mut self.quick_join, 260)] {
             clean_line(field, max);
+        }
+        clean_media(&mut self.playlist, &self.music, "自訂音樂");
+        if !self.music.is_empty() && !self.playlist.iter().any(|m| m.path == self.music) {
+            self.music = self.playlist.first().map(|m| m.path.clone()).unwrap_or_default();
         }
         if !self.quick_join.is_empty() && !valid_host(&self.quick_join) {
             self.quick_join.clear();

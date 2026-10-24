@@ -1,6 +1,7 @@
 import { api, FILE_TYPES, fileSrc, isType, openUrl, pickFile, pickFiles, watchFolders } from '../api.js';
 import { $, $$, acceptFiles, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, pickColor, rangeFill, toast, guard, RECYCLE_NOTE } from '../ui.js';
 import { accountFor, emit, isRunning, loadInstances, on, saveSettings, selectedInstance, store } from '../store.js';
+import { provide } from '../commands.js';
 import { icon, iconOf, INSTANCE_ICONS, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
 
 const isSvg = (path) => /\.svg$/i.test(path || '');
@@ -58,8 +59,9 @@ async function editorDialog(title, source) {
                 onclick: (e) => pickColor(e.currentTarget, accent || '#8491ff', (value) => { accent = value; renderAccentBox(); }, '實例主題色')
             }),
             h('span', {}, '實例主題色', h('small', {}, accent || '跟隨啟動器')),
-            accent ? h('button', { type: 'button', class: 'link', onclick: () => { accent = ''; renderAccentBox(); } }, '清除') : null));
+            accent ? h('button', { type: 'button', class: 'mc icon-btn reset-btn', title: '改回跟隨啟動器的主題色', 'aria-label': '改回跟隨啟動器的主題色', onclick: () => { accent = ''; renderAccentBox(); } }, icon('reload')) : null));
     renderAccentBox();
+    const note = h('textarea', { maxlength: '2000', placeholder: '例如：這個實例用來建築，記得先備份；模組清單與設定說明⋯' }, source.note ?? '');
     let pickedImage;
     const preview = h('div', { class: 'image-preview' });
     const imageClear = h('button', { type: 'button', class: 'mc', onclick: () => { pickedImage = ''; renderPreview(); } }, '移除圖片');
@@ -215,6 +217,7 @@ async function editorDialog(title, source) {
         h('div', { class: 'field' }, h('label', {}, '分組'), group, h('div', { class: 'hint' }, '同一組的實例會放在一起，可一鍵全部啟動，也能在分組設定裡共用存檔、資源包、光影或截圖。留空表示不分組。')),
         h('div', { class: 'field' }, h('label', {}, '圖示'), iconPicker),
         imageField,
+        h('div', { class: 'field' }, h('label', {}, '筆記（選填）'), note, h('div', { class: 'hint' }, '會顯示在實例頁上方，最多 2000 字。')),
         h('div', { class: 'field' }, h('label', {}, '主題色（選填）'), accentBox, h('div', { class: 'hint' }, '進入這個實例的模組與資源頁時，整頁會換成這個顏色，卡片也會跟著變色。')),
         h('div', { class: 'field' }, h('label', {}, 'Minecraft 版本'), mcVersion, modSupported.size ? showAllBox : ''),
         h('div', { class: 'field' }, h('label', {}, '模組載入器'), loader),
@@ -267,6 +270,7 @@ async function editorDialog(title, source) {
         account: account.value,
         group: group.input.value.trim().slice(0, 24),
         accent,
+        note: note.value.trim(),
         pickedImage
     };
 }
@@ -321,6 +325,62 @@ export async function editInstance(instance) {
         await applyImage(draft.id, pickedImage);
         await loadInstances();
         toast('已儲存');
+    } catch (error) {
+        fail(error);
+    }
+}
+
+async function saveAsTemplate(instance) {
+    const input = h('input', { type: 'text', value: instance.name, maxlength: '40' });
+    const ok = await dialog({
+        title: '存成範本',
+        content: h('div', { class: 'field' }, h('label', {}, '範本名稱'), input,
+            h('div', { class: 'hint' }, '範本會保存實例設定、模組、config、資源包、光影、遊戲選項與伺服器清單（不含存檔與截圖），之後可以在「從範本建立」快速建立相同的實例。')),
+        buttons: [{ label: '取消', value: false }, { label: '儲存', value: true }]
+    });
+    if (ok !== true) return;
+    toast('正在儲存範本，模組多時需要一些時間⋯');
+    try {
+        await api.save_template({ id: instance.id, name: input.value.trim() });
+        toast(`已存成範本「${input.value.trim()}」`);
+    } catch (error) {
+        fail(error);
+    }
+}
+
+async function fromTemplate() {
+    const templates = (await api.list_templates().catch(() => null)) ?? [];
+    if (!templates.length) {
+        return dialog({ title: '從範本建立', content: h('p', {}, '還沒有任何範本。在實例的「⋯」選單選「存成範本」就能建立。'), buttons: [{ label: '知道了', value: null }] });
+    }
+    let chosen = templates[0].key;
+    const name = h('input', { type: 'text', value: templates[0].name, maxlength: '40' });
+    const list = h('div', { class: 'media-list' });
+    const paint = () => clear(list).append(...templates.map((t) => h('label', { class: `media-row${t.key === chosen ? ' current' : ''}` },
+        h('input', { type: 'radio', name: 'tpl', checked: t.key === chosen, onchange: () => { chosen = t.key; name.value = t.name; paint(); } }),
+        h('span', { class: 'media-name' }, iconOf(t.instance.icon), t.name, h('small', {}, `Minecraft ${t.instance.mcVersion}・${t.instance.loader === 'fabric' ? 'Fabric' : '原版'}・${new Date(t.createdAt * 1000).toLocaleDateString('zh-TW')}`)),
+        h('button', { type: 'button', class: 'mc icon-btn danger', title: '刪除範本', 'aria-label': `刪除範本「${t.name}」`, onclick: async (e) => {
+            e.preventDefault();
+            if (!(await confirm(`要刪除範本「${t.name}」嗎？${RECYCLE_NOTE}`, '刪除'))) return;
+            await api.delete_template({ key: t.key }).then(() => {
+                templates.splice(templates.indexOf(t), 1);
+                if (chosen === t.key) chosen = templates[0]?.key;
+                paint();
+            }, fail);
+        } }, icon('trash')))));
+    paint();
+    const ok = await dialog({
+        title: '從範本建立',
+        content: h('div', {}, list, h('div', { class: 'field' }, h('label', {}, '新實例名稱'), name)),
+        buttons: [{ label: '取消', value: false }, { label: '建立', value: true }]
+    });
+    if (ok !== true || !chosen) return;
+    if (nameTaken(name.value)) return toast(`已經有叫「${name.value.trim()}」的實例了，請換一個名稱`, 'warn');
+    toast('正在從範本建立實例⋯');
+    try {
+        const created = await api.create_from_template({ key: chosen, name: name.value.trim() });
+        await loadInstances();
+        toast(`已建立「${created.name}」`);
     } catch (error) {
         fail(error);
     }
@@ -827,6 +887,7 @@ export function moreMenu(instance) {
         navigator.userAgent.includes('Mac') ? null : item('external-link', '建立桌面捷徑', () => createShortcut(instance)),
         item('bug', '匯出診斷包', () => exportDiagnostics(instance)),
         item('copy', '複製實例', () => duplicateInstance(instance)),
+        item('archive', '存成範本⋯', () => saveAsTemplate(instance)),
         item('trash', '刪除實例', () => removeInstance(instance), 'danger'));
     const toggle = h('button', {
         type: 'button',
@@ -868,7 +929,7 @@ export async function playInstance(instance) {
     emit('launch');
 }
 
-async function manageMods(instance) {
+export async function manageMods(instance) {
     await selectInstance(instance).catch(fail);
     openStore(instance.loader === 'fabric' ? 'mod' : 'resourcepack', 'installed');
     location.hash = '#mods';
@@ -1166,9 +1227,15 @@ const SORTS = {
     created: (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
 };
 
+function manualRank(instance) {
+    const order = store.settings?.instanceOrder ?? [];
+    const index = order.indexOf(instance.id);
+    return index < 0 ? order.length + store.instances.indexOf(instance) : index;
+}
+
 function sortMembers(members) {
     const pinned = pinnedKey();
-    const by = SORTS[store.settings?.instanceSort] ?? (() => 0);
+    const by = SORTS[store.settings?.instanceSort] ?? ((a, b) => manualRank(a) - manualRank(b));
     return [...members].sort((a, b) => (pinned === `i:${b.id}`) - (pinned === `i:${a.id}`) || by(a, b));
 }
 
@@ -1196,7 +1263,7 @@ function render() {
     const pinned = pinnedKey();
     const ordered = [...groups.filter((g) => pinned === `g:${g.name}`), ...groups.filter((g) => pinned !== `g:${g.name}`)];
     const loose = store.instances.filter((i) => !i.group || !groups.some((g) => g.name === i.group));
-    const sections = [...ordered.filter((g) => pinned === `g:${g.name}`), ...(loose.length ? [{ name: '', icon: '', note: '' }] : []), ...ordered.filter((g) => pinned !== `g:${g.name}`)];
+    const sections = [...ordered.filter((g) => pinned === `g:${g.name}`), ...ordered.filter((g) => pinned !== `g:${g.name}`), ...(loose.length ? [{ name: '', icon: '', note: '' }] : [])];
     const folded = foldedGroups();
     for (const group of sections) {
         const members = sortMembers(group.name ? store.instances.filter((i) => i.group === group.name) : loose);
@@ -1422,9 +1489,16 @@ function moveDrag(event) {
     for (const el of $$('#instance-list .drop-over')) el.classList.remove('drop-over');
     const target = dropTargetAt(event.clientX, event.clientY);
     const mark = target?.el ?? target;
+    for (const el of $$('#instance-list .drop-before, #instance-list .drop-after')) el.classList.remove('drop-before', 'drop-after');
     if (dragState.item.kind === 'instance' && target) {
         const header = $(`#instance-list .inst-group[data-group="${CSS.escape(target.group)}"]`);
         header?.classList.add('drop-over');
+        const card = target.el.closest('.inst-card');
+        if (card && card.dataset.id !== dragState.item.id) {
+            const rect = card.getBoundingClientRect();
+            const after = rect.width > rect.height * 1.6 ? event.clientY > rect.top + rect.height / 2 : event.clientX > rect.left + rect.width / 2;
+            card.classList.add(after ? 'drop-after' : 'drop-before');
+        }
     } else mark?.classList?.add('drop-over');
 }
 
@@ -1436,7 +1510,7 @@ function cancelDrag() {
         document.body.classList.remove('inst-dragging');
         dragEndedAt = Date.now();
     }
-    for (const el of $$('#instance-list .drop-over')) el.classList.remove('drop-over');
+    for (const el of $$('#instance-list .drop-over, #instance-list .drop-before, #instance-list .drop-after')) el.classList.remove('drop-over', 'drop-before', 'drop-after');
     dragState = null;
 }
 
@@ -1459,7 +1533,19 @@ async function endDrag(event) {
         return;
     }
     const instance = store.instances.find((i) => i.id === state.item.id);
-    if (!instance || (instance.group || '') === target.group) return;
+    if (!instance) return;
+    const card = target.el.closest('.inst-card');
+    if (card && card.dataset.id !== instance.id) {
+        const ids = [...store.instances].sort((a, b) => manualRank(a) - manualRank(b)).map((i) => i.id).filter((id) => id !== instance.id);
+        const rect = card.getBoundingClientRect();
+        const after = rect.width > rect.height * 1.6 ? event.clientY > rect.top + rect.height / 2 : event.clientX > rect.left + rect.width / 2;
+        ids.splice(ids.indexOf(card.dataset.id) + (after ? 1 : 0), 0, instance.id);
+        const changes = { instanceOrder: ids };
+        if ((store.settings?.instanceSort ?? 'manual') !== 'manual') changes.instanceSort = 'manual';
+        await saveSettings(changes).catch(fail);
+        if (changes.instanceSort) toast('已切換為手動排序，可以繼續拖曳卡片調整順序');
+    }
+    if ((instance.group || '') === target.group) return;
     await setGroupOf([instance], target.group);
     toast(target.group ? `已把「${instance.name}」移到「${target.group}」` : `已把「${instance.name}」移出分組`);
 }
@@ -1515,9 +1601,12 @@ async function assignGroup(instance, name) {
 }
 
 export function initInstances() {
+    provide('playInstance', playInstance);
+    provide('manageMods', manageMods);
     $('#btn-new-instance').addEventListener('click', guard(() => createInstance()));
     $('#btn-quick-instance').addEventListener('click', guard(() => quickCreate().catch(fail)));
     $('#btn-import').addEventListener('click', guard(() => importFlow().catch(fail)));
+    $('#btn-from-template').addEventListener('click', guard(() => fromTemplate().catch(fail)));
     $('#btn-new-group').addEventListener('click', guard(() => groupDialog().catch(fail)));
     $('#btn-refresh-instances').addEventListener('click', guard(async () => {
         store.versions = null;

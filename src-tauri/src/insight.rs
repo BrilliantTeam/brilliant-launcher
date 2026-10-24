@@ -205,6 +205,17 @@ fn tail(path: &Path, limit: u64) -> String {
 
 pub fn scrub_report(text: &str) -> String {
     let mut out: String = text.lines().map(crate::advanced::redact).collect::<Vec<_>>().join("\n");
+    if config::STREAMER.load(std::sync::atomic::Ordering::Relaxed) {
+        let names: Vec<String> = std::fs::read_to_string(crate::paths::accounts_file())
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|a| a.get("name")?.as_str().map(str::to_string))
+            .collect();
+        out = streamer_scrub(&out, &names);
+    }
     if let Some(home) = dirs::home_dir() {
         let plain = home.to_string_lossy().to_string();
         for form in [plain.clone(), plain.replace('\\', "/"), plain.replace('\\', "\\\\")] {
@@ -212,6 +223,25 @@ pub fn scrub_report(text: &str) -> String {
                 out = out.replace(&form, "~");
             }
         }
+    }
+    out
+}
+
+const BREAKS: &str = "()[]<>\"',;";
+
+fn streamer_scrub(text: &str, names: &[String]) -> String {
+    let mut out = String::with_capacity(text.len());
+    for word in text.split_inclusive(|c: char| c.is_whitespace() || BREAKS.contains(c)) {
+        let bare = word.trim_end_matches(|c: char| c.is_whitespace() || BREAKS.contains(c));
+        let tail = &word[bare.len()..];
+        let email = bare.find('@').is_some_and(|i| i > 0 && bare[i + 1..].contains('.'));
+        let host = bare.split(':').next().unwrap_or("");
+        let ip = host.split('.').count() == 4 && host.split('.').all(|p| !p.is_empty() && p.len() <= 3 && p.parse::<u16>().is_ok_and(|n| n <= 255));
+        out.push_str(if email || ip { "<已隱藏>" } else { bare });
+        out.push_str(tail);
+    }
+    for name in names.iter().filter(|n| n.chars().count() >= 3) {
+        out = out.replace(name.as_str(), "<玩家>");
     }
     out
 }
@@ -511,6 +541,14 @@ pub async fn save_png(name: String, data: String) -> R<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn streamer_scrub_hides_ip_email_and_names() {
+        let text = "Connecting to 203.0.113.7:25565, user Q_YUN mail q@example.com version 1.21.11 ok";
+        let out = streamer_scrub(text, &["Q_YUN".to_string(), "ab".to_string()]);
+        assert_eq!(out, "Connecting to <已隱藏>, user <玩家> mail <已隱藏> version 1.21.11 ok");
+        assert_eq!(streamer_scrub("Minecraft 26.3 at (1.2.3.4)", &[]), "Minecraft 26.3 at (<已隱藏>)");
+    }
 
     #[test]
     fn risky_mods_are_recognised() {

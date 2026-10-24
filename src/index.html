@@ -66,6 +66,9 @@
         </div>
 
         <div class="home-clock" id="home-clock" hidden><b id="clock-time"></b><span id="clock-date"></span></div>
+        <div class="widget glass" id="w-stats" hidden></div>
+        <div class="widget glass" id="w-note" hidden></div>
+        <div class="widget glass" id="w-countdown" hidden></div>
         <div class="news">
             <div class="news-tabs" id="news-tabs"></div>
             <ul class="news-list" id="news-list"></ul>
@@ -101,6 +104,7 @@
 
         <div class="social">
             <button type="button" class="scenic-toggle" id="scenic-toggle" title="賞景模式：收起所有面板（Esc 還原）" aria-pressed="false"><i data-icon="eye"></i></button>
+            <button type="button" class="scenic-toggle" id="home-edit-toggle" title="編輯主頁版面：拖曳元件、調整大小、開關小工具" aria-label="編輯主頁版面"><i data-icon="edit"></i></button>
             <a href="#" data-url="https://www.brilliantw.net/" title="輝煌官網"><i data-icon="external-link"></i></a>
             <a href="#" data-url="https://discord.brilliantw.net/" title="Discord 社群"><i data-icon="discord"></i></a>
             <a href="#" data-url="https://www.brilliantw.net/%E8%B4%8A%E5%8A%A9%E8%B3%87%E8%A8%8A/" title="贊助輝煌"><i data-icon="heart"></i></a>
@@ -166,6 +170,7 @@
                     <button type="button" class="mc primary" id="btn-new-instance"><i data-icon="plus"></i>建立實例</button>
                     <button type="button" class="mc" id="btn-quick-instance"><i data-icon="zap"></i>一鍵建立輝煌實例</button>
                     <button type="button" class="mc" id="btn-import"><i data-icon="download"></i>從其他啟動器匯入</button>
+                    <button type="button" class="mc" id="btn-from-template"><i data-icon="copy"></i>從範本建立</button>
                     <span class="spacer"></span>
                     <button type="button" class="mc" id="btn-new-group"><i data-icon="folder"></i>建立分組</button>
                     <button type="button" class="mc" id="btn-refresh-instances"><i data-icon="reload"></i>重新整理</button>
@@ -217,6 +222,7 @@
                         <button type="button" class="mc primary" id="btn-update-all" hidden>全部更新</button>
                         <button type="button" class="mc" id="btn-add-mod">安裝本機檔案⋯</button>
                         <button type="button" class="mc" id="btn-open-mods">開啟資料夾</button>
+                        <button type="button" class="mc" id="btn-mod-snapshots"><i data-icon="reload"></i>模組快照</button>
                         <span class="spacer"></span>
                         <input type="search" id="installed-search" class="installed-search" spellcheck="false" aria-label="搜尋已安裝">
                         <button type="button" class="mc" id="btn-refresh-mods">重新整理</button>
@@ -288,6 +294,40 @@
                 <div class="field">
                     <label><input type="checkbox" id="set-fullscreen">全螢幕啟動</label>
                 </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-window-mode">遊戲視窗</label>
+                        <select id="set-window-mode">
+                            <option value="normal">一般視窗</option>
+                            <option value="borderless">無邊框全螢幕（切換程式不會黑屏）</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-window-monitor">開在哪個螢幕</label>
+                        <select id="set-window-monitor"></select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-remember-window">記住遊戲視窗的位置與大小</label>
+                    <div class="toolbar">
+                        <button type="button" class="mc" id="btn-forget-window">忘記記住的位置</button>
+                    </div>
+                    <div class="hint">遊戲視窗設定目前只支援 Windows。「無邊框全螢幕」會在遊戲視窗出現後自動套用，不要同時勾選上方的「全螢幕啟動」。</div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-options-sync">同步遊戲選項到所有實例</label>
+                    <div class="check-row" id="sync-groups">
+                        <label><input type="checkbox" data-sync="keys">按鍵設定</label>
+                        <label><input type="checkbox" data-sync="video">畫面（FOV、視野距離、亮度、介面大小⋯）</label>
+                        <label><input type="checkbox" data-sync="audio">音量</label>
+                        <label><input type="checkbox" data-sync="controls">滑鼠與聊天</label>
+                    </div>
+                    <div class="toolbar">
+                        <button type="button" class="mc" id="btn-sync-capture"><i data-icon="download"></i>以目前選擇的實例為準</button>
+                        <span class="toolbar-label" id="sync-state"></span>
+                    </div>
+                    <div class="hint">開啟後，每次遊戲結束會記下勾選的選項，下次開任何實例時自動套用，不用每個實例重設。語言、資源包等其他選項不受影響。</div>
+                </div>
                 <div class="field">
                     <label for="set-java">Java 執行檔</label>
                     <select id="set-java"></select>
@@ -349,6 +389,15 @@
 
                 <h2 id="set-look">外觀</h2>
                 <div class="field">
+                    <label for="set-language">語言 Language</label>
+                    <select id="set-language" data-no-i18n>
+                        <option value="zh-TW">繁體中文</option>
+                        <option value="zh-CN">简体中文</option>
+                        <option value="en">English</option>
+                    </select>
+                    <div class="hint">切換後介面會重新載入。實例名稱、遊戲日誌與官網公告維持原文。</div>
+                </div>
+                <div class="field">
                     <label>風格組合</label>
                     <div class="look-presets" id="look-presets"></div>
                     <div class="hint">一鍵套用整組外觀，套用後仍可以在下面逐項微調。</div>
@@ -401,6 +450,14 @@
                     <div class="hint">留空使用預設顏色。</div>
                 </div>
                 <div class="field">
+                    <label>進階配色</label>
+                    <div class="hint" id="color-editor-mode"></div>
+                    <div class="color-fields color-editor" id="color-editor"></div>
+                    <div class="toolbar">
+                        <button type="button" class="mc" id="btn-colors-reset"><i data-icon="reload"></i>還原這個主題的配色</button>
+                    </div>
+                </div>
+                <div class="field">
                     <label><input type="checkbox" id="set-contrast">高對比模式（文字與邊框更清楚，適合視力較弱或螢幕反光時使用）</label>
                 </div>
 
@@ -413,6 +470,7 @@
                             <option value="system">黑體（一般閱讀）</option>
                             <option value="naikai">內海字體（圓潤手寫）</option>
                             <option value="serif">明體</option>
+                            <option value="custom">自訂字型</option>
                         </select>
                     </div>
                     <div class="field">
@@ -422,6 +480,14 @@
                             <option value="modern">現代（粗黑體、緊密字距）</option>
                         </select>
                     </div>
+                </div>
+                <div class="field">
+                    <label>自訂字型</label>
+                    <div class="media-list" id="font-list"></div>
+                    <div class="toolbar">
+                        <button type="button" class="mc" id="btn-font-pick"><i data-icon="art-text"></i>新增字型檔</button>
+                    </div>
+                    <div class="hint">支援 TTF、OTF、WOFF、WOFF2，可以一次選多個，也可以直接把字型檔拖進來。點「使用」切換；右上角的字型按鈕也會輪流切換到這些字型。字型缺少的字（例如中文）會用黑體補上。</div>
                 </div>
                 <div class="field">
                     <label for="set-font-scale">文字大小：<b id="set-font-scale-value"></b></label>
@@ -598,6 +664,31 @@
                     <div class="hint">只留下自己常去的分流；隱藏的分流仍可以用遊戲內的指令前往。</div>
                 </div>
                 <div class="field">
+                    <label>主頁小工具與版面</label>
+                    <div class="toolbar">
+                        <button type="button" class="mc primary" id="btn-home-edit"><i data-icon="edit"></i>編輯主頁版面</button>
+                    </div>
+                    <div class="hint">可以拖曳每個主頁元件、調整大小，並開關「遊玩統計」「便條」「活動倒數」等小工具；主頁右側的筆形按鈕也能進入編輯。</div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-countdown-title">自訂倒數名稱</label>
+                        <input type="text" id="set-countdown-title" maxlength="40" placeholder="例如：期末考結束、伺服器週年">
+                    </div>
+                    <div class="field">
+                        <label>倒數到</label>
+                        <div class="date-pick" id="set-countdown-at">
+                            <select data-part="y" aria-label="年"></select>
+                            <select data-part="m" aria-label="月"></select>
+                            <select data-part="d" aria-label="日"></select>
+                            <select data-part="h" aria-label="時"></select>
+                            <select data-part="i" aria-label="分"></select>
+                            <button type="button" class="mc icon-btn reset-btn" id="btn-countdown-clear" title="清除倒數" aria-label="清除倒數"><i data-icon="close"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="hint">「活動倒數」小工具預設顯示輝煌的下一個官方活動；填了自訂倒數且時間還沒到時，改為顯示自訂的倒數。</div>
+                <div class="field">
                     <label for="set-tagline">主頁標語</label>
                     <input type="text" id="set-tagline" maxlength="60" placeholder="留空使用輝煌預設標語">
                 </div>
@@ -658,16 +749,22 @@
                 </div>
                 <div class="field">
                     <label>背景音樂</label>
+                    <div class="media-list" id="music-list"></div>
                     <div class="toolbar">
-                        <button type="button" class="mc" id="btn-music-pick"><i data-icon="music"></i>選擇音樂</button>
-                        <button type="button" class="mc" id="btn-music-clear">移除音樂</button>
+                        <button type="button" class="mc" id="btn-music-pick"><i data-icon="music"></i>新增音樂</button>
+                        <button type="button" class="mc" id="btn-music-next"><i data-icon="arrow-right"></i>下一首</button>
+                        <select id="set-music-mode" aria-label="播放模式">
+                            <option value="loop">依序輪播</option>
+                            <option value="shuffle">隨機播放</option>
+                            <option value="one">單曲循環</option>
+                        </select>
                         <span class="toolbar-label" id="music-state"></span>
                     </div>
                 </div>
                 <div class="field">
                     <label for="set-volume">音樂音量：<b id="set-volume-value"></b></label>
                     <input type="range" id="set-volume" min="0" max="100" step="5">
-                    <div class="hint">支援 MP3、OGG、WAV、M4A、FLAC、Opus。遊戲執行中或啟動器縮到背景時會自動暫停。</div>
+                    <div class="hint">支援 MP3、OGG、WAV、M4A、FLAC、Opus，可以一次加入多首。遊戲執行中或啟動器縮到背景時會自動暫停。</div>
                 </div>
                 <div class="field">
                     <label><input type="checkbox" id="set-walkers">虛擬夥伴（官網的飯娘和寵物會在啟動器裡散步，可以抓起來丟）</label>
@@ -693,7 +790,7 @@
                     <div class="field">
                         <label for="set-inst-sort">預設排序</label>
                         <select id="set-inst-sort">
-                            <option value="manual">建立順序</option>
+                            <option value="manual">手動排序（拖曳卡片調整）</option>
                             <option value="recent">最近遊玩</option>
                             <option value="name">名稱</option>
                             <option value="playtime">遊玩時數</option>
@@ -772,6 +869,17 @@
                     <label>側欄項目</label>
                     <div class="rail-editor" id="rail-editor"></div>
                     <div class="hint">用箭頭調整順序，取消勾選可以隱藏不常用的分頁；首頁、實例、設定與關於不能隱藏。</div>
+                </div>
+                <div class="field">
+                    <label>側欄捷徑</label>
+                    <div class="media-list" id="rail-links"></div>
+                    <div class="link-add">
+                        <input type="text" id="rail-link-name" maxlength="12" placeholder="名稱，例如：輝煌 Wiki" aria-label="捷徑名稱">
+                        <input type="text" id="rail-link-target" maxlength="1024" placeholder="網址（https://⋯）或資料夾路徑" aria-label="網址或資料夾路徑">
+                        <button type="button" class="mc" id="btn-rail-link-folder"><i data-icon="folder"></i>選資料夾</button>
+                        <button type="button" class="mc primary" id="btn-rail-link-add"><i data-icon="plus"></i>新增</button>
+                    </div>
+                    <div class="hint">最多 8 個，會顯示在側欄下方；側欄只顯示名稱的前 4 個字。</div>
                 </div>
                 <div class="field">
                     <label>導航列顯示</label>
@@ -875,6 +983,10 @@
                         <label><input type="checkbox" id="set-mod-auto">開始遊戲前自動更新全部模組</label>
                         <div class="hint">已鎖定版本的模組與「凍結模組」的實例會跳過。</div>
                     </div>
+                    <div class="field">
+                        <label><input type="checkbox" id="set-mod-snapshots">更新或安裝模組前自動存一份快照</label>
+                        <div class="hint">每個實例保留最近 5 份；模組壞掉時到實例頁的「模組快照」一鍵還原。10 分鐘內連續安裝只會存一份。</div>
+                    </div>
                 </div>
                 <div class="field">
                     <label for="set-proxy">代理伺服器</label>
@@ -953,6 +1065,27 @@
                 </div>
 
                 <h2 id="set-data">資料</h2>
+                <div class="field">
+                    <label>設定方案</label>
+                    <div class="media-list" id="profile-list"></div>
+                    <div class="link-add">
+                        <input type="text" id="profile-name" maxlength="24" placeholder="方案名稱，例如：筆電省電、桌機全開、直播用" aria-label="方案名稱">
+                        <button type="button" class="mc primary" id="btn-profile-save"><i data-icon="save"></i>把目前設定存成方案</button>
+                    </div>
+                    <div class="hint">方案會記住記憶體、JVM 參數、啟動流程與所有外觀設定，一鍵切換；帳號、實例、分組與下載的檔案不受影響。也可以在指令面板搜尋「方案」快速套用。</div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-streamer">直播模式</label>
+                    <div class="hint">隱藏畫面上的帳號名稱、信箱、伺服器 IP、電腦路徑與截圖座標；上傳日誌、匯出診斷包時也會一併遮蔽 IP、信箱與玩家名稱。</div>
+                </div>
+                <div class="field">
+                    <label>磁碟用量</label>
+                    <div class="toolbar">
+                        <button type="button" class="mc" id="btn-disk-scan"><i data-icon="archive"></i>分析磁碟用量</button>
+                        <span class="toolbar-label" id="disk-total"></span>
+                    </div>
+                    <div class="disk-usage" id="disk-usage"></div>
+                </div>
                 <div class="toolbar">
                     <button type="button" class="mc" id="btn-open-root"><i data-icon="folder"></i>開啟啟動器資料夾</button>
                     <button type="button" class="mc" id="btn-clean-cache"><i data-icon="trash"></i>清理快取</button>
@@ -962,11 +1095,24 @@
                 <div class="hint">清理快取會刪除可自動重建的 natives、7 天前的日誌，以及回收資料夾裡超過 30 天的項目，不會動到存檔、模組與設定。<br>匯出設定會把啟動器設定與所有實例的設定打包到「下載」資料夾（不含帳號登入資料與遊戲檔案），換電腦時匯入就能還原，遊戲檔案會在第一次開始遊戲時自動下載。</div>
 
                 <h2 id="set-keys">快捷鍵</h2>
-                <div class="keys">
-                    <div><kbd class="mod-key">Ctrl</kbd> + <kbd>Enter</kbd><span>開始遊戲</span></div>
-                    <div><kbd class="mod-key">Ctrl</kbd> + <kbd>1</kbd>～<kbd>9</kbd><span>切換左側分頁</span></div>
-                    <div><kbd class="mod-key">Ctrl</kbd> + <kbd>,</kbd><span>開啟設定</span></div>
-                    <div><kbd class="mod-key">Ctrl</kbd> + <kbd>F</kbd><span>搜尋（設定頁搜尋設定，其他頁搜尋模組）</span></div>
+                <div class="field">
+                    <label>指令面板</label>
+                    <div class="hint">按 <kbd class="mod-key">Ctrl</kbd> + <kbd>K</kbd>（可在下方修改）打開，輸入文字就能啟動實例、跳到任何設定、開資料夾、切換帳號或套用設定方案。</div>
+                </div>
+                <div class="field">
+                    <label>系統層級快捷鍵</label>
+                    <div class="toolbar">
+                        <button type="button" class="mc combo-btn" id="btn-global-shortcut"></button>
+                        <span class="toolbar-label">啟動器縮到背景或工作列時也有效，按下就直接開始遊戲（目前選擇的實例）。</span>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>啟動器內的快捷鍵</label>
+                    <div class="shortcut-list" id="shortcut-list"></div>
+                    <div class="toolbar">
+                        <button type="button" class="mc" id="btn-shortcuts-reset"><i data-icon="reload"></i>全部還原預設</button>
+                    </div>
+                    <div class="hint">點按鈕後按下新的組合鍵；Esc 取消、Backspace 清除。輸入文字時只有含 Ctrl 或 Alt 的快捷鍵會生效。</div>
                 </div>
                 <div class="empty-state" id="settings-empty" hidden>找不到符合的設定</div>
             </section>

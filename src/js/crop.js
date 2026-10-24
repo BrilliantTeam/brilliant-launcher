@@ -45,11 +45,11 @@ export async function importPicture(path, { width, height, title, hint, vectorSv
         const rect = await cropDialog(source.img, { width, height, title, hint, vector: true });
         return rect ? api.save_svg({ text: croppedSvg(source, rect) }) : null;
     }
-    if (KEEP.test(imported)) return imported;
+    if (KEEP.test(imported)) return api.keep_image({ path: imported });
     const img = await loadImage(fileSrc(imported));
     const ratio = img.naturalWidth / img.naturalHeight;
     const target = width / height;
-    if (Math.abs(ratio - target) / target < 0.03 && img.naturalWidth <= width * 1.5) return imported;
+    if (Math.abs(ratio - target) / target < 0.03 && img.naturalWidth <= width * 1.5) return api.keep_image({ path: imported });
     const data = await cropDialog(img, { width, height, title, hint });
     return data ? api.save_image({ data }) : null;
 }

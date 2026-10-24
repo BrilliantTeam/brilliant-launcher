@@ -262,6 +262,10 @@ const VIDEO_EXTS: [&str; 2] = ["mp4", "webm"];
 const AUDIO_EXTS: [&str; 6] = ["mp3", "ogg", "wav", "m4a", "flac", "opus"];
 
 pub async fn copy_media(src: &Path, exts: &[&str], max_mb: u64, dir: &Path, prefix: &str) -> R<String> {
+    store_media(src, exts, max_mb, dir, prefix, true).await
+}
+
+async fn store_media(src: &Path, exts: &[&str], max_mb: u64, dir: &Path, prefix: &str, replace: bool) -> R<String> {
     let ext = src
         .extension()
         .map(|e| e.to_string_lossy().to_lowercase())
@@ -272,12 +276,14 @@ pub async fn copy_media(src: &Path, exts: &[&str], max_mb: u64, dir: &Path, pref
         bail!("檔案太大了（上限 {max_mb} MB）");
     }
     tokio::fs::create_dir_all(dir).await?;
-    for entry in std::fs::read_dir(dir).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
-        if entry.file_name().to_string_lossy().starts_with(prefix) {
-            let _ = std::fs::remove_file(entry.path());
+    if replace {
+        for entry in std::fs::read_dir(dir).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
+            if entry.file_name().to_string_lossy().starts_with(prefix) {
+                let _ = std::fs::remove_file(entry.path());
+            }
         }
     }
-    let dest = dir.join(format!("{prefix}{}.{ext}", now_secs()));
+    let dest = dir.join(if replace { format!("{prefix}{}.{ext}", now_secs()) } else { unique_name(prefix, &ext) });
     tokio::fs::copy(src, &dest).await.context("複製檔案失敗")?;
     Ok(dest.to_string_lossy().to_string())
 }
@@ -310,12 +316,33 @@ pub async fn import_image(path: String) -> R<String> {
     let day_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(86400);
     for entry in std::fs::read_dir(&dir).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
         let stale = entry.metadata().and_then(|m| m.modified()).map(|t| t < day_ago).unwrap_or(false);
-        if stale && entry.file_name().to_string_lossy().starts_with("upload-") {
+        if stale && entry.file_name().to_string_lossy().starts_with(STAGING) {
             let _ = std::fs::remove_file(entry.path());
         }
     }
-    let dest = dir.join(unique_name("upload-", &ext));
+    let dest = dir.join(unique_name(STAGING, &ext));
     tokio::fs::copy(&src, &dest).await.context("複製圖片失敗")?;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+const STAGING: &str = "staging-";
+
+fn kept_path(dir: &Path, path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_string_lossy().to_string();
+    let rest = name.strip_prefix(STAGING)?;
+    if path.parent()?.canonicalize().ok()? != dir.canonicalize().ok()? {
+        return None;
+    }
+    Some(dir.join(format!("image-{rest}")))
+}
+
+#[tauri::command]
+pub async fn keep_image(path: String) -> R<String> {
+    let src = PathBuf::from(&path);
+    let Some(dest) = kept_path(&images_dir(), &src) else {
+        return Ok(path);
+    };
+    tokio::fs::rename(&src, &dest).await.context("保存圖片失敗")?;
     Ok(dest.to_string_lossy().to_string())
 }
 
@@ -367,13 +394,48 @@ pub async fn save_image(data: String) -> R<String> {
     Ok(dest.to_string_lossy().to_string())
 }
 
+fn removable_media(media: &Path, target: &Path) -> bool {
+    let name = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let parent = target.parent().and_then(|p| p.canonicalize().ok());
+    parent.is_some() && parent == media.canonicalize().ok() && (name.starts_with("font-") || name.starts_with("music-"))
+}
+
+#[tauri::command]
+pub async fn remove_media(path: String) -> R<()> {
+    let media = paths::root().join("media");
+    let target = PathBuf::from(&path);
+    if !target.exists() {
+        return Ok(());
+    }
+    if !removable_media(&media, &target) {
+        bail!("只能移除啟動器媒體資料夾裡的字型或音樂");
+    }
+    let name = target.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    tokio::task::spawn_blocking(move || paths::discard("移除的字型與音樂", &[(&target, name.as_str())]))
+        .await?
+        .context("移到回收資料夾失敗")?;
+    Ok(())
+}
+
+fn is_font(head: &[u8; 4]) -> bool {
+    matches!(head, [0, 1, 0, 0] | b"OTTO" | b"true" | b"ttcf" | b"wOFF" | b"wOF2")
+}
+
 #[tauri::command]
 pub async fn set_media(kind: String, path: String) -> R<String> {
     let src = PathBuf::from(&path);
     let media = paths::root().join("media");
     match kind.as_str() {
         "background" => copy_media(&src, &[&IMAGE_EXTS[..], &VIDEO_EXTS[..]].concat(), 500, &media, "background-").await,
-        "music" => copy_media(&src, &AUDIO_EXTS, 200, &media, "music-").await,
+        "music" => store_media(&src, &AUDIO_EXTS, 200, &media, "music-", false).await,
+        "font" => {
+            let mut head = [0u8; 4];
+            let read = std::fs::File::open(&src).and_then(|mut f| std::io::Read::read_exact(&mut f, &mut head));
+            if read.is_err() || !is_font(&head) {
+                bail!("這個檔案不是有效的字型檔（TTF、OTF、WOFF、WOFF2）");
+            }
+            store_media(&src, &["ttf", "otf", "woff", "woff2"], 50, &media, "font-", false).await
+        }
         _ => bail!("不支援的媒體類型"),
     }
 }
@@ -489,6 +551,46 @@ pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn staged_images_become_permanent() {
+        let dir = std::env::temp_dir().join(format!("bl-img-{}", now_secs()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let staged = dir.join("staging-abc.png");
+        std::fs::write(&staged, b"x").unwrap();
+        assert_eq!(kept_path(&dir, &staged), Some(dir.join("image-abc.png")));
+        assert_eq!(kept_path(&dir, &dir.join("image-abc.png")), None);
+        assert_eq!(kept_path(&dir, &dir.join("upload-old.png")), None);
+        assert_eq!(kept_path(&dir, &std::env::temp_dir().join("staging-abc.png")), None);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn only_launcher_media_is_removable() {
+        let media = std::env::temp_dir().join(format!("bl-media-{}", now_secs()));
+        std::fs::create_dir_all(&media).unwrap();
+        for name in ["font-1.ttf", "music-1.mp3", "background-1.png"] {
+            std::fs::write(media.join(name), b"x").unwrap();
+        }
+        assert!(removable_media(&media, &media.join("font-1.ttf")));
+        assert!(removable_media(&media, &media.join("music-1.mp3")));
+        assert!(!removable_media(&media, &media.join("background-1.png")));
+        assert!(!removable_media(&media, &media.join("sub/../../font-1.ttf")));
+        assert!(!removable_media(&media, &std::env::temp_dir().join("font-1.ttf")));
+        std::fs::remove_dir_all(&media).unwrap();
+    }
+
+    #[test]
+    fn font_signatures() {
+        let head = |name: &str| {
+            let bytes = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../src/assets").join(name)).unwrap();
+            [bytes[0], bytes[1], bytes[2], bytes[3]]
+        };
+        assert!(is_font(&head("font/Minecraft.otf")));
+        assert!(is_font(&head("font/NaikaiFont-Regular.ttf")));
+        assert!(!is_font(&head("icon.png")));
+        assert!(is_font(b"wOF2") && !is_font(b"PK"));
+    }
 
     #[test]
     fn zip_round_trip_skips_session_lock() {

@@ -3,6 +3,36 @@ import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtByte
 import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, iconOf, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
 import { accentStyle, editInstance, moreMenu, playInstance, selectInstance, shareNotice } from './instances.js';
+
+async function modSnapshots() {
+    const instance = selectedInstance();
+    if (!instance) return;
+    const list = (await api.list_mod_snapshots({ id: instance.id }).catch(() => null)) ?? [];
+    if (!list.length) {
+        return dialog({
+            title: '模組快照',
+            content: h('p', {}, store.settings?.modSnapshots ? '還沒有快照。下次更新或安裝模組前會自動存一份。' : '還沒有快照。可以到「設定 → 進階」開啟「更新或安裝模組前自動存一份快照」。'),
+            buttons: [{ label: '知道了', value: null }]
+        });
+    }
+    let chosen = list[0].key;
+    const rows = h('div', { class: 'media-list' }, ...list.map((s) => h('label', { class: 'media-row' },
+        h('input', { type: 'radio', name: 'snap', checked: s.key === chosen, onchange: () => { chosen = s.key; } }),
+        h('span', { class: 'media-name' }, new Date(s.time * 1000).toLocaleString('zh-TW', { hour12: false }), h('small', {}, `${s.count} 個檔案・${fmtBytes(s.size)}`)))));
+    const ok = await dialog({
+        title: `「${instance.name}」的模組快照`,
+        content: h('div', {}, rows, h('div', { class: 'hint' }, '還原後，目前的模組資料夾會移到回收資料夾，30 天內可以找回。')),
+        buttons: [{ label: '取消', value: false }, { label: '還原這份快照', value: true }]
+    });
+    if (ok !== true) return;
+    try {
+        await api.restore_mod_snapshot({ id: instance.id, key: chosen });
+        toast('已還原模組快照');
+        await loadInstalled('mod');
+    } catch (error) {
+        fail(error);
+    }
+}
 import { renderMarkdown } from '../markdown.js';
 
 const FABRIC_API = 'P7dR8mSH';
@@ -1062,7 +1092,8 @@ function renderHeader() {
                     h('span', {}, icon('zap'), `${fabric ? `Fabric${instance.loaderVersion ? ` ${instance.loaderVersion}` : ''}` : '原版'}・Minecraft ${instance.mcVersion}`),
                     h('span', {}, icon('clock'), fmtDuration(instance.playSeconds)),
                     instance.lastPlayed ? h('span', {}, `上次遊玩 ${new Date(instance.lastPlayed * 1000).toLocaleDateString('zh-TW')}`) : null)
-                : h('div', { class: 'inst-page-meta' }, '請先到「實例」建立或選擇一個實例')),
+                : h('div', { class: 'inst-page-meta' }, '請先到「實例」建立或選擇一個實例'),
+            instance?.note ? h('div', { class: 'inst-note', title: instance.note }, icon('edit'), instance.note) : null),
         instance
             ? h('div', { class: 'inst-page-actions' },
                 h('button', { type: 'button', class: `mc ${running ? 'danger' : 'primary'}`, onclick: () => playInstance(instance) }, icon(running ? 'close' : 'play'), running ? '結束遊戲' : '開始遊戲'),
@@ -1072,6 +1103,7 @@ function renderHeader() {
     for (const button of $$('#kind-tabs button')) button.setAttribute('aria-selected', button.dataset.kind === state.kind ? 'true' : 'false');
     for (const button of $$('.store-tabs button')) button.setAttribute('aria-selected', button.dataset.tab === state.tab ? 'true' : 'false');
     $('#store-explore').hidden = state.tab !== 'explore';
+    $('#btn-mod-snapshots').hidden = state.kind !== 'mod';
     $('#store-installed').hidden = state.tab !== 'installed';
     $('#mod-search').placeholder = `搜尋 Modrinth 上的${KIND_LABEL[state.kind]}⋯⋯`;
     $('#installed-search').placeholder = `搜尋已安裝的${KIND_LABEL[state.kind]}⋯`;
@@ -1265,6 +1297,7 @@ export function initMods() {
         if (picked) await installLocal(Array.isArray(picked) ? picked : [picked]);
     }));
     $('#btn-open-mods').addEventListener('click', () => openFolder({ mod: 'mods', resourcepack: 'resourcepacks', shader: 'shaderpacks' }[state.kind]));
+    $('#btn-mod-snapshots').addEventListener('click', guard(() => modSnapshots().catch(fail)));
     for (const button of $$('[data-folder]')) button.addEventListener('click', () => openFolder(button.dataset.folder));
 
     listen('tauri://drag-enter', (payload) => dropHint(payload ?? {}));

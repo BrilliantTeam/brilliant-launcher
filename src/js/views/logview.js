@@ -33,7 +33,20 @@ function levelOf(line, stderr) {
     return stderr ? 'err' : '';
 }
 
-const lineEl = (line, stderr = false) => h('div', { class: levelOf(line, stderr) }, line || ' ');
+function mask(text) {
+    if (!store.settings?.streamerMode) return text;
+    let out = text
+        .replace(/\b(?:\d{1,3}\.){3}\d{1,3}\b/g, '<已隱藏>')
+        .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '<已隱藏>')
+        .replace(/[A-Za-z]:[\\/]Users[\\/][^\\/\s]+/gi, 'C:\\Users\\<使用者>')
+        .replace(/\/(home|Users)\/[^/\s]+/g, '/$1/<使用者>');
+    for (const account of store.accounts ?? []) {
+        if ((account.name ?? '').length >= 3) out = out.split(account.name).join('<玩家>');
+    }
+    return out;
+}
+
+const lineEl = (line, stderr = false) => h('div', { class: levelOf(line, stderr) }, mask(line) || ' ');
 
 function instanceIds() {
     const ids = store.instances.map((i) => i.id);
@@ -103,7 +116,7 @@ async function showInstance(id) {
     render();
 }
 
-const currentText = () => (source === LIVE ? recentLog(shown).join('\n') : fileText);
+const currentText = () => mask(source === LIVE ? recentLog(shown).join('\n') : fileText);
 
 function search() {
     const query = $('#log-search').value.trim().toLowerCase();

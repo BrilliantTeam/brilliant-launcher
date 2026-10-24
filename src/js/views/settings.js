@@ -1,9 +1,10 @@
-import { api, openUrl, pickFile } from '../api.js';
+import { api, fileSrc, openUrl, pickFile } from '../api.js';
 import { $, $$, acceptFiles, clampNumber, clear, confirm, dialog, fail, fmtBytes, h, pickColor, rangeFill, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { icon } from '../icons.js';
-import { gpuName, isIntegratedGpu } from '../services.js';
+import { gpuName, isIntegratedGpu, nextTrack, nowPlaying } from '../services.js';
 import { SHARDS } from './home.js';
+import { ACTIONS, captureCombo, comboLabel, comboOf, provide, railLinkOpen } from '../commands.js';
 import { playClick } from '../sound.js';
 
 const FIELDS = {
@@ -35,6 +36,7 @@ const FIELDS = {
     usageStats: '#set-usage',
     inheritOptions: '#set-inherit',
     musicVolume: '#set-volume',
+    musicMode: '#set-music-mode',
     memoryMinMb: '#set-memory-min',
     wrapper: '#set-wrapper',
     envVars: '#set-env',
@@ -107,7 +109,15 @@ const FIELDS = {
     clickVolume: '#set-click-volume',
     toastPosition: '#set-toast-pos',
     toastSeconds: '#set-toast-seconds',
-    launchSplash: '#set-launch-splash'
+    launchSplash: '#set-launch-splash',
+    streamerMode: '#set-streamer',
+    windowMode: '#set-window-mode',
+    windowMonitor: '#set-window-monitor',
+    rememberWindow: '#set-remember-window',
+    optionsSync: '#set-options-sync',
+    modSnapshots: '#set-mod-snapshots',
+    countdownTitle: '#set-countdown-title',
+    language: '#set-language'
 };
 
 const LOOK_PRESETS = [
@@ -212,8 +222,280 @@ async function importLook() {
     toast('已匯入外觀');
 }
 
+const previewFamilies = new Map();
+
+function previewFamily(path) {
+    if (!previewFamilies.has(path)) {
+        const family = `BrilliantPreview${previewFamilies.size}`;
+        const face = new FontFace(family, `url("${fileSrc(path)}")`);
+        document.fonts.add(face);
+        face.load().catch(() => {});
+        previewFamilies.set(path, family);
+    }
+    return previewFamilies.get(path);
+}
+
+const fileName = (path) => path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+
+async function removeMedia(key, item) {
+    if (!(await confirm(`要移除「${item.name}」嗎？檔案會移到回收資料夾，30 天內可以找回。`, '移除'))) return;
+    try {
+        await api.remove_media({ path: item.path });
+    } catch (error) {
+        return fail(error);
+    }
+    const list = (store.settings?.[key] ?? []).filter((x) => x.path !== item.path);
+    const patch = { [key]: list };
+    if (key === 'fonts' && store.settings?.customFont === item.path) {
+        patch.customFont = list[0]?.path ?? '';
+        if (!list.length && store.settings?.font === 'custom') patch.font = 'pixel';
+    }
+    if (key === 'playlist' && store.settings?.music === item.path) patch.music = list[0]?.path ?? '';
+    await persist(patch);
+}
+
+function renderMedia() {
+    const settings = store.settings ?? {};
+    const fonts = settings.fonts ?? [];
+    const usingFont = settings.font === 'custom' ? settings.customFont : '';
+    clear($('#font-list')).append(...(fonts.length ? fonts.map((item) => h('div', { class: `media-row${item.path === usingFont ? ' current' : ''}` },
+        h('span', { class: 'media-name' }, item.name, h('small', { style: `font-family:"${previewFamily(item.path)}", sans-serif` }, '輝煌 Brilliant 123')),
+        item.path === usingFont ? h('span', { class: 'badge' }, '使用中') : h('button', { type: 'button', class: 'mc', onclick: () => persist({ font: 'custom', customFont: item.path }) }, '使用'),
+        h('button', { type: 'button', class: 'mc icon-btn danger', title: '移除', 'aria-label': `移除「${item.name}」`, onclick: () => removeMedia('fonts', item) }, icon('trash')))) : [h('div', { class: 'hint' }, '還沒有自訂字型。')]));
+    const tracks = settings.playlist ?? [];
+    const now = nowPlaying();
+    const move = (i, step) => {
+        const next = [...tracks];
+        [next[i], next[i + step]] = [next[i + step], next[i]];
+        persist({ playlist: next });
+    };
+    clear($('#music-list')).append(...(tracks.length ? tracks.map((item, i) => h('div', { class: `media-row${item.path === now ? ' current' : ''}` },
+        h('span', { class: 'media-name' }, item.path === now ? icon('music') : null, item.name),
+        item.path === now ? h('span', { class: 'badge' }, '播放中') : h('button', { type: 'button', class: 'mc', onclick: () => persist({ music: item.path }) }, '播放'),
+        h('button', { type: 'button', class: 'mc icon-btn', title: '往上移', 'aria-label': `${item.name}往上移`, disabled: i === 0, onclick: () => move(i, -1) }, icon('arrow-up')),
+        h('button', { type: 'button', class: 'mc icon-btn', title: '往下移', 'aria-label': `${item.name}往下移`, disabled: i === tracks.length - 1, onclick: () => move(i, 1) }, icon('arrow-down')),
+        h('button', { type: 'button', class: 'mc icon-btn danger', title: '移除', 'aria-label': `移除「${item.name}」`, onclick: () => removeMedia('playlist', item) }, icon('trash')))) : [h('div', { class: 'hint' }, '還沒有背景音樂。')]));
+    $('#music-state').textContent = tracks.length ? `共 ${tracks.length} 首` : '';
+    $('#btn-music-next').disabled = tracks.length < 2;
+}
+
+async function addMedia(kind, paths) {
+    const list = [paths].flat().filter(Boolean);
+    if (!list.length) return [];
+    const added = [];
+    for (const path of list) {
+        try {
+            const saved = await api.set_media({ kind, path });
+            if (kind === 'font') await new FontFace('BrilliantFontCheck', `url("${fileSrc(saved)}")`).load();
+            added.push({ path: saved, name: fileName(path).slice(0, 80) });
+        } catch (error) {
+            fail(error instanceof DOMException ? `「${fileName(path)}」無法載入，可能已損壞或不是字型檔` : error);
+        }
+    }
+    return added;
+}
+
+export function revealSetting(target) {
+    location.hash = '#settings';
+    const page = target.closest('.settings-page')?.dataset.page;
+    if (page) $(`#settings-nav [data-jump="${page}"]`)?.click();
+    const block = target.closest('[data-group]');
+    if (block) $(`.look-tabs button[data-group="${block.dataset.group}"]`)?.click();
+    setTimeout(() => {
+        const box = target.closest('.field, .field-row, h3') ?? target;
+        box.scrollIntoView({ block: 'center' });
+        box.classList.remove('flash');
+        void box.offsetWidth;
+        box.classList.add('flash');
+        (box.querySelector('input, select, button') ?? box).focus?.({ preventScroll: true });
+    }, 80);
+}
+
+function renderShortcuts() {
+    $('#btn-global-shortcut').textContent = comboLabel(store.settings?.globalShortcut || '');
+    clear($('#shortcut-list')).append(...ACTIONS.map((action) => {
+        const combo = comboOf(action.id);
+        const custom = store.settings?.shortcuts?.[action.id] !== undefined;
+        return h('div', { class: 'shortcut-row' },
+            h('span', { class: 'grow' }, action.label),
+            h('button', {
+                type: 'button',
+                class: `mc combo-btn${combo ? '' : ' empty'}`,
+                onclick: async (e) => {
+                    const next = await captureCombo(e.currentTarget);
+                    if (next === null) return;
+                    const clash = next && ACTIONS.find((other) => other.id !== action.id && comboOf(other.id) === next);
+                    const shortcuts = { ...(store.settings?.shortcuts ?? {}), [action.id]: next };
+                    if (clash) shortcuts[clash.id] = '';
+                    await persist({ shortcuts });
+                    if (clash) toast(`「${comboLabel(next)}」原本是「${clash.label}」的快捷鍵，已改給「${action.label}」`, 'warn');
+                }
+            }, comboLabel(combo)),
+            custom ? h('button', { type: 'button', class: 'mc icon-btn reset-btn', title: '還原成預設快捷鍵', 'aria-label': `把「${action.label}」還原成預設快捷鍵`, onclick: () => {
+                const shortcuts = { ...(store.settings?.shortcuts ?? {}) };
+                delete shortcuts[action.id];
+                persist({ shortcuts });
+            } }, icon('reload')) : null);
+    }));
+}
+
+function renderRailLinks() {
+    const links = store.settings?.railLinks ?? [];
+    clear($('#rail-links')).append(...links.map((link, i) => h('div', { class: 'media-row' },
+        h('span', { class: 'media-name' }, icon(/^https?:/i.test(link.target) ? 'external-link' : 'folder'), link.name, h('small', { class: 'sensitive' }, link.target)),
+        h('button', { type: 'button', class: 'mc', onclick: () => railLinkOpen(link) }, '開啟'),
+        h('button', { type: 'button', class: 'mc icon-btn danger', title: '移除', 'aria-label': `移除「${link.name}」`, onclick: () => persist({ railLinks: links.filter((_, j) => j !== i) }) }, icon('trash')))));
+    $('#btn-rail-link-add').disabled = links.length >= 8;
+}
+
+const PROFILE_SKIP = ['selectedAccount', 'selectedInstance', 'notified', 'myReports', 'toursSeen', 'instanceGroups', 'profiles', 'lastAnnouncement', 'alphaUnlocked', 'instanceOrder', 'pinned', 'fonts', 'playlist', 'sharedFolders', 'shortcuts', 'railLinks', 'quickJoin', 'hiddenShards'];
+
+async function applyProfile(profile) {
+    const data = Object.fromEntries(Object.entries(profile.data ?? {}).filter(([key]) => !PROFILE_SKIP.includes(key) && (key in (store.settings ?? {}) || key in LOOK_DEFAULTS)));
+    await persist(data);
+    toast(`已套用設定方案「${profile.name}」`);
+}
+
+function renderProfiles() {
+    const profiles = store.settings?.profiles ?? [];
+    clear($('#profile-list')).append(...(profiles.length ? profiles.map((profile, i) => h('div', { class: 'media-row' },
+        h('span', { class: 'media-name' }, icon('sliders'), profile.name, h('small', {}, `${Object.keys(profile.data ?? {}).length} 項設定`)),
+        h('button', { type: 'button', class: 'mc primary', onclick: () => applyProfile(profile) }, '套用'),
+        h('button', { type: 'button', class: 'mc', title: '用目前的設定覆蓋這個方案', onclick: async () => {
+            if (!(await confirm(`要用目前的設定覆蓋「${profile.name}」嗎？`, '覆蓋'))) return;
+            await persist({ profiles: profiles.map((p, j) => (j === i ? { name: p.name, data: profileSnapshot() } : p)) });
+            toast(`已更新「${profile.name}」`);
+        } }, '更新'),
+        h('button', { type: 'button', class: 'mc icon-btn danger', title: '刪除', 'aria-label': `刪除「${profile.name}」`, onclick: async () => {
+            if (!(await confirm(`要刪除設定方案「${profile.name}」嗎？目前的設定不會改變。`, '刪除'))) return;
+            await persist({ profiles: profiles.filter((_, j) => j !== i) });
+        } }, icon('trash')))) : [h('div', { class: 'hint' }, '還沒有設定方案。')]));
+    $('#btn-profile-save').disabled = profiles.length >= 10;
+}
+
+const profileSnapshot = () => Object.fromEntries(Object.entries({ ...LOOK_DEFAULTS, ...(store.settings ?? {}) }).filter(([key]) => !PROFILE_SKIP.includes(key)));
+
+async function renderScreens() {
+    const screens = (await api.list_screens().catch(() => null)) ?? [];
+    const select = $('#set-window-monitor');
+    const current = store.settings?.windowMonitor ?? '';
+    clear(select).append(h('option', { value: '' }, '自動（遊戲預設）'), ...screens.map((s, i) => h('option', { value: s.name }, `螢幕 ${i + 1}（${s.width}×${s.height}）`)));
+    if (current && !screens.some((s) => s.name === current)) select.append(h('option', { value: current }, '之前選的螢幕（目前沒有接上）'));
+    select.value = current;
+    select.disabled = !screens.length;
+}
+
+function renderSync() {
+    const groups = store.settings?.optionsSyncGroups ?? ['keys', 'video', 'audio', 'controls'];
+    for (const box of $$('#sync-groups [data-sync]')) {
+        box.checked = groups.includes(box.dataset.sync);
+    }
+    api.options_sync_count().then((n) => { $('#sync-state').textContent = n ? `已記下 ${n} 項選項` : '還沒有記下任何選項，玩一次遊戲或按左邊按鈕'; }, () => {});
+}
+
+const DISK_COLORS = ['#ffab19', '#4c97ff', '#59c059', '#9966ff', '#ff6680', '#40bf9f', '#cf63cf', '#ff8c1a', '#5cb1d6', '#8c8c8c', '#b3b300', '#e64d4d'];
+
+async function scanDisk() {
+    const box = clear($('#disk-usage'));
+    box.append(h('div', { class: 'hint' }, '分析中，檔案多時需要幾秒⋯'));
+    let usage;
+    try {
+        usage = await api.disk_usage();
+    } catch (error) {
+        clear(box);
+        return fail(error);
+    }
+    $('#disk-total').textContent = `共 ${fmtBytes(usage.total)}`;
+    const bar = (parts, total) => h('div', { class: 'disk-bar' }, ...parts.filter((p) => p.size > 0).map((p, i) => h('i', { style: `width:${(p.size / Math.max(1, total)) * 100}%;background:${DISK_COLORS[i % DISK_COLORS.length]}`, title: `${p.label} ${fmtBytes(p.size)}` })));
+    const legend = (parts) => h('div', { class: 'disk-legend' }, ...parts.filter((p) => p.size > 0).map((p, i) => h('span', {}, h('i', { style: `background:${DISK_COLORS[i % DISK_COLORS.length]}` }), `${p.label} ${fmtBytes(p.size)}`)));
+    const shared = [...usage.shared].sort((a, b) => b.size - a.size);
+    const sharedTotal = shared.reduce((n, p) => n + p.size, 0);
+    clear(box).append(
+        usage.suggestions.length ? h('div', { class: 'disk-suggest' }, h('b', {}, '清理建議'), ...usage.suggestions.map((s) => h('div', { class: 'media-row' },
+            h('span', { class: 'media-name' }, s.label, h('small', {}, s.detail)),
+            h('b', { class: 'disk-size' }, fmtBytes(s.size)),
+            h('button', { type: 'button', class: `mc${s.key === 'trash' ? ' danger' : ''}`, onclick: guard(async () => {
+                if (!(await confirm(`${s.label}？\n${s.detail}\n可以釋放約 ${fmtBytes(s.size)}。`, '清理'))) return;
+                try {
+                    const freed = await api.clean_disk({ key: s.key });
+                    toast(`已釋放 ${fmtBytes(freed)}`);
+                    scanDisk();
+                } catch (error) {
+                    fail(error);
+                }
+            }) }, '清理')))) : h('div', { class: 'hint' }, '目前沒有需要清理的項目。'),
+        h('div', { class: 'disk-group' }, h('b', {}, `啟動器共用檔案　${fmtBytes(sharedTotal)}`), bar(shared, sharedTotal), legend(shared)),
+        ...usage.instances.map((inst) => h('details', { class: 'disk-group' },
+            h('summary', {}, h('b', {}, inst.name), h('span', { class: 'disk-size' }, fmtBytes(inst.total)),
+                h('div', { class: 'disk-bar mini' }, h('i', { style: `width:${(inst.total / Math.max(1, usage.instances[0]?.total ?? 1)) * 100}%;background:var(--accent)` }))),
+            bar(inst.parts, inst.total), legend(inst.parts),
+            h('div', { class: 'toolbar' }, h('button', { type: 'button', class: 'mc', onclick: () => api.open_instance_folder({ id: inst.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail) }, icon('folder'), '開啟資料夾')))));
+}
+
+const COLOR_LABELS = [
+    ['content-bg', '內容背景'], ['content-bg-alt', '次要背景'], ['content-bg-sunken', '凹陷區塊'], ['panel-face', '面板與卡片'],
+    ['text', '文字'], ['text-subtle', '次要文字'], ['border', '邊框'], ['border-soft', '淡邊框'],
+    ['chrome-bg', '導航列與側欄背景'], ['chrome-ink', '導航列與側欄文字'], ['glass-bg', '主頁玻璃面板'], ['glass-ink', '主頁玻璃面板文字']
+];
+
+function cssHex(value) {
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.fillStyle = '#808080';
+    ctx.fillStyle = value.trim() || '#808080';
+    const out = ctx.fillStyle;
+    if (out.startsWith('#')) return out;
+    const [r, g, b] = (out.match(/\d+(\.\d+)?/g) ?? [128, 128, 128]).map(Number);
+    return `#${[r, g, b].map((n) => Math.round(n).toString(16).padStart(2, '0')).join('')}`;
+}
+
+function renderColorEditor() {
+    const mode = document.documentElement.dataset.mode || 'dark';
+    const overrides = store.settings?.colorOverrides ?? {};
+    $('#color-editor-mode').textContent = `正在編輯${mode === 'dark' ? '深色' : '亮色'}主題的配色；切換亮暗後可以另外設定另一組。`;
+    clear($('#color-editor')).append(...COLOR_LABELS.map(([token, label]) => {
+        const key = `${mode}.${token}`;
+        const custom = overrides[key];
+        const current = custom || cssHex(getComputedStyle(document.documentElement).getPropertyValue(`--${token}`));
+        return h('div', { class: 'color-field' },
+            h('button', {
+                type: 'button',
+                class: 'swatch',
+                style: `--swatch:${current}`,
+                'aria-label': `調整「${label}」`,
+                onclick: (e) => pickColor(e.currentTarget, current, (value) => persist({ colorOverrides: { ...(store.settings?.colorOverrides ?? {}), [key]: value } }), label)
+            }),
+            h('span', {}, label, h('small', {}, custom ? custom : '預設')),
+            custom ? h('button', { type: 'button', class: 'mc icon-btn reset-btn', title: '還原成預設顏色', 'aria-label': `把「${label}」還原成預設顏色`, onclick: () => {
+                const next = { ...(store.settings?.colorOverrides ?? {}) };
+                delete next[key];
+                persist({ colorOverrides: next });
+            } }, icon('reload')) : null);
+    }));
+}
+
+function renderCountdownPick() {
+    const at = store.settings?.countdownAt ? new Date(store.settings.countdownAt) : null;
+    const now = new Date();
+    const y = at?.getFullYear() ?? 0;
+    const m = at ? at.getMonth() + 1 : now.getMonth() + 1;
+    const days = new Date(y || now.getFullYear(), m, 0).getDate();
+    const opts = (from, to, pad, unit, current, step = 1) => {
+        const list = [];
+        for (let n = from; n <= to; n += step) list.push(h('option', { value: String(n), selected: n === current }, `${pad ? String(n).padStart(2, '0') : n}${unit}`));
+        return list;
+    };
+    const [ys, ms, ds, hs, is] = $$('#set-countdown-at select');
+    clear(ys).append(h('option', { value: '0', selected: !y }, '未設定'), ...opts(now.getFullYear(), now.getFullYear() + 5, false, ' 年', y));
+    clear(ms).append(...opts(1, 12, false, ' 月', m));
+    clear(ds).append(...opts(1, days, false, ' 日', at ? at.getDate() : now.getDate()));
+    clear(hs).append(...opts(0, 23, true, ' 時', at ? at.getHours() : 20));
+    clear(is).append(...opts(0, 55, true, ' 分', at ? at.getMinutes() - (at.getMinutes() % 5) : 0, 5));
+    for (const s of [ms, ds, hs, is]) s.disabled = !y;
+    $('#btn-countdown-clear').disabled = !y;
+}
+
 function renderColorFields() {
-    for (const field of $$('.color-field')) {
+    for (const field of $$('.color-field[data-color-key]')) {
         const key = field.dataset.colorKey;
         const value = store.settings?.[key] ?? '';
         const label = field.dataset.colorLabel;
@@ -226,7 +508,7 @@ function renderColorFields() {
             onclick: (e) => pickColor(e.currentTarget, value || '#8491ff', (v) => persist({ [key]: v }), label)
         });
         clear(field).append(swatch, h('span', {}, label, h('small', {}, value || '預設')),
-            value ? h('button', { type: 'button', class: 'link', onclick: () => persist({ [key]: '' }) }, '清除') : null);
+            value ? h('button', { type: 'button', class: 'mc icon-btn reset-btn', title: '還原成預設顏色', 'aria-label': `把「${label}」還原成預設顏色`, onclick: () => persist({ [key]: '' }) }, icon('reload')) : null);
     }
 }
 
@@ -446,12 +728,20 @@ function write() {
         const value = settings[key] ?? LOOK_DEFAULTS[key];
         if (el.type === 'checkbox') el.checked = !!value;
         else el.value = value ?? '';
+        if (el.tagName === 'SELECT' && el.selectedIndex < 0) el.selectedIndex = 0;
     }
     $('#set-backup-keep').disabled = !settings.backupOnLaunch;
     renderSharedSummary();
     $('#bg-state').textContent = !settings.background ? '目前使用官網輪播' : /\.(mp4|webm)$/i.test(settings.background) ? '目前使用自訂影片' : '目前使用自訂圖片';
-    $('#music-state').textContent = settings.music ? `目前播放：${settings.music.split(/[\\/]/).pop().replace(/^music-\d+\./, '自訂音樂.')}` : '未設定';
-    $('#btn-music-clear').disabled = !settings.music;
+    $('#set-font option[value="custom"]').disabled = !settings.customFont;
+    renderMedia();
+    renderShortcuts();
+    renderRailLinks();
+    renderProfiles();
+    renderSync();
+    renderColorEditor();
+    renderCountdownPick();
+    $('#btn-forget-window').disabled = !settings.rememberWindow;
     $('#set-slide').disabled = !!settings.background || !!settings.bgPin;
     $('#set-account-name').checked = !settings.hideAccountName;
     for (const box of $$('#tool-visibility [data-tool]')) box.checked = !(settings.hiddenTools ?? []).includes(box.dataset.tool);
@@ -642,6 +932,81 @@ export function initSettings() {
         toast('已還原預設外觀');
     }));
     $('#btn-look-export').addEventListener('click', exportLook);
+    provide('revealSetting', revealSetting);
+    provide('applyProfile', applyProfile);
+    $('#btn-global-shortcut').addEventListener('click', async (e) => {
+        const next = await captureCombo(e.currentTarget);
+        if (next === null) return;
+        if (next && !/^(Ctrl|Alt)\+/.test(next)) return toast('系統層級快捷鍵至少要包含 Ctrl 或 Alt，避免平常打字時誤觸', 'warn');
+        await persist({ globalShortcut: next });
+        renderShortcuts();
+    });
+    $('#btn-shortcuts-reset').addEventListener('click', guard(async () => {
+        if (!(await confirm('要把所有啟動器內的快捷鍵還原成預設嗎？', '還原'))) return;
+        await persist({ shortcuts: {} });
+    }));
+    $('#btn-rail-link-folder').addEventListener('click', guard(async () => {
+        const folder = await window.__TAURI__.dialog.open({ directory: true }).catch(() => null);
+        if (folder) $('#rail-link-target').value = folder;
+    }));
+    $('#btn-rail-link-add').addEventListener('click', guard(async () => {
+        const name = $('#rail-link-name').value.trim();
+        const target = $('#rail-link-target').value.trim();
+        if (!name || !target) return toast('請填寫名稱和網址（或資料夾）', 'warn');
+        if (/^[a-z][a-z0-9+.-]*:\/\//i.test(target) && !/^https?:\/\//i.test(target)) return toast('網址只支援 http:// 或 https:// 開頭', 'warn');
+        await persist({ railLinks: [...(store.settings?.railLinks ?? []), { name, target }] });
+        $('#rail-link-name').value = '';
+        $('#rail-link-target').value = '';
+    }));
+    renderScreens();
+    $('#sync-groups').addEventListener('change', (e) => {
+        const groups = $$('#sync-groups [data-sync]').filter((b) => b.checked).map((b) => b.dataset.sync);
+        persist({ optionsSyncGroups: groups });
+    });
+    $('#btn-sync-capture').addEventListener('click', guard(async () => {
+        const instance = store.instances.find((i) => i.id === store.settings?.selectedInstance) ?? store.instances[0];
+        if (!instance) return toast('還沒有任何實例', 'warn');
+        try {
+            const n = await api.options_sync_capture({ id: instance.id });
+            toast(n ? `已從「${instance.name}」記下 ${n} 項選項，下次開其他實例會自動套用` : `「${instance.name}」還沒有遊戲選項檔，先玩一次再試`);
+            renderSync();
+        } catch (error) {
+            fail(error);
+        }
+    }));
+    $('#btn-forget-window').addEventListener('click', guard(async () => {
+        await api.forget_window().catch(fail);
+        toast('已忘記記住的遊戲視窗位置');
+    }));
+    $('#btn-disk-scan').addEventListener('click', guard(scanDisk));
+    $('#btn-home-edit').addEventListener('click', () => $('#home-edit-toggle').click());
+    let language = store.settings?.language ?? 'zh-TW';
+    on('settings', () => {
+        const next = store.settings?.language ?? 'zh-TW';
+        if (next === language) return;
+        language = next;
+        setTimeout(() => location.reload(), 300);
+    });
+    $('#set-countdown-at').addEventListener('change', () => {
+        const v = Object.fromEntries($$('#set-countdown-at select').map((s) => [s.dataset.part, Number(s.value)]));
+        const days = new Date(v.y, v.m, 0).getDate();
+        persist({ countdownAt: v.y ? new Date(v.y, v.m - 1, Math.min(v.d, days), v.h, v.i).getTime() : 0 });
+    });
+    $('#btn-countdown-clear').addEventListener('click', () => persist({ countdownAt: 0 }));
+    $('#btn-colors-reset').addEventListener('click', guard(async () => {
+        const mode = document.documentElement.dataset.mode || 'dark';
+        if (!(await confirm(`要把${mode === 'dark' ? '深色' : '亮色'}主題的進階配色全部還原嗎？`, '還原'))) return;
+        await persist({ colorOverrides: Object.fromEntries(Object.entries(store.settings?.colorOverrides ?? {}).filter(([key]) => !key.startsWith(`${mode}.`))) });
+    }));
+    $('#btn-profile-save').addEventListener('click', guard(async () => {
+        const name = $('#profile-name').value.trim();
+        if (!name) return toast('請輸入方案名稱', 'warn');
+        const profiles = store.settings?.profiles ?? [];
+        if (profiles.some((p) => p.name === name)) return toast(`已經有叫「${name}」的方案了，要更新請按該方案的「更新」`, 'warn');
+        await persist({ profiles: [...profiles, { name, data: profileSnapshot() }] });
+        $('#profile-name').value = '';
+        toast(`已存成方案「${name}」`);
+    }));
     $('#btn-look-import').addEventListener('click', guard(importLook));
     $('#set-account-name').addEventListener('change', (e) => persist({ hideAccountName: !e.target.checked }));
     $('#tool-visibility').addEventListener('change', (e) => {
@@ -663,10 +1028,26 @@ export function initSettings() {
         }
     };
     $('#btn-bg-pick').addEventListener('click', guard(async () => setMedia('background')(await pickFile('background').catch(fail))));
-    $('#btn-music-pick').addEventListener('click', guard(async () => setMedia('music')(await pickFile('music').catch(fail))));
+    const addMusic = async (paths) => {
+        const added = await addMedia('music', paths);
+        if (!added.length) return;
+        const playlist = [...(store.settings?.playlist ?? []), ...added];
+        await persist({ playlist, music: store.settings?.music || added[0].path });
+        toast(`已加入 ${added.length} 首音樂`);
+    };
+    $('#btn-music-pick').addEventListener('click', guard(async () => addMusic(await pickFile('music', { multiple: true }).catch(fail))));
+    $('#btn-music-next').addEventListener('click', () => nextTrack());
+    on('music', renderMedia);
     acceptFiles($('#btn-bg-pick').parentElement, 'background', setMedia('background'));
-    acceptFiles($('#btn-music-pick').parentElement, 'music', setMedia('music'));
-    $('#btn-music-clear').addEventListener('click', guard(() => persist({ music: '' })));
+    acceptFiles($('#btn-music-pick').parentElement, 'music', addMusic, { multiple: true });
+    const addFonts = async (paths) => {
+        const added = await addMedia('font', paths);
+        if (!added.length) return;
+        await persist({ fonts: [...(store.settings?.fonts ?? []), ...added], font: 'custom', customFont: added.at(-1).path });
+        toast(added.length > 1 ? `已加入 ${added.length} 個字型，目前使用「${added.at(-1).name}」` : `已套用字型「${added[0].name}」`);
+    };
+    $('#btn-font-pick').addEventListener('click', guard(async () => addFonts(await pickFile('font', { multiple: true }).catch(fail))));
+    acceptFiles($('#btn-font-pick').parentElement, 'font', addFonts, { multiple: true });
     $('#btn-bg-reset').addEventListener('click', guard(() => persist({ background: '' })));
 
     $('#jvm-presets').append(...jvmPresetButtons($('#set-jvm'), () => {

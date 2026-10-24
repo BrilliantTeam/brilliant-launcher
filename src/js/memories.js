@@ -45,7 +45,8 @@ export function caption(shot) {
     if (!m) return '';
     const place = [SHARDS[m.server], DIMENSIONS[m.dimension] ?? '', m.biomeName].filter(Boolean).join('・');
     const tod = m.dayTime == null ? '' : night(m) ? '夜晚' : m.dayTime >= 11500 && m.dayTime < 13000 ? '黃昏' : m.dayTime >= 23000 ? '黎明' : '白天';
-    return [place, `${m.x}, ${m.y}, ${m.z}`, tod, m.weather === 'rain' ? '下雨' : m.weather === 'thunder' ? '雷雨' : ''].filter(Boolean).join('｜');
+    const coords = document.documentElement.dataset.streamer === 'on' ? '' : `${m.x}, ${m.y}, ${m.z}`;
+    return [place, coords, tod, m.weather === 'rain' ? '下雨' : m.weather === 'thunder' ? '雷雨' : ''].filter(Boolean).join('｜');
 }
 
 export function memories(shots, now, limit = 8) {

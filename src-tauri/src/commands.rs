@@ -412,6 +412,9 @@ pub async fn content_install(app: AppHandle, id: String, kind: String, project: 
     let settings = config::load_settings().await;
     let instance = instance::get(&id).await?;
     let kind = modrinth::Kind::parse(&kind)?;
+    if kind == modrinth::Kind::Mod {
+        crate::snapshots::take(&id).await;
+    }
     modrinth::install(&app, &id, kind, &project, &instance.mc_version, instance.wants_rich_presence(&settings), instance.channel(&settings)).await
 }
 
@@ -453,7 +456,11 @@ pub async fn content_pin(id: String, project: String, pinned: bool) -> R<()> {
 #[tauri::command]
 pub async fn content_update(app: AppHandle, state: State<'_, AppState>, id: String, kind: String, file: String, update: modrinth::Update) -> R<String> {
     state.ensure_idle(&id).await?;
-    modrinth::replace(&app, &id, modrinth::Kind::parse(&kind)?, &file, update).await
+    let kind = modrinth::Kind::parse(&kind)?;
+    if kind == modrinth::Kind::Mod {
+        crate::snapshots::take(&id).await;
+    }
+    modrinth::replace(&app, &id, kind, &file, update).await
 }
 
 #[tauri::command]
@@ -765,6 +772,9 @@ pub async fn import_config(path: String) -> R<ImportSummary> {
 #[tauri::command]
 pub async fn add_content(id: String, files: Vec<String>) -> R<Vec<(String, String)>> {
     instance::get(&id).await?;
+    if files.iter().any(|f| f.to_ascii_lowercase().ends_with(".jar")) {
+        crate::snapshots::take(&id).await;
+    }
     let mut seen = std::collections::HashSet::new();
     let mut clash = Vec::new();
     for file in &files {

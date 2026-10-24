@@ -345,7 +345,11 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         match crate::modrinth::installed(&instance.id, mods_kind, &instance.mc_version, &instance.pinned, instance.wants_rich_presence(&settings), instance.channel(&settings), false).await {
             Ok(list) => {
                 let mut updated = 0;
-                for entry in list.into_iter().filter(|e| !e.pinned && !e.managed) {
+                let pending: Vec<_> = list.into_iter().filter(|e| !e.pinned && !e.managed && e.update.is_some()).collect();
+                if !pending.is_empty() {
+                    crate::snapshots::take(&instance.id).await;
+                }
+                for entry in pending {
                     if let Some(update) = entry.update {
                         if crate::modrinth::replace(app, &instance.id, mods_kind, &entry.file, update).await.is_ok() {
                             updated += 1;
@@ -440,6 +444,10 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         .stdin(std::process::Stdio::null());
     java::hide_console(&mut cmd);
 
+    let sync_dir = game_dir.clone();
+    let sync_settings = settings.clone();
+    let _ = tokio::task::spawn_blocking(move || crate::gameopts::apply(&sync_dir, &sync_settings)).await;
+
     let mut child = cmd
         .spawn()
         .with_context(|| match wrapper.first() {
@@ -491,6 +499,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         .insert(instance_id.to_string(), RunningGame { started_at: started, stop: Some(stop_tx) });
     if let Some(pid) = child.id() {
         save_record(instance_id, &RunRecord { pid, started, game_dir: game_dir.to_string_lossy().to_string() });
+        crate::gamewin::manage(pid, &settings);
     }
 
     let app_handle = app.clone();
@@ -524,6 +533,9 @@ async fn finish_game(app: &AppHandle, instance: &Instance, started: i64, code: i
         let _ = crate::instance::save(&inst).await;
     }
     crate::insight::record_session(crate::insight::Session { instance: id.clone(), name: instance.name.clone(), start: started, seconds, code }).await;
+    let sync_dir = crate::paths::game_dir(&id);
+    let sync_settings = settings.clone();
+    let _ = tokio::task::spawn_blocking(move || crate::gameopts::capture(&sync_dir, &sync_settings)).await;
     if code != 0 && !asked_to_stop && settings.notifications {
         crate::boost::notify(app, "遊戲異常結束", &format!("「{}」結束代碼 {code}，打開啟動器查看可能的原因。", instance.name));
     }

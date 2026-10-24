@@ -26,6 +26,7 @@ export const FILE_TYPES = {
     icon: { name: '圖示圖片', extensions: [...RASTER, 'svg'] },
     background: { name: '背景圖片或影片', extensions: [...RASTER, 'mp4', 'webm'] },
     music: { name: '背景音樂', extensions: ['mp3', 'ogg', 'wav', 'm4a', 'flac', 'opus'] },
+    font: { name: '字型檔', extensions: ['ttf', 'otf', 'woff', 'woff2'] },
     world: { name: '世界壓縮檔', extensions: ['zip'] },
     mrpack: { name: 'Modrinth 模組包', extensions: ['mrpack'] },
     config: { name: '輝煌啟動器設定', extensions: ['zip'] },

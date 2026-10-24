@@ -1,4 +1,4 @@
-import { api, appVersion, appWindow, listen, openUrl, setZoom } from './api.js';
+import { api, appVersion, appWindow, fileSrc, listen, openUrl, setZoom } from './api.js';
 import { icon } from './icons.js';
 import { $, $$, confirm, dialog, fail, h, modalOpen, rangeFill, toast, guard, workPending } from './ui.js';
 import { emit, loadAccounts, loadInstances, loadSettings, on, saveSettings, selectedAccount, store } from './store.js';
@@ -16,6 +16,11 @@ import { initReports } from './report.js';
 import { initTours } from './tour.js';
 import { playClick } from './sound.js';
 import { setWeather } from './weather.js';
+import { initCommands, provide } from './commands.js';
+import { initWidgets } from './widgets.js';
+import { startI18n } from './i18n.js';
+import { initStreamer } from './streamer.js';
+import { nextTrack } from './services.js';
 
 const TITLES = {
     profile: '我的輝煌',
@@ -57,6 +62,8 @@ const THEMES = {
 };
 
 const HEX = /^#[0-9a-f]{6}$/i;
+
+export const COLOR_TOKENS = ['content-bg', 'content-bg-alt', 'content-bg-sunken', 'text', 'text-subtle', 'border', 'border-soft', 'panel-face', 'chrome-bg', 'chrome-ink', 'glass-bg', 'glass-ink'];
 
 function scheduledTheme(look) {
     const hour = new Date().getHours();
@@ -110,7 +117,8 @@ function applyTheme() {
     const effective = theme === 'schedule' ? scheduledTheme(store.settings) : theme;
     if (effective === 'auto') delete root.dataset.theme;
     else root.dataset.theme = effective;
-    root.dataset.font = pick(store.settings?.font, ['pixel', 'system', 'naikai', 'serif'], 'pixel');
+    root.dataset.font = pick(store.settings?.font, ['pixel', 'system', 'naikai', 'serif', ...(store.settings?.customFont ? ['custom'] : [])], 'pixel');
+    loadCustomFont(store.settings?.customFont);
     const toggle = $('#theme-toggle');
     toggle.replaceChildren(icon(THEMES[theme].icon));
     toggle.title = THEMES[theme].label;
@@ -157,6 +165,14 @@ function applyTheme() {
         else root.style.removeProperty(cssVar);
     }
     root.dataset.contrast = look.highContrast ? 'high' : 'normal';
+    root.dataset.streamer = look.streamerMode ? 'on' : 'off';
+    const mode = root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    root.dataset.mode = mode;
+    for (const token of COLOR_TOKENS) {
+        const value = look.colorOverrides?.[`${mode}.${token}`];
+        if (HEX.test(value ?? '')) root.style.setProperty(`--${token}`, value);
+        else root.style.removeProperty(`--${token}`);
+    }
     root.dataset.heading = look.headingStyle === 'modern' ? 'modern' : 'game';
     root.style.setProperty('--fs', String(Math.min(130, Math.max(90, Number(look.fontScale) || 100)) / 100));
     const solid = look.bgSource === 'color';
@@ -204,7 +220,31 @@ function applyTheme() {
         setZoom(scale).catch(() => {});
     }
     const font = $('#font-toggle');
-    font.title = root.dataset.font === 'system' ? '字型：系統字型（點一下改為點陣字型）' : '字型：點陣字型（點一下改為系統字型）';
+    const fonts = fontOrder();
+    const nextFont = fonts[(fonts.indexOf(currentFont()) + 1) % fonts.length];
+    font.title = `字型：${fontName(currentFont())}（點一下改為${fontName(nextFont)}）`;
+    font.setAttribute('aria-label', font.title);
+}
+
+const FONT_NAMES = { pixel: '像素字型', system: '黑體', naikai: '內海字體', serif: '明體' };
+
+const fontOrder = () => ['pixel', 'system', 'naikai', 'serif', ...(store.settings?.fonts ?? []).map((f) => `custom:${f.path}`)];
+
+const currentFont = () => (document.documentElement.dataset.font === 'custom' ? `custom:${store.settings?.customFont}` : document.documentElement.dataset.font);
+
+const fontName = (id) => FONT_NAMES[id] ?? `「${(store.settings?.fonts ?? []).find((f) => `custom:${f.path}` === id)?.name ?? '自訂字型'}」`;
+
+let customFace = null;
+
+function loadCustomFont(path) {
+    if ((customFace?.path ?? '') === (path ?? '')) return;
+    if (customFace) document.fonts.delete(customFace.face);
+    customFace = null;
+    if (!path) return;
+    const face = new FontFace('BrilliantCustom', `url("${fileSrc(path)}")`);
+    customFace = { path, face };
+    document.fonts.add(face);
+    face.load().catch(() => toast('自訂字型無法載入，可能檔案已損壞或格式不支援，請重新上傳', 'error'));
 }
 
 let animRate = 1;
@@ -283,38 +323,24 @@ function initChrome() {
         else win.startDragging?.();
     });
 
-    const views = $$('.rail a[data-view]').map((a) => a.dataset.view);
     const mac = navigator.userAgent.includes('Mac');
     if (mac) $$('kbd.mod-key').forEach((k) => { k.textContent = '⌘'; });
     document.addEventListener('keydown', (e) => {
         if (e.key === 'F5' || e.key === 'BrowserRefresh') e.preventDefault();
     });
     document.addEventListener('keydown', (e) => {
-        if (e.isComposing || e.keyCode === 229 || e.altKey || (mac ? !e.metaKey || e.ctrlKey : !e.ctrlKey || e.metaKey)) return;
-        const digit = /^Digit([1-9])$/.exec(e.code)?.[1];
-        if (e.code === 'Enter' || e.code === 'NumpadEnter') {
-            e.preventDefault();
-            location.hash = '#home';
-            emit('launch');
-        } else if (digit && views[digit - 1]) {
-            e.preventDefault();
-            location.hash = `#${views[digit - 1]}`;
-        } else if (e.code === 'Comma') {
-            e.preventDefault();
-            location.hash = '#settings';
-        } else if (e.code === 'KeyF') {
-            e.preventDefault();
-            if (location.hash === '#settings') {
-                $('#settings-search').focus();
-                $('#settings-search').select();
-                return;
-            }
-            location.hash = '#mods';
-            setTimeout(() => $('#mod-search').focus(), 50);
-        } else if (e.code === 'KeyR' || e.code === 'KeyP') {
-            e.preventDefault();
-        }
+        if ((mac ? e.metaKey : e.ctrlKey) && (e.code === 'KeyR' || e.code === 'KeyP')) e.preventDefault();
     });
+    provide('search', () => {
+        if (location.hash === '#settings') {
+            $('#settings-search').focus();
+            $('#settings-search').select();
+            return;
+        }
+        location.hash = '#mods';
+        setTimeout(() => $('#mod-search').focus(), 50);
+    });
+    provide('nextTrack', nextTrack);
 
     $('#theme-toggle').addEventListener('click', async (e) => {
         const order = ['auto', 'light', 'dark'];
@@ -330,10 +356,11 @@ function initChrome() {
 
     $('#walker-toggle').addEventListener('click', () => saveSettings({ walkers: !store.settings?.walkers }).catch(fail));
 
-    $('#font-toggle').addEventListener('click', async () => {
-        store.settings.font = store.settings.font === 'system' ? 'pixel' : 'system';
-        applyTheme();
-        await api.save_settings({ settings: store.settings }).catch(fail);
+    $('#font-toggle').addEventListener('click', () => {
+        const order = fontOrder();
+        const next = order[(order.indexOf(currentFont()) + 1) % order.length];
+        const patch = next.startsWith('custom:') ? { font: 'custom', customFont: next.slice(7) } : { font: next };
+        saveSettings(patch).then(() => toast(`已切換為${fontName(next)}`), fail);
     });
 
     document.addEventListener('click', (e) => {
@@ -484,6 +511,7 @@ async function boot() {
         fail(error);
         store.settings = {};
     }
+    await startI18n(store.settings?.language).catch(() => {});
     applyTheme();
     initChrome();
     on('settings', applyTheme);
@@ -504,7 +532,11 @@ async function boot() {
     initLog();
     initReports();
     initTours();
+    initCommands();
+    initWidgets();
+    initStreamer();
     setInterval(tickClock, 1000);
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
     addEventListener('pointerdown', clickSound, true);
     document.addEventListener('animationstart', speedAnimations, true);
     document.addEventListener('transitionrun', speedAnimations, true);

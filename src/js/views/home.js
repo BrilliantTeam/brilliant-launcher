@@ -27,6 +27,8 @@ const REMIND_KEY = 'eventReminders';
 let restarts = {};
 let events = [];
 
+export const upcomingEvent = () => events.find((ev) => ev.active || ev.start > Date.now()) ?? null;
+
 function taipeiNow() {
     const [hh, mm] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()).split(':').map(Number);
     return hh * 60 + mm;
@@ -117,6 +119,7 @@ async function refreshEvents() {
     const data = await api.site_json({ path: '/api/launcher/events' }).catch(() => null);
     if (Array.isArray(data?.events)) events = data.events;
     renderEvent();
+    emit('events');
 }
 
 function remindEvents() {
@@ -429,7 +432,7 @@ function shardTile(shard, status) {
             type: 'button',
             class: `shard glass ${state}`,
             'aria-pressed': selected ? 'true' : 'false',
-            title: status ? `${shard.host}\n${status.motd}` : shard.host,
+            title: store.settings?.streamerMode ? shard.label : status ? `${shard.host}\n${status.motd}` : shard.host,
             onclick: async () => {
                 await saveSettings({ quickJoin: selected ? '' : shard.host }).catch(fail);
                 renderShards();

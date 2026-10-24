@@ -55,15 +55,15 @@ const PATHS = {
 };
 
 export function instanceVisual(instance, className = '') {
-    if (instance?.image && /\.svg$/i.test(instance.image)) return svgFromFile(instance.image, `inst-img ${className}`.trim());
-    if (instance?.image) {
-        const img = document.createElement('img');
-        img.className = `inst-img ${className}`.trim();
-        img.src = window.__TAURI__.core.convertFileSrc(instance.image);
-        img.alt = '';
-        return img;
-    }
-    return iconOf(instance?.icon, className || 'ico');
+    const icon = instance?.icon || '';
+    const iconChosen = icon.startsWith('img:') || (icon && instanceIconName(icon) !== 'zap');
+    if (iconChosen || !instance?.image) return iconOf(instance?.icon, className || 'ico');
+    if (/\.svg$/i.test(instance.image)) return svgFromFile(instance.image, `inst-img ${className}`.trim());
+    const img = document.createElement('img');
+    img.className = `inst-img ${className}`.trim();
+    img.src = window.__TAURI__.core.convertFileSrc(instance.image);
+    img.alt = '';
+    return img;
 }
 
 const svgCache = new Map();

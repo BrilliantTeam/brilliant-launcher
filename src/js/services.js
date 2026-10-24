@@ -103,14 +103,43 @@ export function isIntegratedGpu(name = gpuName()) {
 }
 
 const music = new Audio();
-music.loop = true;
 let musicSrc = '';
+let picked = '';
+let playing = '';
 let waitingGesture = false;
 
+const playlist = () => (store.settings?.playlist ?? []).map((item) => item.path);
+
+export const nowPlaying = () => playing;
+
+export function nextTrack() {
+    const list = playlist();
+    if (!list.length) return;
+    const index = list.indexOf(playing);
+    if (store.settings?.musicMode === 'shuffle' && list.length > 1) {
+        const others = list.filter((path) => path !== playing);
+        playing = others[Math.floor(Math.random() * others.length)];
+    } else {
+        playing = list[(index + 1) % list.length];
+    }
+    applyMusic();
+}
+
+music.addEventListener('ended', nextTrack);
+
 function applyMusic() {
-    const path = store.settings?.music || '';
+    const list = playlist();
+    const chosen = store.settings?.music || '';
+    if (chosen !== picked) {
+        picked = chosen;
+        playing = chosen;
+    }
+    if (!list.includes(playing)) playing = list.includes(chosen) ? chosen : list[0] ?? '';
+    music.loop = store.settings?.musicMode === 'one' || list.length < 2;
+    const path = playing;
     const volume = (store.settings?.musicVolume ?? 40) / 100;
     if (path !== musicSrc) {
+        emit('music');
         musicSrc = path;
         if (path) music.src = fileSrc(path);
         else music.removeAttribute('src');

@@ -23,6 +23,11 @@ pub mod worlds;
 pub mod advanced;
 pub mod insight;
 pub mod trust;
+pub mod templates;
+pub mod gameopts;
+pub mod gamewin;
+pub mod snapshots;
+pub mod diskuse;
 
 use tauri::{Listener, Manager};
 
@@ -57,6 +62,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(state::AppState::default())
         .setup(|app| {
             let startup = tauri::async_runtime::block_on(config::load_settings());
@@ -151,6 +157,20 @@ pub fn run() {
             extras::list_screenshots,
             extras::clean_cache,
             extras::set_media,
+            extras::remove_media,
+            extras::keep_image,
+            templates::list_templates,
+            templates::save_template,
+            templates::create_from_template,
+            templates::delete_template,
+            gameopts::options_sync_capture,
+            gameopts::options_sync_count,
+            gamewin::list_screens,
+            gamewin::forget_window,
+            snapshots::list_mod_snapshots,
+            snapshots::restore_mod_snapshot,
+            diskuse::disk_usage,
+            diskuse::clean_disk,
             extras::import_image,
             extras::save_image,
             extras::read_svg,
