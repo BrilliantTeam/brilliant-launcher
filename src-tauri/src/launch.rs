@@ -240,7 +240,7 @@ async fn prepare(
     if cfg!(target_os = "macos") {
         args.push("-XstartOnFirstThread".into());
     }
-    args.extend(crate::advanced::split_args(&instance.jvm(settings)));
+    args.extend(crate::advanced::drop_removed_flags(crate::advanced::split_args(&instance.jvm(settings)), java_major));
     args.extend(expand(&resolved.arguments.jvm, &features, &vars));
     args.push(resolved.main_class.clone());
     let mut game_args = expand(&resolved.arguments.game, &features, &vars);

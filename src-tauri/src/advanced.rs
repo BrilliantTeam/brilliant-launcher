@@ -27,6 +27,10 @@ pub fn parse_env(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+pub fn drop_removed_flags(args: Vec<String>, java_major: u32) -> Vec<String> {
+    args.into_iter().filter(|a| java_major < 23 || !a.ends_with("ZGenerational")).collect()
+}
+
 pub fn split_args(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
@@ -847,6 +851,9 @@ mod tests {
         assert_eq!(split_args(r#"gamemoderun  mangohud"#), vec!["gamemoderun", "mangohud"]);
         assert_eq!(split_args(r#""C:\Program Files\x.exe" --flag "a b""#), vec![r"C:\Program Files\x.exe", "--flag", "a b"]);
         assert!(split_args("   ").is_empty());
+        let zgc = || split_args("-XX:+UseZGC -XX:+ZGenerational -Xss4m");
+        assert_eq!(drop_removed_flags(zgc(), 21), zgc());
+        assert_eq!(drop_removed_flags(zgc(), 25), vec!["-XX:+UseZGC", "-Xss4m"]);
     }
 
     #[test]
