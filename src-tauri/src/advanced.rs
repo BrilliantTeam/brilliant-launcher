@@ -374,6 +374,35 @@ pub async fn shared_remove(state: tauri::State<'_, crate::state::AppState>, key:
     Ok(items.len())
 }
 
+#[tauri::command]
+pub async fn shared_discard(key: String, name: String) -> R<&'static str> {
+    if !valid_key(&key) {
+        bail!("共用資料夾不正確");
+    }
+    let settings = crate::config::load_settings().await;
+    if settings.instance_groups.iter().any(|g| g.key == key) {
+        bail!("這個分組還在使用共用資料夾");
+    }
+    let base = group_base(&key);
+    if !base.exists() {
+        return Ok("none");
+    }
+    for instance in crate::instance::list().await {
+        let game = paths::game_dir(&instance.id);
+        for folder in SHAREABLE {
+            let link = game.join(folder);
+            if is_link(&link) && std::fs::read_link(&link).is_ok_and(|t| t.starts_with(&base) || same_dir(&t, &base.join(folder))) {
+                return Ok("busy");
+            }
+        }
+    }
+    tokio::task::spawn_blocking(move || paths::discard(&format!("分組「{name}」的共用資料夾"), &[(&base, "shared")]))
+        .await
+        .context("整理共用資料夾中斷")?
+        .context("把共用資料夾移到回收資料夾失敗")?;
+    Ok("moved")
+}
+
 pub fn group_base(key: &str) -> PathBuf {
     if key == "legacy" {
         paths::shared().join("folders")
@@ -495,7 +524,7 @@ fn export_dir() -> PathBuf {
 pub fn export_diagnostics(instance: &Instance, settings: &Settings, java: &str) -> R<PathBuf> {
     let dir = export_dir();
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("輝煌啟動器診斷-{}-{}.zip", safe_name(&instance.name), crate::config::now_secs()));
+    let path = paths::unused(dir.join(format!("輝煌啟動器診斷-{}-{}.zip", safe_name(&instance.name), crate::config::now_secs())));
     let mut zip = zip::ZipWriter::new(std::fs::File::create(&path)?);
     let game = paths::game_dir(&instance.id);
     let mods: Vec<String> = std::fs::read_dir(game.join("mods"))
@@ -550,7 +579,7 @@ pub async fn export_config() -> R<PathBuf> {
     let instances = crate::instance::list().await;
     let dir = export_dir();
     std::fs::create_dir_all(&dir)?;
-    let path = dir.join(format!("輝煌啟動器設定-{}.zip", crate::config::now_secs()));
+    let path = paths::unused(dir.join(format!("輝煌啟動器設定-{}.zip", crate::config::now_secs())));
     let mut zip = zip::ZipWriter::new(std::fs::File::create(&path)?);
     add_text(&mut zip, &format!("{CONFIG_ROOT}/meta.json"), &serde_json::json!({ "os": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION") }).to_string())?;
     add_text(&mut zip, &format!("{CONFIG_ROOT}/config.json"), &serde_json::to_string_pretty(&settings)?)?;

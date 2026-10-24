@@ -270,6 +270,10 @@ async fn read_json<T: serde::de::DeserializeOwned + Default>(path: &Path) -> T {
     match tokio::fs::read(path).await {
         Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
             eprintln!("[config] {} 解析失敗，改用預設值：{e}", path.display());
+            let keep = path.with_extension("broken.json");
+            if !keep.exists() {
+                let _ = std::fs::copy(path, &keep);
+            }
             T::default()
         }),
         Err(_) => T::default(),

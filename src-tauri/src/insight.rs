@@ -379,7 +379,7 @@ pub async fn apply_perf(state: State<'_, AppState>, id: String, options: HashMap
         let file = paths::game_dir(&id).join("options.txt");
         let text = tokio::fs::read_to_string(&file).await.unwrap_or_default();
         tokio::fs::create_dir_all(paths::game_dir(&id)).await?;
-        tokio::fs::write(&file, patch_options(&text, &options)).await.context("寫入遊戲設定失敗")?;
+        paths::write_atomic(&file, patch_options(&text, &options).as_bytes()).context("寫入遊戲設定失敗")?;
     }
     if let Some(mb) = memory_mb.filter(|mb| (1024..=65536).contains(mb)) {
         let mut instance = crate::instance::get(&id).await?;
@@ -504,7 +504,7 @@ pub async fn save_png(name: String, data: String) -> R<String> {
     }
     let dir = dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"));
     tokio::fs::create_dir_all(&dir).await?;
-    let path = dir.join(format!("{}-{}.png", name.trim_end_matches(".png"), now_secs()));
+    let path = paths::unused(dir.join(format!("{}-{}.png", name.trim_end_matches(".png"), now_secs())));
     tokio::fs::write(&path, bytes).await.context("儲存圖片失敗")?;
     Ok(path.to_string_lossy().to_string())
 }

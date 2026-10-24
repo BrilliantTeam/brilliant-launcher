@@ -398,6 +398,20 @@ pub fn copy_tree(from: &Path, to: &Path) -> std::io::Result<u64> {
     Ok(total)
 }
 
+fn overlaps(from: &Path, to: &Path, rel: &str, out: &mut Vec<(PathBuf, String)>) {
+    if from.is_file() {
+        let len = |p: &Path| std::fs::metadata(p).map(|m| m.len()).ok();
+        if to.is_file() && (len(from) != len(to) || std::fs::read(from).ok() != std::fs::read(to).ok()) {
+            out.push((to.to_path_buf(), rel.to_string()));
+        }
+        return;
+    }
+    for entry in std::fs::read_dir(from).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        overlaps(&entry.path(), &to.join(&name), &format!("{rel}/{name}"), out);
+    }
+}
+
 pub async fn import_parts(request: ImportRequest) -> R<u64> {
     let src = PathBuf::from(&request.path);
     if !is_known(&src) || !src.is_dir() {
@@ -406,6 +420,14 @@ pub async fn import_parts(request: ImportRequest) -> R<u64> {
     instance::get(&request.instance_id).await?;
     let dest = paths::game_dir(&request.instance_id);
     tokio::task::spawn_blocking(move || -> R<u64> {
+        let mut replaced = Vec::new();
+        for part in request.parts.iter().filter(|p| PARTS.contains(&p.as_str())) {
+            overlaps(&src.join(part), &dest.join(part), part, &mut replaced);
+        }
+        if !replaced.is_empty() {
+            let items: Vec<(&PathBuf, &str)> = replaced.iter().map(|(p, r)| (p, r.as_str())).collect();
+            paths::discard("匯入前被取代的檔案", &items).context("把會被取代的檔案移到回收資料夾失敗")?;
+        }
         let mut total = 0;
         for part in request.parts.iter().filter(|p| PARTS.contains(&p.as_str())) {
             let from = src.join(part);

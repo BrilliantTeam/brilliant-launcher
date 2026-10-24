@@ -135,6 +135,23 @@ fn size_of(path: &Path) -> u64 {
     }
 }
 
+pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let tmp = path.with_extension(format!("part{}", std::process::id()));
+    std::fs::write(&tmp, bytes)?;
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
+}
+
+pub fn unused(path: PathBuf) -> PathBuf {
+    if !path.exists() {
+        return path;
+    }
+    let stem = path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    (2..).map(|n| path.with_file_name(format!("{stem} ({n}){ext}"))).find(|p| !p.exists()).unwrap_or(path)
+}
+
 pub fn valid_instance_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 80 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
@@ -158,6 +175,17 @@ mod tests {
             assert_eq!(instance_dir(id), instances().join("_invalid"), "{id}");
         }
         assert_eq!(instance_dir("26-3-1792333628"), instances().join("26-3-1792333628"));
+    }
+
+    #[test]
+    fn unused_never_returns_an_existing_file() {
+        let dir = std::env::temp_dir().join(format!("unused-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.zip"), "x").unwrap();
+        std::fs::write(dir.join("a (2).zip"), "x").unwrap();
+        assert_eq!(unused(dir.join("a.zip")), dir.join("a (3).zip"));
+        assert_eq!(unused(dir.join("b.zip")), dir.join("b.zip"));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

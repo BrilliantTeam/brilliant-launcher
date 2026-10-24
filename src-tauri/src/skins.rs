@@ -37,7 +37,7 @@ fn load_library() -> Vec<LibrarySkin> {
 
 fn save_library(list: &[LibrarySkin]) -> R<()> {
     std::fs::create_dir_all(library_dir())?;
-    std::fs::write(library_index(), serde_json::to_vec_pretty(list)?)?;
+    paths::write_atomic(&library_index(), &serde_json::to_vec_pretty(list)?).context("儲存衣櫃清單失敗")?;
     Ok(())
 }
 

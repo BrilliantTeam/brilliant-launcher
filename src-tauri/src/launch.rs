@@ -400,10 +400,17 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
 
     if !settings.pre_launch_cmd.trim().is_empty() {
         net::emit_stage(app, "hook", "執行啟動前指令");
-        let status = crate::extras::hook_command(&settings.pre_launch_cmd, &instance)
-            .status()
-            .await
+        let mut hook = crate::extras::hook_command(&settings.pre_launch_cmd, &instance)
+            .kill_on_drop(true)
+            .spawn()
             .context("無法執行啟動前指令")?;
+        let status = match tokio::time::timeout(std::time::Duration::from_secs(60), hook.wait()).await {
+            Ok(status) => status.context("無法執行啟動前指令")?,
+            Err(_) => {
+                let _ = hook.kill().await;
+                bail!("啟動前指令超過 60 秒還沒結束，已取消啟動。要順便開啟會一直執行的程式（例如 OBS），Windows 請在指令前面加上 start，例如 start obs64.exe");
+            }
+        };
         if !status.success() {
             bail!("啟動前指令失敗（結束代碼 {}），已取消啟動", status.code().unwrap_or(-1));
         }

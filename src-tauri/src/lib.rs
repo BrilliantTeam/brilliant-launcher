@@ -167,6 +167,7 @@ pub fn run() {
             advanced::shared_items,
             advanced::shared_add,
             advanced::shared_remove,
+            advanced::shared_discard,
             commands::set_instance_image,
             skins::account_profile,
             skins::skin_library,

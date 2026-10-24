@@ -349,10 +349,10 @@ pub async fn write_file(path: &Path, bytes: &[u8], executable: bool) -> R<()> {
     tokio::fs::write(&tmp, bytes)
         .await
         .with_context(|| format!("寫入失敗：{}", tmp.display()))?;
-    let _ = tokio::fs::remove_file(path).await;
-    tokio::fs::rename(&tmp, path)
-        .await
-        .with_context(|| format!("搬移失敗：{}", path.display()))?;
+    if let Err(error) = tokio::fs::rename(&tmp, path).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(anyhow::Error::from(error).context(format!("寫入失敗：{}", path.display())).into());
+    }
     let _ = executable;
     #[cfg(unix)]
     if executable {

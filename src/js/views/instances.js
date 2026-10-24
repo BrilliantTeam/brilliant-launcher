@@ -1326,11 +1326,16 @@ async function groupDialog(existing = null) {
 
 async function removeGroup(group) {
     const members = store.instances.filter((i) => i.group === group.name);
-    if (!(await confirm(`確定要刪除分組「${group.name}」嗎？${members.length ? `\n裡面的 ${members.length} 個實例會移到「未分組」，不會被刪除。` : ''}`, '刪除分組'))) return;
+    const shared = sharedNames(group);
+    const sharing = shared.length && group.key ? `\n分組共用的${shared.join('、')}會各複製一份回每個實例，原本的共用資料夾${RECYCLE_NOTE}` : '';
+    if (!(await confirm(`確定要刪除分組「${group.name}」嗎？${members.length ? `\n裡面的 ${members.length} 個實例會移到「未分組」，不會被刪除。` : ''}${sharing}`, '刪除分組'))) return;
     const patch = { instanceGroups: cleanGroups(groupList().filter((g) => g.name !== group.name)) };
     if (pinnedKey() === `g:${group.name}`) patch.pinned = '';
     await saveSettings(patch).catch(fail);
     await setGroupOf(members, '');
+    if (!sharing) return;
+    const moved = await api.shared_discard({ key: group.key, name: group.name }).catch((error) => (fail(error), null));
+    if (moved === 'busy') toast('有實例正在執行，分組原本的共用資料夾先保留著，可以之後到啟動器資料夾的 shared 裡手動刪除', 'warn');
 }
 
 let dragState = null;

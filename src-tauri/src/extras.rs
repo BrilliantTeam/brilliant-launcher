@@ -76,7 +76,11 @@ pub fn backup_saves(id: &str, kind: &str, keep: u32) -> R<Option<String>> {
     }
     let dir = backups_dir(id);
     std::fs::create_dir_all(&dir)?;
-    let name = format!("{kind}-{}.zip", now_secs());
+    let mut time = now_secs();
+    while dir.join(format!("{kind}-{time}.zip")).exists() {
+        time += 1;
+    }
+    let name = format!("{kind}-{time}.zip");
     zip_dir(&saves, &dir.join(&name)).map_err(|e| anyhow::anyhow!("備份存檔失敗：{:#}", e.0))?;
     if keep > 0 {
         let mut old: Vec<_> = list(id).into_iter().filter(|b| b.kind == kind).collect();

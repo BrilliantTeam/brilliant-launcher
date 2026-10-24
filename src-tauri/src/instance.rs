@@ -291,6 +291,9 @@ pub async fn set_mod_enabled(id: &str, file: &str, enabled: bool) -> R<()> {
     let stem = file.trim_end_matches(DISABLED_SUFFIX);
     let to = mod_path(id, &if enabled { stem.to_string() } else { format!("{stem}{DISABLED_SUFFIX}") })?;
     if from != to {
+        if to.exists() {
+            bail!("模組資料夾裡同時有「{stem}」的啟用與停用兩份檔案，請先移除其中一份");
+        }
         tokio::fs::rename(&from, &to).await.context("切換模組狀態失敗")?;
     }
     Ok(())
@@ -394,6 +397,15 @@ mod content_kind_tests {
         assert!(shared.join("resourcepacks/Faithful.zip").is_file());
         let binned = paths::trash().join("實例 輝煌生存 複本").join(&copy.id).join(".minecraft");
         assert!(binned.join("options.txt").is_file() && !binned.join("resourcepacks").exists());
+        let mut no_groups = settings.clone();
+        no_groups.instance_groups.clear();
+        crate::config::save_settings(&no_groups).await.unwrap();
+        assert_eq!(crate::advanced::shared_discard("k1".into(), "輝煌".into()).await.unwrap(), "busy");
+        let left = Instance { group: String::new(), ..get(&source.id).await.unwrap() };
+        crate::advanced::sync_shared(&left, &no_groups).unwrap();
+        assert!(paths::game_dir(&source.id).join("resourcepacks/Faithful.zip").is_file());
+        assert_eq!(crate::advanced::shared_discard("k1".into(), "輝煌".into()).await.unwrap(), "moved");
+        assert!(!shared.exists() && paths::trash().join("分組「輝煌」的共用資料夾").join("shared/resourcepacks/Faithful.zip").is_file());
         std::env::remove_var("BRILLIANT_LAUNCHER_HOME");
         let _ = std::fs::remove_dir_all(&root);
     }

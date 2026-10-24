@@ -127,7 +127,7 @@ pub async fn world_export(id: String, folder: String) -> R<String> {
     let out_dir = dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"));
     std::fs::create_dir_all(&out_dir)?;
     let base = format!("{folder}-{}", now_secs());
-    let dest = out_dir.join(format!("{base}.zip"));
+    let dest = paths::unused(out_dir.join(format!("{base}.zip")));
     let target = dest.clone();
     tokio::task::spawn_blocking(move || crate::extras::zip_folder(&src, &target, Some(&folder)))
         .await
@@ -186,26 +186,31 @@ pub async fn world_import(state: State<'_, AppState>, id: String, path: String) 
     std::fs::create_dir_all(&dest_dir)?;
     tokio::task::spawn_blocking(move || -> R<String> {
         let staging = paths::instance_dir(&id).join(format!(".import-{}", now_secs()));
-        let from = if src.is_dir() {
-            src.clone()
-        } else {
-            let mut zip = zip::ZipArchive::new(std::fs::File::open(&src).context("打不開這個檔案")?).context("這不是 zip 檔")?;
-            zip.extract(&staging).context("解壓縮失敗")?;
-            staging.clone()
-        };
-        let root = world_root(&from).context("裡面找不到 level.dat，不像是 Minecraft 世界")?;
-        let base = root
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .filter(|n| safe_name(n) && !n.starts_with(".import-"))
-            .unwrap_or_else(|| src.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "匯入的世界".into()));
-        let name = unique(&dest_dir, &base);
-        crate::importer::copy_tree(&root, &dest_dir.join(&name)).context("複製世界失敗")?;
+        let result = import_world(&src, &staging, &dest_dir);
         let _ = std::fs::remove_dir_all(&staging);
-        Ok(name)
+        result
     })
     .await
     .context("匯入工作中斷")?
+}
+
+fn import_world(src: &Path, staging: &Path, dest_dir: &Path) -> R<String> {
+    let from = if src.is_dir() {
+        src.to_path_buf()
+    } else {
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(src).context("打不開這個檔案")?).context("這不是 zip 檔")?;
+        zip.extract(staging).context("解壓縮失敗")?;
+        staging.to_path_buf()
+    };
+    let root = world_root(&from).context("裡面找不到 level.dat，不像是 Minecraft 世界")?;
+    let base = root
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .filter(|n| safe_name(n) && !n.starts_with(".import-"))
+        .unwrap_or_else(|| src.file_stem().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "匯入的世界".into()));
+    let name = unique(dest_dir, &base);
+    crate::importer::copy_tree(&root, &dest_dir.join(&name)).context("複製世界失敗")?;
+    Ok(name)
 }
 
 fn options_path(id: &str) -> PathBuf {
@@ -265,7 +270,7 @@ pub async fn set_pack_order(state: State<'_, AppState>, id: String, enabled: Vec
         lines[i] = format!("incompatibleResourcePacks:{}", serde_json::to_string(&keep)?);
     }
     std::fs::create_dir_all(paths::game_dir(&id))?;
-    std::fs::write(&path, lines.join("\n") + "\n").context("寫入 options.txt 失敗")?;
+    paths::write_atomic(&path, (lines.join("\n") + "\n").as_bytes()).context("寫入 options.txt 失敗")?;
     Ok(())
 }
 

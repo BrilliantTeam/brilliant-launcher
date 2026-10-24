@@ -14,6 +14,8 @@ use tauri::{AppHandle, State};
 const API: &str = "https://api.modrinth.com/v2";
 const ALLOWED_HOSTS: [&str; 4] = ["cdn.modrinth.com", "github.com", "raw.githubusercontent.com", "gitlab.com"];
 const MAX_FILES: usize = 600;
+const MAX_INDEX: u64 = 8 << 20;
+const MAX_OVERRIDES: u64 = 1 << 30;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -129,7 +131,8 @@ pub async fn profile_export(id: String, name: String, files: Vec<String>) -> R<S
 
     let out_dir = dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"));
     std::fs::create_dir_all(&out_dir)?;
-    let dest = out_dir.join(format!("{}.mrpack", file_name_safe(&format!("{}-{}", inst.name, name))));
+    let stem = file_name_safe(&format!("{}-{}", inst.name, name));
+    let dest = paths::unused(out_dir.join(format!("{stem}.mrpack")));
     let target = dest.clone();
     tokio::task::spawn_blocking(move || -> R<()> {
         let mut zip = zip::ZipWriter::new(std::fs::File::create(&target)?);
@@ -151,9 +154,10 @@ pub async fn profile_export(id: String, name: String, files: Vec<String>) -> R<S
 fn read_pack(path: &Path) -> R<(Index, Vec<(PathBuf, Vec<u8>)>)> {
     let mut zip = zip::ZipArchive::new(std::fs::File::open(path).context("打不開這個檔案")?).context("這不是有效的 .mrpack 檔")?;
     let mut raw = String::new();
-    zip.by_name("modrinth.index.json").context("檔案裡找不到 modrinth.index.json")?.read_to_string(&mut raw)?;
+    zip.by_name("modrinth.index.json").context("檔案裡找不到 modrinth.index.json")?.take(MAX_INDEX).read_to_string(&mut raw).context("modrinth.index.json 讀取失敗")?;
     let index: Index = serde_json::from_str(&raw).context("modrinth.index.json 格式不正確")?;
     let mut overrides = Vec::new();
+    let mut total = 0u64;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i)?;
         if entry.is_dir() {
@@ -162,8 +166,12 @@ fn read_pack(path: &Path) -> R<(Index, Vec<(PathBuf, Vec<u8>)>)> {
         let name = entry.name().replace('\\', "/");
         let rel = name.strip_prefix("overrides/").or_else(|| name.strip_prefix("client-overrides/"));
         if let Some(rel) = rel.and_then(safe_relative) {
+            total += entry.size();
+            if total > MAX_OVERRIDES {
+                bail!("模組包附帶的檔案超過 1 GB，為了安全不會匯入");
+            }
             let mut bytes = Vec::new();
-            entry.read_to_end(&mut bytes)?;
+            (&mut entry).take(MAX_OVERRIDES).read_to_end(&mut bytes).with_context(|| format!("讀取 {name} 失敗"))?;
             overrides.push((rel, bytes));
         }
     }
@@ -188,12 +196,11 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
     let mc = index.dependencies.get("minecraft").cloned().context("模組包沒有標示 Minecraft 版本")?;
     let fabric = index.dependencies.get("fabric-loader").cloned();
 
+    let target_was_new = target.is_none();
     let inst: Instance = match target {
         Some(id) => {
             let inst = instance::get(&id).await?;
-            if state.is_running(&id).await {
-                bail!("請先關閉遊戲再匯入");
-            }
+            state.ensure_idle(&id).await?;
             if inst.mc_version != mc {
                 bail!("這個模組包是給 Minecraft {mc} 的，目前實例是 {}，請改用「建立新實例」", inst.mc_version);
             }
@@ -213,6 +220,7 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
         }
     };
 
+    let created = target_was_new;
     let game = paths::game_dir(&inst.id);
     let mut jobs = Vec::new();
     let mut mods = Vec::new();
@@ -240,8 +248,41 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
         }
         jobs.push(DlFile::new(url.clone(), game.join(&rel)).sha1(Some(sha1.clone())).size(file.file_size));
     }
+    let written = write_pack(&app, &game, jobs, overrides, &mut mods, if created { None } else { Some(index.name.as_str()) }).await;
+    if let Err(error) = written {
+        if created {
+            let _ = tokio::fs::remove_dir_all(paths::instance_dir(&inst.id)).await;
+            return Err(error.0.context("匯入模組包失敗，已收回建立到一半的實例").into());
+        }
+        return Err(error);
+    }
+    mods.sort();
+    mods.dedup();
+    Ok(Imported { instance_id: inst.id, name: index.name, mods, skipped })
+}
+
+async fn write_pack(app: &AppHandle, game: &Path, jobs: Vec<DlFile>, overrides: Vec<(PathBuf, Vec<u8>)>, mods: &mut Vec<String>, existing: Option<&str>) -> R<()> {
+    if let Some(pack) = existing {
+        let mut replaced: Vec<(PathBuf, String)> = Vec::new();
+        for job in &jobs {
+            let differs = std::fs::read(&job.path).is_ok_and(|b| job.sha1.as_deref().is_some_and(|want| !net::sha1_hex(&b).eq_ignore_ascii_case(want)));
+            if differs {
+                replaced.push((job.path.clone(), job.path.strip_prefix(game).unwrap_or(&job.path).to_string_lossy().to_string()));
+            }
+        }
+        for (rel, bytes) in &overrides {
+            let dest = game.join(rel);
+            if std::fs::read(&dest).is_ok_and(|old| &old != bytes) {
+                replaced.push((dest, rel.to_string_lossy().to_string()));
+            }
+        }
+        if !replaced.is_empty() {
+            let items: Vec<(&PathBuf, &str)> = replaced.iter().map(|(p, r)| (p, r.as_str())).collect();
+            paths::discard(&format!("匯入模組包「{pack}」前被取代的檔案"), &items).context("把會被取代的檔案移到回收資料夾失敗")?;
+        }
+    }
     if !jobs.is_empty() {
-        net::download_all(&app, "mods", jobs, false).await?;
+        net::download_all(app, "mods", jobs, false).await?;
     }
     for (rel, bytes) in overrides {
         if rel.starts_with("mods") {
@@ -251,13 +292,11 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
         }
         let dest = game.join(&rel);
         if let Some(parent) = dest.parent() {
-            tokio::fs::create_dir_all(parent).await?;
+            tokio::fs::create_dir_all(parent).await.with_context(|| format!("建立 {} 失敗", parent.display()))?;
         }
         tokio::fs::write(&dest, bytes).await.with_context(|| format!("寫入 {} 失敗", rel.display()))?;
     }
-    mods.sort();
-    mods.dedup();
-    Ok(Imported { instance_id: inst.id, name: index.name, mods, skipped })
+    Ok(())
 }
 
 #[cfg(test)]
