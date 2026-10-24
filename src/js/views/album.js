@@ -1,5 +1,5 @@
 import { api, fileSrc, watchFolders } from '../api.js';
-import { $, clear, confirm, dialog, fail, guard, h, toast } from '../ui.js';
+import { $, clear, confirm, dialog, fail, guard, h, toast, RECYCLE_NOTE } from '../ui.js';
 import { icon } from '../icons.js';
 import { on, saveSettings, selectedAccount, store } from '../store.js';
 import { shareScreenshot } from './instances.js';
@@ -216,7 +216,7 @@ async function viewShot(shot) {
     if (value === 'share' && instance) await shareScreenshot(instance, shot);
     else if (value === 'bg') await saveSettings({ background: await api.set_media({ kind: 'background', path: shot.path }) }).then(() => toast('已設為啟動器背景'), fail);
     else if (value === 'open') api.open_path({ path: shot.path }).catch(fail);
-    else if (value === 'delete' && await confirm(`確定要刪除這張截圖嗎？\n${shot.name}`, '刪除')) {
+    else if (value === 'delete' && await confirm(`確定要刪除這張截圖嗎？\n${shot.name}\n${RECYCLE_NOTE}`, '刪除')) {
         await api.delete_screenshot({ id: shot.instance, file: shot.name }).then(() => {
             shots = shots.filter((s) => s !== shot);
             renderGrid();

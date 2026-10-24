@@ -186,6 +186,13 @@ export function fail(error) {
 
 let closeOpenDialog = null;
 
+export const RECYCLE_NOTE = '會移到啟動器的回收資料夾，30 天內都能從「關於 → 回收資料夾」找回。';
+
+addEventListener('unhandledrejection', (e) => {
+    e.preventDefault();
+    fail(e.reason);
+});
+
 const DESTRUCTIVE = /刪除|移除|清除|解散|覆蓋|登出|重設|停用/;
 
 export function dialog({ title, content, wide = false, buttons = [{ label: '關閉', value: null }] }) {

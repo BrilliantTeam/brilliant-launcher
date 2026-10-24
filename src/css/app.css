@@ -933,7 +933,7 @@ dialog .toolbar button.mc { display: inline-flex; align-items: center; gap: 6px;
 .album-grid { max-height: none; overflow: visible; }
 .album-grid .shot { padding: 0; text-align: left; font: inherit; }
 .album-bar { margin-top: 18px; }
-.memories { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(220px, 1fr); gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+.memories { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 240px); justify-content: start; gap: 12px; overflow-x: auto; padding-bottom: 6px; }
 .memory { position: relative; display: flex; align-items: flex-end; aspect-ratio: 4 / 5; padding: 0; border: 2px solid var(--bevel-down); background: var(--content-bg-sunken) center / cover no-repeat; color: #fff; text-align: left; font: inherit; cursor: pointer; overflow: hidden; }
 .memory::before { content: ''; position: absolute; inset: 0; background: linear-gradient(transparent 40%, rgba(0, 0, 0, 0.8)); }
 .memory:hover, .memory:focus-visible { border-color: var(--accent); }

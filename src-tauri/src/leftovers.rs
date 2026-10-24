@@ -149,7 +149,8 @@ pub async fn mod_leftovers(id: String, file: String) -> R<Leftovers> {
 }
 
 #[tauri::command]
-pub async fn remove_leftovers(id: String, mod_id: String, paths_to_remove: Vec<String>) -> R<usize> {
+pub async fn remove_leftovers(state: tauri::State<'_, crate::state::AppState>, id: String, mod_id: String, paths_to_remove: Vec<String>) -> R<usize> {
+    state.ensure_idle(&id).await?;
     let game_dir = paths::game_dir(&id);
     let allowed = find(&game_dir, &mod_id.to_ascii_lowercase(), &installed_ids(&game_dir));
     let items: Vec<(PathBuf, &str)> = paths_to_remove

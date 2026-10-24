@@ -379,7 +379,7 @@ export function initSettings() {
         await api.open_path({ path: paths[0][1] }).catch(fail);
     }));
     $('#btn-clean-cache').addEventListener('click', guard(async () => {
-        if (!(await confirm('要清理快取嗎？存檔、模組與設定都不會受影響。', '清理'))) return;
+        if (!(await confirm('要清理快取嗎？存檔、模組與設定都不會受影響；回收資料夾裡放超過 30 天的項目會永久刪除。', '清理'))) return;
         try {
             toast(`已清理 ${fmtBytes(await api.clean_cache())}`);
         } catch (error) {

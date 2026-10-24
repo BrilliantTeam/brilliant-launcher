@@ -82,10 +82,7 @@ fn unique(dir: &Path, base: &str) -> String {
 }
 
 async fn ensure_idle(state: &State<'_, AppState>, id: &str) -> R<()> {
-    if state.is_running(id).await {
-        bail!("請先關閉遊戲再進行這個操作");
-    }
-    Ok(())
+    state.ensure_idle(id).await
 }
 
 #[tauri::command]

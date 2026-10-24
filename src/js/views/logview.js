@@ -1,5 +1,5 @@
 import { api, listen, openUrl } from '../api.js';
-import { $, clear, confirm, dialog, fail, fmtBytes, h, toast, guard } from '../ui.js';
+import { $, clear, confirm, dialog, fail, fmtBytes, h, toast, guard, RECYCLE_NOTE } from '../ui.js';
 import { isRunning, on, selectedInstance, store } from '../store.js';
 
 const MAX_LINES = 4000;
@@ -144,7 +144,7 @@ async function uploadCurrent() {
 async function deleteFiles(list, label) {
     if (!list.length) return toast('沒有可以清除的紀錄檔');
     const size = list.reduce((sum, f) => sum + f.size, 0);
-    if (!(await confirm(`${label}\n共 ${list.length} 個檔案（${fmtBytes(size)}），刪除後無法復原。`, '刪除'))) return;
+    if (!(await confirm(`${label}\n共 ${list.length} 個檔案（${fmtBytes(size)}），${RECYCLE_NOTE}`, '刪除'))) return;
     try {
         const removed = await api.delete_logs({ id: shown, pathsToDelete: list.map((f) => f.path) });
         toast(`已刪除 ${removed} 個紀錄檔`);
@@ -220,8 +220,7 @@ export function initLog() {
     $('#btn-open-logs').addEventListener('click', guard(async () => {
         if (!shown) return;
         const sub = source.startsWith('crash-reports/') ? 'crash-reports' : source && !source.includes('/') ? '' : 'logs';
-        const path = await api.open_instance_folder({ id: shown, sub });
-        await api.open_path({ path }).catch(fail);
+        await api.open_instance_folder({ id: shown, sub }).then((path) => api.open_path({ path })).catch(fail);
     }));
 
     const input = $('#log-search');

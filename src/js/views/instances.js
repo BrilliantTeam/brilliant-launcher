@@ -1,5 +1,5 @@
 import { api, FILE_TYPES, fileSrc, isType, openUrl, pickFile, pickFiles, watchFolders } from '../api.js';
-import { $, $$, acceptFiles, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard } from '../ui.js';
+import { $, $$, acceptFiles, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard, RECYCLE_NOTE } from '../ui.js';
 import { accountFor, emit, isRunning, loadInstances, on, saveSettings, selectedInstance, store } from '../store.js';
 import { icon, iconOf, INSTANCE_ICONS, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
 
@@ -323,6 +323,7 @@ async function duplicateInstance(instance) {
     const name = input.value.trim();
     if (!name) return toast('請輸入新實例的名稱', 'warn');
     if (nameTaken(name)) return toast(`已經有叫「${name}」的實例了，複本請取一個不同的名稱`, 'warn');
+    toast(`正在複製「${instance.name}」，檔案多時需要一些時間⋯`);
     try {
         await api.duplicate_instance({ id: instance.id, name });
         await loadInstances();
@@ -333,7 +334,7 @@ async function duplicateInstance(instance) {
 }
 
 async function removeInstance(instance) {
-    if (!(await confirm(`確定要刪除「${instance.name}」嗎？\n整個實例（存檔、模組、設定）會移到啟動器的回收資料夾，30 天內都能從「關於 → 回收資料夾」找回。`, '刪除'))) return;
+    if (!(await confirm(`確定要刪除「${instance.name}」嗎？\n整個實例（存檔、模組、設定）${RECYCLE_NOTE}`, '刪除'))) return;
     try {
         await api.delete_instance({ id: instance.id });
         await loadInstances();
@@ -574,6 +575,7 @@ async function showWorlds(instance) {
                 class: 'mc',
                 title: '匯出成 zip',
                 onclick: async () => {
+                    toast(`正在匯出「${w.name}」⋯`);
                     try {
                         const path = await api.world_export({ id: instance.id, folder: w.folder });
                         toast(`已匯出到「下載」資料夾：${path.split(/[\\/]/).pop()}`);
@@ -589,7 +591,7 @@ async function showWorlds(instance) {
                 title: '刪除',
                 'aria-label': '刪除',
                 onclick: async () => {
-                    if (!(await confirm(`要刪除世界「${w.name}」嗎？\n它會移到實例資料夾的 trash，需要時還能找回來。`, '刪除'))) return showWorlds(instance);
+                    if (!(await confirm(`要刪除世界「${w.name}」嗎？\n${RECYCLE_NOTE}`, '刪除'))) return showWorlds(instance);
                     await api.world_delete({ id: instance.id, folder: w.folder }).then(() => toast(`已刪除「${w.name}」`)).catch(fail);
                     showWorlds(instance);
                 }
@@ -599,6 +601,7 @@ async function showWorlds(instance) {
     const importWorld = async (directory, dropped = null) => {
         const path = dropped ?? await (directory ? pickFiles({ directory: true, multiple: false }) : pickFile('world')).catch(fail);
         if (!path) return;
+        toast('正在匯入世界⋯');
         try {
             const name = await api.world_import({ id: instance.id, path });
             toast(`已匯入世界「${name}」`);
@@ -635,6 +638,7 @@ async function copyWorld(instance, world) {
     });
     if (ok === true) {
         const target = targets.find((t) => t.id === select.value);
+        toast(`正在把「${world.name}」複製到「${target.name}」⋯`);
         try {
             const name = await api.world_copy({ id: instance.id, folder: world.folder, target: target.id });
             toast(`已複製到「${target.name}」（${name}）`);
@@ -660,7 +664,8 @@ async function manageBackups(instance) {
                 type: 'button',
                 class: 'mc',
                 onclick: async () => {
-                    if (!(await confirm(`要把存檔還原到 ${new Date(b.time * 1000).toLocaleString('zh-TW', { hour12: false })} 的狀態嗎？\n目前的存檔會先自動備份一份「還原前」備份。`, '還原'))) return manageBackups(instance);
+                    if (!(await confirm(`要把存檔還原到 ${new Date(b.time * 1000).toLocaleString('zh-TW', { hour12: false })} 的狀態嗎？\n目前的存檔會先自動備份一份「還原前」備份，再移到回收資料夾。${groupList().find((g) => g.name === instance.group)?.shared?.includes('saves') ? `\n存檔由分組「${instance.group}」共用，分組裡的其他實例也會一起還原。` : ''}`, '還原'))) return manageBackups(instance);
+                    toast('正在還原存檔⋯');
                     try {
                         await api.restore_backup({ id: instance.id, file: b.file });
                         toast('存檔已還原');
@@ -676,8 +681,9 @@ async function manageBackups(instance) {
                 title: '刪除',
                 'aria-label': '刪除',
                 onclick: async () => {
-                    await api.delete_backup({ id: instance.id, file: b.file }).catch(fail);
-                    refresh();
+                    if (!(await confirm(`要刪除這份備份嗎？\n${b.file}\n${RECYCLE_NOTE}`, '刪除'))) return manageBackups(instance);
+                    await api.delete_backup({ id: instance.id, file: b.file }).then(() => toast('已刪除備份'), fail);
+                    manageBackups(instance);
                 }
             }, icon('trash'))))
             : [h('div', { class: 'empty-state' }, '還沒有任何備份。')]));

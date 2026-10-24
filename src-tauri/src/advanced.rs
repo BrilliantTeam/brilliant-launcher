@@ -357,8 +357,16 @@ pub async fn shared_add(key: String, folder: String, files: Vec<String>) -> R<us
 }
 
 #[tauri::command]
-pub async fn shared_remove(key: String, folder: String, names: Vec<String>) -> R<usize> {
+pub async fn shared_remove(state: tauri::State<'_, crate::state::AppState>, key: String, folder: String, names: Vec<String>) -> R<usize> {
     let dir = shared_dir(&key, &folder)?;
+    let settings = crate::config::load_settings().await;
+    if let Some(group) = settings.instance_groups.iter().find(|g| g.key == key) {
+        for instance in crate::instance::list().await.into_iter().filter(|i| i.group == group.name) {
+            if state.ensure_idle(&instance.id).await.is_err() {
+                bail!("「{}」正在執行，共用的檔案被遊戲使用著，請先關閉遊戲再移除", instance.name);
+            }
+        }
+    }
     let items: Vec<(PathBuf, &str)> = names.iter().filter(|n| safe_item(n) && dir.join(n).exists()).map(|n| (dir.join(n), n.as_str())).collect();
     if !items.is_empty() {
         paths::discard(&format!("共用{folder}"), &items).context("移到回收資料夾失敗")?;

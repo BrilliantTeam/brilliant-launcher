@@ -39,6 +39,13 @@ impl AppState {
         }
         Some(LaunchClaim { state: self, id: instance_id.to_string() })
     }
+    pub async fn ensure_idle(&self, instance_id: &str) -> crate::err::R<()> {
+        let preparing = self.launching.lock().map(|s| s.contains(instance_id)).unwrap_or(false);
+        if preparing || self.is_running(instance_id).await {
+            crate::bail!("遊戲正在執行或準備中，檔案被遊戲使用著，請先關閉遊戲再進行這個操作");
+        }
+        Ok(())
+    }
     pub async fn running_ids(&self) -> Vec<String> {
         self.running.lock().await.keys().cloned().collect()
     }

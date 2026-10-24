@@ -361,12 +361,14 @@ pub async fn set_instance_image(id: String, path: String) -> R<Instance> {
 }
 
 #[tauri::command]
-pub async fn delete_instance(id: String) -> R<()> {
+pub async fn delete_instance(state: State<'_, AppState>, id: String) -> R<()> {
+    state.ensure_idle(&id).await?;
     instance::delete(&id).await
 }
 
 #[tauri::command]
-pub async fn duplicate_instance(id: String, name: String) -> R<Instance> {
+pub async fn duplicate_instance(state: State<'_, AppState>, id: String, name: String) -> R<Instance> {
+    state.ensure_idle(&id).await?;
     instance::duplicate(&id, &name).await
 }
 
@@ -378,7 +380,8 @@ pub async fn select_instance(id: String) -> R<()> {
 }
 
 #[tauri::command]
-pub async fn set_mod_enabled(id: String, file: String, enabled: bool) -> R<()> {
+pub async fn set_mod_enabled(state: State<'_, AppState>, id: String, file: String, enabled: bool) -> R<()> {
+    state.ensure_idle(&id).await?;
     instance::set_mod_enabled(&id, &file, enabled).await
 }
 
@@ -442,12 +445,14 @@ pub async fn content_pin(id: String, project: String, pinned: bool) -> R<()> {
 }
 
 #[tauri::command]
-pub async fn content_update(app: AppHandle, id: String, kind: String, file: String, update: modrinth::Update) -> R<String> {
+pub async fn content_update(app: AppHandle, state: State<'_, AppState>, id: String, kind: String, file: String, update: modrinth::Update) -> R<String> {
+    state.ensure_idle(&id).await?;
     modrinth::replace(&app, &id, modrinth::Kind::parse(&kind)?, &file, update).await
 }
 
 #[tauri::command]
-pub async fn content_remove(id: String, kind: String, file: String) -> R<()> {
+pub async fn content_remove(state: State<'_, AppState>, id: String, kind: String, file: String) -> R<()> {
+    state.ensure_idle(&id).await?;
     modrinth::remove(&id, modrinth::Kind::parse(&kind)?, &file).await
 }
 

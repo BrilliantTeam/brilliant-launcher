@@ -1,5 +1,5 @@
 import { api, fileSrc, pickFile } from '../api.js';
-import { $, acceptFiles, clear, confirm, dialog, dismissDialog, fail, h, toast, guard } from '../ui.js';
+import { $, acceptFiles, clear, confirm, dialog, dismissDialog, fail, h, toast, guard, RECYCLE_NOTE } from '../ui.js';
 import { icon } from '../icons.js';
 import { avatarUrl, emit, loadAccounts, on, refreshAvatar, selectedAccount, store } from '../store.js';
 
@@ -319,7 +319,7 @@ async function editSkin(entry) {
 }
 
 async function removeSkin(entry) {
-    if (await confirm(`要把「${entry.name}」從衣櫃移除嗎？`, '移除')) await api.skin_remove({ file: entry.file }).catch(fail);
+    if (await confirm(`要把「${entry.name}」從衣櫃移除嗎？\n皮膚圖檔${RECYCLE_NOTE}`, '移除')) await api.skin_remove({ file: entry.file }).then(() => toast(`已移除「${entry.name}」`), fail);
     renderPanel();
 }
 

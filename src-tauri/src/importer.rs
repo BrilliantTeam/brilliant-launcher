@@ -420,7 +420,8 @@ pub async fn import_parts(request: ImportRequest) -> R<u64> {
 }
 
 #[tauri::command]
-pub async fn import_into(request: ImportRequest) -> R<u64> {
+pub async fn import_into(state: tauri::State<'_, crate::state::AppState>, request: ImportRequest) -> R<u64> {
+    state.ensure_idle(&request.instance_id).await?;
     import_parts(request).await
 }
 
