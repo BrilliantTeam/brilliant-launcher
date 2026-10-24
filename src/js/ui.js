@@ -7,6 +7,9 @@ export function rangeFill(el) {
     el.style.setProperty('--fill', `${((Number(el.value) - min) / Math.max(1, max - min)) * 100}%`);
 }
 
+let pendingWork = 0;
+export const workPending = () => pendingWork > 0;
+
 export function guard(fn) {
     return function (event) {
         const el = event.currentTarget;
@@ -15,7 +18,9 @@ export function guard(fn) {
         if (!result || typeof result.then !== 'function') return result;
         el.setAttribute('data-pending', '');
         el.setAttribute('aria-busy', 'true');
+        pendingWork++;
         return Promise.resolve(result).finally(() => {
+            pendingWork--;
             el.removeAttribute('data-pending');
             el.removeAttribute('aria-busy');
         });

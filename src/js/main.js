@@ -1,6 +1,6 @@
 import { api, appVersion, appWindow, listen, openUrl, setZoom } from './api.js';
 import { icon } from './icons.js';
-import { $, $$, dialog, fail, h, rangeFill, toast, guard } from './ui.js';
+import { $, $$, confirm, dialog, fail, h, modalOpen, rangeFill, toast, guard, workPending } from './ui.js';
 import { emit, loadAccounts, loadInstances, loadSettings, on, saveSettings, selectedAccount, store } from './store.js';
 import { initHome } from './views/home.js';
 import { initInstances } from './views/instances.js';
@@ -134,7 +134,21 @@ function initChrome() {
     const win = appWindow();
     $('#win-min').addEventListener('click', () => win.minimize());
     $('#win-max').addEventListener('click', () => win.toggleMaximize());
-    $('#win-close').addEventListener('click', () => (store.settings?.closeToTray ? win.hide() : win.close()));
+    let closing = false;
+    const closeWindow = async () => {
+        if (store.settings?.closeToTray) return win.hide();
+        if (closing) return;
+        closing = true;
+        const busy = (workPending() && !modalOpen()) || !$('#progress').hidden;
+        const go = !busy || await confirm('還有工作正在進行（例如下載、複製或匯入），現在關閉會讓它中斷，可能留下不完整的檔案。\n仍要關閉輝煌啟動器嗎？', '強制關閉');
+        closing = false;
+        if (go) await win.destroy();
+    };
+    $('#win-close').addEventListener('click', closeWindow);
+    win.onCloseRequested?.((event) => {
+        event.preventDefault();
+        closeWindow();
+    });
     const dragFromDialog = (e) => {
         const dlg = e.target.closest?.('dialog[open]');
         if (!dlg || e.button !== 0) return false;
