@@ -14,6 +14,8 @@ import { notifyOnce, startServices } from './services.js';
 import { initLog } from './views/logview.js';
 import { initReports } from './report.js';
 import { initTours } from './tour.js';
+import { playClick } from './sound.js';
+import { setWeather } from './weather.js';
 
 const TITLES = {
     profile: '我的輝煌',
@@ -46,8 +48,21 @@ function show(view) {
 const THEMES = {
     auto: { icon: 'invert', label: '主題：跟隨系統（點一下切換為亮色）' },
     light: { icon: 'sun', label: '主題：亮色（點一下切換為深色）' },
-    dark: { icon: 'moon', label: '主題：深色（點一下改為跟隨系統）' }
+    dark: { icon: 'moon', label: '主題：深色（點一下改為跟隨系統）' },
+    schedule: { icon: 'clock', label: '主題：依時段自動切換（點一下改為跟隨系統）' }
 };
+
+const HEX = /^#[0-9a-f]{6}$/i;
+
+function scheduledTheme(look) {
+    const hour = new Date().getHours();
+    const from = Number(look.darkFrom ?? 19);
+    const to = Number(look.darkTo ?? 7);
+    const dark = from === to ? false : from < to ? hour >= from && hour < to : hour >= from || hour < to;
+    return dark ? 'dark' : 'light';
+}
+
+const pick = (value, allowed, fallback) => (allowed.includes(value) ? value : fallback);
 
 let appliedScale = 1;
 
@@ -88,14 +103,16 @@ async function applyWalkers() {
 function applyTheme() {
     const root = document.documentElement;
     const theme = THEMES[store.settings?.theme] ? store.settings.theme : 'auto';
-    if (theme === 'auto') delete root.dataset.theme;
-    else root.dataset.theme = theme;
-    root.dataset.font = store.settings?.font ?? 'pixel';
+    const effective = theme === 'schedule' ? scheduledTheme(store.settings) : theme;
+    if (effective === 'auto') delete root.dataset.theme;
+    else root.dataset.theme = effective;
+    root.dataset.font = pick(store.settings?.font, ['pixel', 'system', 'naikai', 'serif'], 'pixel');
     const toggle = $('#theme-toggle');
     toggle.replaceChildren(icon(THEMES[theme].icon));
     toggle.title = THEMES[theme].label;
     toggle.setAttribute('aria-label', THEMES[theme].label);
-    const accent = /^#[0-9a-f]{6}$/i.test(store.settings?.accent ?? '') ? store.settings.accent : '';
+    const fromBg = store.settings?.accentFromBg && HEX.test(store.bgAccent ?? '') ? store.bgAccent : '';
+    const accent = fromBg || (HEX.test(store.settings?.accent ?? '') ? store.settings.accent : '');
     if (accent) {
         const [r, g, b] = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16));
         root.style.setProperty('--accent', accent);
@@ -131,6 +148,47 @@ function applyTheme() {
     root.dataset.layout = look.homeLayout === 'mirrored' ? 'mirrored' : 'standard';
     const tones = { mono: 'grayscale(1)', sepia: 'sepia(0.75) saturate(1.1)', cool: 'saturate(0.9) hue-rotate(12deg) brightness(0.97)', warm: 'sepia(0.25) saturate(1.3)', vivid: 'saturate(1.5) contrast(1.08)' };
     root.style.setProperty('--bg-tone', tones[look.bgFilter] ?? 'saturate(1)');
+    for (const [key, cssVar] of [['colorSuccess', '--success'], ['colorWarning', '--warning'], ['colorLink', '--link']]) {
+        if (HEX.test(look[key] ?? '')) root.style.setProperty(cssVar, look[key]);
+        else root.style.removeProperty(cssVar);
+    }
+    root.dataset.contrast = look.highContrast ? 'high' : 'normal';
+    root.dataset.heading = look.headingStyle === 'modern' ? 'modern' : 'game';
+    root.style.setProperty('--fs', String(Math.min(130, Math.max(90, Number(look.fontScale) || 100)) / 100));
+    const solid = look.bgSource === 'color';
+    root.dataset.bgsource = solid ? 'color' : 'auto';
+    const c1 = HEX.test(look.bgColor ?? '') ? look.bgColor : '#1b2027';
+    root.style.setProperty('--bg-solid', HEX.test(look.bgColor2 ?? '') ? `linear-gradient(135deg, ${c1}, ${look.bgColor2})` : c1);
+    root.dataset.bgtrans = pick(look.bgTransition, ['fade', 'slide', 'pixel', 'none'], 'fade');
+    root.dataset.bgpan = look.bgPan ? 'on' : 'off';
+    setWeather(look.reduceMotion ? 'none' : look.weather);
+    root.dataset.clockstyle = pick(look.clockStyle, ['bold', 'thin', 'pixel'], 'bold');
+    root.dataset.clockpos = look.clockPosition === 'center' ? 'center' : 'right';
+    root.dataset.playsize = pick(look.playSize, ['normal', 'large', 'xl'], 'normal');
+    root.dataset.shards = look.shardLayout === 'row' ? 'row' : 'grid';
+    root.dataset.credit = look.showCredit === false ? 'off' : 'on';
+    root.dataset.social = look.showSocial === false ? 'off' : 'on';
+    root.dataset.shardstats = look.showShardStats === false ? 'off' : 'on';
+    root.dataset.lastplayed = look.showLastPlayed === false ? 'off' : 'on';
+    root.dataset.cardview = pick(look.cardView, ['grid', 'list', 'poster'], 'grid');
+    root.dataset.cardhover = pick(look.cardHover, ['lift', 'zoom', 'none'], 'lift');
+    root.style.setProperty('--cover-shade', String(Math.min(80, Math.max(0, Number(look.coverShade ?? 35))) / 100));
+    root.style.setProperty('--cover-pos', pick(look.coverPosition, ['top', 'center', 'bottom'], 'center'));
+    root.dataset.pagestats = look.pageStats === false ? 'off' : 'on';
+    root.dataset.railside = look.railSide === 'right' ? 'right' : 'left';
+    const order = Array.isArray(look.railOrder) ? look.railOrder : [];
+    const hiddenViews = Array.isArray(look.railHidden) ? look.railHidden : [];
+    $$('.rail a[data-view]').forEach((link, i) => {
+        const view = link.dataset.view;
+        link.style.order = view === 'about' ? '99' : String(order.includes(view) ? order.indexOf(view) : order.length + i);
+        link.hidden = hiddenViews.includes(view) && !['home', 'instances', 'settings', 'about'].includes(view);
+    });
+    root.dataset.accountname = look.hideAccountName ? 'off' : 'on';
+    for (const id of ['walker-toggle', 'font-toggle', 'theme-toggle']) $(`#${id}`).hidden = (look.hiddenTools ?? []).includes(id);
+    root.dataset.pagetrans = pick(look.pageTransition, ['rise', 'fade', 'slide', 'none'], 'rise');
+    animRate = { fast: 1.6, slow: 0.6 }[look.animSpeed] ?? 1;
+    root.dataset.toastpos = pick(look.toastPosition, ['bottom-right', 'top-right', 'top-center'], 'bottom-right');
+    root.dataset.toastSeconds = String(Math.min(15, Math.max(2, Number(look.toastSeconds) || 6)));
     $('#home-clock').hidden = !look.showClock;
     tickClock();
     const tagline = $('.home-brand .tagline');
@@ -145,30 +203,30 @@ function applyTheme() {
     font.title = root.dataset.font === 'system' ? '字型：系統字型（點一下改為點陣字型）' : '字型：點陣字型（點一下改為系統字型）';
 }
 
+let animRate = 1;
+
+function speedAnimations(e) {
+    if (animRate === 1 || !e.target.getAnimations) return;
+    for (const animation of e.target.getAnimations()) animation.playbackRate = animRate;
+}
+
+let lastScheduled = '';
+
 function tickClock() {
-    if ($('#home-clock').hidden) return;
+    const look = store.settings ?? {};
+    if (look.theme === 'schedule' && scheduledTheme(look) !== lastScheduled) {
+        lastScheduled = scheduledTheme(look);
+        applyTheme();
+    }
+    if ($('#home-clock').hidden || document.hidden) return;
     const now = new Date();
-    $('#clock-time').textContent = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
+    $('#clock-time').textContent = now.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', second: look.clockSeconds ? '2-digit' : undefined, hour12: look.clockFormat === '12' });
     $('#clock-date').textContent = now.toLocaleDateString('zh-TW', { month: 'long', day: 'numeric', weekday: 'long' });
 }
 
-let clickAudio = null;
 function clickSound(e) {
     if (!store.settings?.clickSound || e.button !== 0 || !e.target.closest?.('button:not(:disabled), .rail a, [role="menuitem"], .look-preset')) return;
-    try {
-        clickAudio ??= new AudioContext();
-        const t = clickAudio.currentTime;
-        const osc = clickAudio.createOscillator();
-        const gain = clickAudio.createGain();
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(620, t);
-        osc.frequency.exponentialRampToValueAtTime(240, t + 0.05);
-        gain.gain.setValueAtTime(0.05, t);
-        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
-        osc.connect(gain).connect(clickAudio.destination);
-        osc.start(t);
-        osc.stop(t + 0.08);
-    } catch {}
+    playClick(store.settings.clickSoundType, store.settings.clickVolume ?? 50);
 }
 
 function mountIcons() {
@@ -281,7 +339,27 @@ function initChrome() {
         openUrl(link.dataset.url);
     });
 
-    addEventListener('hashchange', () => show(location.hash.slice(1)));
+    addEventListener('hashchange', () => {
+        show(location.hash.slice(1));
+        try {
+            localStorage.setItem(LAST_VIEW_KEY, document.body.dataset.view);
+        } catch {}
+    });
+}
+
+const LAST_VIEW_KEY = 'brilliant.lastView';
+
+function startView() {
+    const start = store.settings?.startPage;
+    let view = start === 'instances' ? 'instances' : 'home';
+    if (start === 'last') {
+        try {
+            view = localStorage.getItem(LAST_VIEW_KEY) || 'home';
+        } catch {}
+    }
+    if (!TITLES[view] || view === 'mods') view = 'home';
+    if (view !== 'home') history.replaceState(null, '', `#${view}`);
+    return view;
 }
 
 const RANK = { alpha: 0, beta: 1 };
@@ -422,11 +500,16 @@ async function boot() {
     initLog();
     initReports();
     initTours();
-    setInterval(tickClock, 10_000);
+    setInterval(tickClock, 1000);
     addEventListener('pointerdown', clickSound, true);
+    document.addEventListener('animationstart', speedAnimations, true);
+    document.addEventListener('transitionrun', speedAnimations, true);
+    on('bg-color', () => {
+        if (store.settings?.accentFromBg) applyTheme();
+    });
 
     emit('settings');
-    show(location.hash.slice(1) || 'home');
+    show(location.hash.slice(1) || startView());
     checkUpdate();
     setInterval(() => checkUpdate(), 30 * 60 * 1000);
     on('check-update', () => checkUpdate(true).catch(fail));

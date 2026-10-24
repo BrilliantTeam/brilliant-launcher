@@ -2,7 +2,7 @@ import { api, fileSrc, isType, listen, openUrl, pickFile, typeLabel, watchFolder
 import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtBytes, fmtDuration, h, modalOpen, toast, guard } from '../ui.js';
 import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../store.js';
 import { icon, iconOf, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
-import { editInstance, moreMenu, playInstance, selectInstance, shareNotice } from './instances.js';
+import { accentStyle, editInstance, moreMenu, playInstance, selectInstance, shareNotice } from './instances.js';
 import { renderMarkdown } from '../markdown.js';
 
 const FABRIC_API = 'P7dR8mSH';
@@ -1048,6 +1048,7 @@ function renderHeader() {
     const vector = /\.svg$/i.test(cover);
     const head = $('#store-instance');
     head.classList.toggle('has-cover', !!cover);
+    $('#view-mods').style.cssText = accentStyle(instance?.accent);
     clear(head).append(
         cover ? h('div', { class: 'inst-page-cover', 'aria-hidden': 'true', style: vector ? '' : `background-image:url("${fileSrc(cover)}")` }, vector ? svgFromFile(cover, 'cover-svg') : null) : null,
         h('div', { class: 'inst-thumb inst-page-icon' }, instance ? iconOf(instance.icon) : icon('warning-box')),

@@ -14,6 +14,7 @@
     <div class="bg-img" id="bg-b"></div>
     <video class="bg-img bg-video" id="bg-video" muted loop playsinline preload="auto"></video>
     <div class="bg-shade"></div>
+    <canvas class="weather" id="weather" hidden></canvas>
 </div>
 
 <header class="titlebar" data-tauri-drag-region>
@@ -353,9 +354,82 @@
                     <div class="hint">一鍵套用整組外觀，套用後仍可以在下面逐項微調。</div>
                 </div>
                 <div class="field">
+                    <label>社群風格</label>
+                    <div class="look-presets" id="look-community"><div class="hint">載入中⋯</div></div>
+                    <div class="hint">輝煌玩家分享的風格組合。把你的風格代碼貼到輝煌 Discord，精選作品會上架到這裡。</div>
+                </div>
+                <div class="toolbar">
+                    <button type="button" class="mc" id="btn-look-export"><i data-icon="copy"></i>分享我的外觀</button>
+                    <button type="button" class="mc" id="btn-look-import"><i data-icon="download"></i>匯入外觀</button>
+                    <button type="button" class="mc" id="btn-look-reset"><i data-icon="reload"></i>還原預設外觀</button>
+                </div>
+
+                <h3 class="look-group">顏色與主題</h3>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-theme">亮色／深色</label>
+                        <select id="set-theme">
+                            <option value="auto">跟隨系統</option>
+                            <option value="light">亮色</option>
+                            <option value="dark">深色</option>
+                            <option value="schedule">依時段自動切換</option>
+                        </select>
+                    </div>
+                    <div class="field" data-when="theme=schedule">
+                        <label for="set-dark-from">幾點開始深色</label>
+                        <select id="set-dark-from" class="hour-select"></select>
+                    </div>
+                    <div class="field" data-when="theme=schedule">
+                        <label for="set-dark-to">幾點換回亮色</label>
+                        <select id="set-dark-to" class="hour-select"></select>
+                    </div>
+                </div>
+                <div class="field">
                     <label>主題色</label>
                     <div class="swatches" id="set-accent"></div>
                 </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-accent-bg">主題色跟著主頁背景變化（從目前的背景圖取主要顏色，換背景就換色）</label>
+                </div>
+                <div class="field">
+                    <label>輔助色</label>
+                    <div class="color-fields">
+                        <div class="color-field" data-color-key="colorSuccess" data-color-label="成功"></div>
+                        <div class="color-field" data-color-key="colorWarning" data-color-label="警告"></div>
+                        <div class="color-field" data-color-key="colorLink" data-color-label="連結"></div>
+                    </div>
+                    <div class="hint">留空使用預設顏色。</div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-contrast">高對比模式（文字與邊框更清楚，適合視力較弱或螢幕反光時使用）</label>
+                </div>
+
+                <h3 class="look-group">字體</h3>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-font">介面字體</label>
+                        <select id="set-font">
+                            <option value="pixel">像素（Minecraft 風格）</option>
+                            <option value="system">黑體（一般閱讀）</option>
+                            <option value="naikai">內海字體（圓潤手寫）</option>
+                            <option value="serif">明體</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-heading">標題風格</label>
+                        <select id="set-heading">
+                            <option value="game">遊戲感（跟著介面字體）</option>
+                            <option value="modern">現代（粗黑體、緊密字距）</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="set-font-scale">文字大小：<b id="set-font-scale-value"></b></label>
+                    <input type="range" id="set-font-scale" min="90" max="130" step="5">
+                    <div class="hint">只放大文字，版面不變；想整個介面一起放大請用下面的「介面縮放」。</div>
+                </div>
+
+                <h3 class="look-group">按鈕與版面</h3>
                 <div class="field-row">
                     <div class="field">
                         <label for="set-buttons">按鈕風格</label>
@@ -372,10 +446,10 @@
                         </select>
                     </div>
                     <div class="field">
-                        <label for="set-cards">實例卡片</label>
-                        <select id="set-cards">
-                            <option value="comfy">舒適</option>
-                            <option value="compact">緊湊</option>
+                        <label for="set-cursor">滑鼠游標</label>
+                        <select id="set-cursor">
+                            <option value="system">系統</option>
+                            <option value="pixel">像素（Minecraft 風格）</option>
                         </select>
                     </div>
                 </div>
@@ -404,30 +478,68 @@
                         </select>
                     </div>
                 </div>
+                <div class="field">
+                    <label for="set-panel">內容面板不透明度：<b id="set-panel-value"></b></label>
+                    <input type="range" id="set-panel" min="60" max="100" step="5">
+                    <div class="hint">調低後會透出主頁背景，面板加上霧化效果，文字仍保持清楚。</div>
+                </div>
+                <div class="field">
+                    <label for="set-scale">介面縮放：<b id="set-scale-value"></b></label>
+                    <input type="range" id="set-scale" min="80" max="125" step="5">
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-thin-scroll">細捲軸</label>
+                </div>
+
+                <h3 class="look-group">主頁背景</h3>
                 <div class="field-row">
                     <div class="field">
-                        <label for="set-rail-style">側欄樣式</label>
-                        <select id="set-rail-style">
-                            <option value="glass">玻璃</option>
-                            <option value="solid">實色</option>
-                            <option value="accent">主題色</option>
+                        <label for="set-bg-source">背景來源</label>
+                        <select id="set-bg-source">
+                            <option value="auto">圖片或影片（官網輪播或自訂檔案）</option>
+                            <option value="color">純色或漸層</option>
                         </select>
                     </div>
                     <div class="field">
-                        <label for="set-cover-height">實例封面高度</label>
-                        <select id="set-cover-height">
-                            <option value="short">矮</option>
-                            <option value="normal">標準</option>
-                            <option value="tall">高</option>
+                        <label for="set-bg-transition">換圖轉場</label>
+                        <select id="set-bg-transition">
+                            <option value="fade">淡入</option>
+                            <option value="slide">滑動</option>
+                            <option value="pixel">像素溶解</option>
+                            <option value="none">直接切換</option>
                         </select>
                     </div>
-                    <div class="field">
-                        <label for="set-cursor">滑鼠游標</label>
-                        <select id="set-cursor">
-                            <option value="system">系統</option>
-                            <option value="pixel">像素（Minecraft 風格）</option>
-                        </select>
+                </div>
+                <div class="field" data-when="bgSource=color">
+                    <label>背景顏色</label>
+                    <div class="color-fields">
+                        <div class="color-field" data-color-key="bgColor" data-color-label="主色"></div>
+                        <div class="color-field" data-color-key="bgColor2" data-color-label="漸層色（留空為純色）"></div>
                     </div>
+                </div>
+                <div class="field" data-when="bgSource=auto">
+                    <label>主頁背景</label>
+                    <div class="toolbar">
+                        <button type="button" class="mc" id="btn-bg-pick"><i data-icon="image"></i>選擇圖片或影片</button>
+                        <button type="button" class="mc" id="btn-bg-reset">使用官網輪播</button>
+                        <span class="toolbar-label" id="bg-state"></span>
+                    </div>
+                    <div class="hint">支援 PNG、JPG、WebP、GIF 圖片與 MP4、WebM 影片（影片會靜音循環播放）。</div>
+                </div>
+                <div class="field" data-when="bgSource=auto">
+                    <label>官網輪播</label>
+                    <div class="bg-pins" id="bg-pins"></div>
+                    <div class="hint">點一張固定使用它；選「隨機輪播」恢復輪流顯示。使用自訂檔案時這裡不會生效。</div>
+                </div>
+                <div class="field" data-when="bgSource=auto">
+                    <label for="set-slide">背景輪播間隔：<b id="set-slide-value"></b></label>
+                    <input type="range" id="set-slide" min="0" max="300" step="10">
+                </div>
+                <div class="field" data-when="bgSource=auto">
+                    <label><input type="checkbox" id="set-bg-pan">全景平移（背景圖會左右慢慢移動，適合寬幅全景截圖）</label>
+                </div>
+                <div class="field" data-when="bgSource=auto">
+                    <label><input type="checkbox" id="set-bg-motion">背景緩慢縮放（讓靜態背景圖有呼吸感）</label>
                 </div>
                 <div class="field-row">
                     <div class="field">
@@ -442,17 +554,16 @@
                         </select>
                     </div>
                     <div class="field">
-                        <label for="set-home-layout">主頁版面</label>
-                        <select id="set-home-layout">
-                            <option value="standard">標準（公告在左、分流在右）</option>
-                            <option value="mirrored">左右對調</option>
+                        <label for="set-weather">天氣粒子</label>
+                        <select id="set-weather">
+                            <option value="none">無</option>
+                            <option value="seasonal">跟著季節（冬雪、春櫻、梅雨、夏螢、秋葉）</option>
+                            <option value="snow">下雪</option>
+                            <option value="rain">下雨</option>
+                            <option value="sakura">櫻花</option>
+                            <option value="fireflies">螢火蟲</option>
                         </select>
                     </div>
-                </div>
-                <div class="field">
-                    <label for="set-panel">內容面板不透明度：<b id="set-panel-value"></b></label>
-                    <input type="range" id="set-panel" min="60" max="100" step="5">
-                    <div class="hint">調低後會透出主頁背景，面板加上霧化效果，文字仍保持清楚。</div>
                 </div>
                 <div class="field">
                     <label for="set-dim">背景暗化：<b id="set-dim-value"></b></label>
@@ -463,46 +574,88 @@
                     <label for="set-blur">背景模糊：<b id="set-blur-value"></b></label>
                     <input type="range" id="set-blur" min="0" max="20" step="2">
                 </div>
+
+                <h3 class="look-group">主頁</h3>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-home-layout">主頁版面</label>
+                        <select id="set-home-layout">
+                            <option value="standard">標準（公告在左、分流在右）</option>
+                            <option value="mirrored">左右對調</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-shard-layout">分流卡片排列</label>
+                        <select id="set-shard-layout">
+                            <option value="grid">2×2 格狀</option>
+                            <option value="row">單欄清單</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="field">
-                    <label><input type="checkbox" id="set-bg-motion">背景緩慢縮放（讓靜態背景圖有呼吸感，「減少動畫效果」開啟時不會動）</label>
+                    <label>顯示的分流</label>
+                    <div class="check-row" id="shard-visibility"></div>
+                    <div class="hint">只留下自己常去的分流；隱藏的分流仍可以用遊戲內的指令前往。</div>
                 </div>
                 <div class="field">
                     <label for="set-tagline">主頁標語</label>
                     <input type="text" id="set-tagline" maxlength="60" placeholder="留空使用輝煌預設標語">
                 </div>
-                <div class="field">
-                    <label><input type="checkbox" id="set-brand">主頁顯示輝煌標誌與標語</label>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-play-size">「開始遊戲」按鈕大小</label>
+                        <select id="set-play-size">
+                            <option value="normal">標準</option>
+                            <option value="large">大</option>
+                            <option value="xl">超大</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-play-text">「開始遊戲」按鈕文字</label>
+                        <input type="text" id="set-play-text" maxlength="12" placeholder="例如：出發！">
+                    </div>
                 </div>
                 <div class="field">
-                    <label><input type="checkbox" id="set-card-details">實例卡片顯示版本標籤與遊玩時數</label>
-                </div>
-                <div class="field">
-                    <label><input type="checkbox" id="set-thin-scroll">細捲軸</label>
+                    <label>主頁顯示</label>
+                    <div class="check-row">
+                        <label><input type="checkbox" id="set-brand">輝煌標誌與標語</label>
+                        <label><input type="checkbox" id="set-news">公告欄</label>
+                        <label><input type="checkbox" id="set-credit">背景攝影者署名</label>
+                        <label><input type="checkbox" id="set-social">社群連結列</label>
+                        <label><input type="checkbox" id="set-shard-stats">分流人數與延遲</label>
+                        <label><input type="checkbox" id="set-last-played">實例版本資訊</label>
+                    </div>
                 </div>
                 <div class="field">
                     <label><input type="checkbox" id="set-clock">主頁顯示時鐘</label>
                 </div>
-                <div class="field">
-                    <label><input type="checkbox" id="set-click-sound">按鈕點擊音效</label>
-                </div>
-                <div class="field">
-                    <label><input type="checkbox" id="set-rail-labels">左側欄顯示文字</label>
-                </div>
-                <div class="field">
-                    <label><input type="checkbox" id="set-news">主頁顯示公告欄</label>
-                </div>
-                <div class="toolbar">
-                    <button type="button" class="mc" id="btn-look-reset"><i data-icon="reload"></i>還原預設外觀</button>
-                </div>
-                <div class="field">
-                    <label>主頁背景</label>
-                    <div class="toolbar">
-                        <button type="button" class="mc" id="btn-bg-pick"><i data-icon="image"></i>選擇圖片或影片</button>
-                        <button type="button" class="mc" id="btn-bg-reset">使用官網輪播</button>
-                        <span class="toolbar-label" id="bg-state"></span>
+                <div class="field-row" data-when="showClock">
+                    <div class="field">
+                        <label for="set-clock-format">時制</label>
+                        <select id="set-clock-format">
+                            <option value="24">24 小時制</option>
+                            <option value="12">12 小時制</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-clock-style">時鐘字體</label>
+                        <select id="set-clock-style">
+                            <option value="bold">粗體</option>
+                            <option value="thin">細體</option>
+                            <option value="pixel">像素</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-clock-position">時鐘位置</label>
+                        <select id="set-clock-position">
+                            <option value="right">右上角</option>
+                            <option value="center">正上方</option>
+                        </select>
                     </div>
                 </div>
-                <div class="hint">支援 PNG、JPG、WebP、GIF 圖片與 MP4、WebM 影片（影片會靜音循環播放）。</div>
+                <div class="field" data-when="showClock">
+                    <label><input type="checkbox" id="set-clock-seconds">顯示秒數</label>
+                </div>
                 <div class="field">
                     <label>背景音樂</label>
                     <div class="toolbar">
@@ -517,18 +670,176 @@
                     <div class="hint">支援 MP3、OGG、WAV、M4A、FLAC、Opus。遊戲執行中或啟動器縮到背景時會自動暫停。</div>
                 </div>
                 <div class="field">
-                    <label for="set-slide">背景輪播間隔：<b id="set-slide-value"></b></label>
-                    <input type="range" id="set-slide" min="0" max="60" step="5">
+                    <label><input type="checkbox" id="set-walkers">虛擬夥伴（官網的飯娘和寵物會在啟動器裡散步，可以抓起來丟）</label>
+                </div>
+
+                <h3 class="look-group">實例</h3>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-card-view">實例排列</label>
+                        <select id="set-card-view">
+                            <option value="grid">卡片</option>
+                            <option value="list">清單</option>
+                            <option value="poster">大封面</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-cards">卡片大小</label>
+                        <select id="set-cards">
+                            <option value="comfy">舒適</option>
+                            <option value="compact">緊湊</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-inst-sort">預設排序</label>
+                        <select id="set-inst-sort">
+                            <option value="manual">建立順序</option>
+                            <option value="recent">最近遊玩</option>
+                            <option value="name">名稱</option>
+                            <option value="playtime">遊玩時數</option>
+                            <option value="created">最新建立</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-card-hover">卡片滑過效果</label>
+                        <select id="set-card-hover">
+                            <option value="lift">浮起</option>
+                            <option value="zoom">封面放大</option>
+                            <option value="none">無</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-cover-height">實例封面高度</label>
+                        <select id="set-cover-height">
+                            <option value="short">矮</option>
+                            <option value="normal">標準</option>
+                            <option value="tall">高</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-cover-pos">封面對齊</label>
+                        <select id="set-cover-pos">
+                            <option value="top">上</option>
+                            <option value="center">中</option>
+                            <option value="bottom">下</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="field">
-                    <label for="set-scale">介面縮放：<b id="set-scale-value"></b></label>
-                    <input type="range" id="set-scale" min="80" max="125" step="5">
+                    <label for="set-cover-shade">封面遮罩深淺：<b id="set-cover-shade-value"></b></label>
+                    <input type="range" id="set-cover-shade" min="0" max="80" step="5">
                 </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-card-details">實例卡片顯示版本標籤與遊玩時數</label>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-page-stats">實例頁顯示版本與遊玩統計</label>
+                    <div class="hint">每個實例也可以在「實例設定」裡指定自己的主題色，進入該實例時整頁會換成那個顏色。</div>
+                </div>
+
+                <h3 class="look-group">側欄與導航</h3>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-rail-side">側欄位置</label>
+                        <select id="set-rail-side">
+                            <option value="left">左側</option>
+                            <option value="right">右側</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-rail-style">側欄樣式</label>
+                        <select id="set-rail-style">
+                            <option value="glass">玻璃</option>
+                            <option value="solid">實色</option>
+                            <option value="accent">主題色</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-start-page">啟動時開啟</label>
+                        <select id="set-start-page">
+                            <option value="home">首頁</option>
+                            <option value="instances">實例管理</option>
+                            <option value="last">上次停留的頁面</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-rail-labels">側欄顯示文字</label>
+                </div>
+                <div class="field">
+                    <label>側欄項目</label>
+                    <div class="rail-editor" id="rail-editor"></div>
+                    <div class="hint">用箭頭調整順序，取消勾選可以隱藏不常用的分頁；首頁、實例、設定與關於不能隱藏。</div>
+                </div>
+                <div class="field">
+                    <label>導航列顯示</label>
+                    <div class="check-row" id="tool-visibility">
+                        <label><input type="checkbox" id="set-account-name">帳號名稱</label>
+                        <label><input type="checkbox" data-tool="walker-toggle">虛擬夥伴按鈕</label>
+                        <label><input type="checkbox" data-tool="font-toggle">字體切換按鈕</label>
+                        <label><input type="checkbox" data-tool="theme-toggle">亮暗切換按鈕</label>
+                    </div>
+                </div>
+
+                <h3 class="look-group">動畫與回饋</h3>
                 <div class="field">
                     <label><input type="checkbox" id="set-motion">減少動畫效果</label>
                 </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-anim-speed">動畫速度</label>
+                        <select id="set-anim-speed">
+                            <option value="fast">快</option>
+                            <option value="normal">標準</option>
+                            <option value="slow">慢</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-page-transition">換頁動畫</label>
+                        <select id="set-page-transition">
+                            <option value="rise">浮起</option>
+                            <option value="fade">淡入</option>
+                            <option value="slide">滑入</option>
+                            <option value="none">無</option>
+                        </select>
+                    </div>
+                </div>
                 <div class="field">
-                    <label><input type="checkbox" id="set-walkers">虛擬夥伴（官網的飯娘和寵物會在啟動器裡散步，可以抓起來丟）</label>
+                    <label><input type="checkbox" id="set-click-sound">按鈕點擊音效</label>
+                </div>
+                <div class="field-row" data-when="clickSound">
+                    <div class="field">
+                        <label for="set-click-type">音效種類</label>
+                        <select id="set-click-type">
+                            <option value="block">方塊</option>
+                            <option value="button">按鈕</option>
+                            <option value="xp">經驗值</option>
+                            <option value="wood">木頭</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-click-volume">音效音量：<b id="set-click-volume-value"></b></label>
+                        <input type="range" id="set-click-volume" min="0" max="100" step="5">
+                    </div>
+                </div>
+                <div class="field-row">
+                    <div class="field">
+                        <label for="set-toast-pos">通知位置</label>
+                        <select id="set-toast-pos">
+                            <option value="bottom-right">右下</option>
+                            <option value="top-right">右上</option>
+                            <option value="top-center">上方中間</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label for="set-toast-seconds">通知顯示時間：<b id="set-toast-seconds-value"></b></label>
+                        <input type="range" id="set-toast-seconds" min="2" max="15" step="1">
+                    </div>
+                </div>
+                <div class="field">
+                    <label><input type="checkbox" id="set-launch-splash">啟動遊戲時顯示輝煌過場畫面</label>
                 </div>
 
                 <h2 id="set-advanced">進階</h2>
@@ -766,6 +1077,7 @@
 </main>
 
 <div class="toasts" id="toasts"></div>
+<div class="launch-splash" id="launch-splash" hidden><div class="logo-text">輝煌<small>Brilliant</small></div><b id="splash-title"></b><span id="splash-sub"></span><i class="splash-bar"></i></div>
 
 <dialog id="dlg">
     <div class="dlg-body" id="dlg-body"></div>

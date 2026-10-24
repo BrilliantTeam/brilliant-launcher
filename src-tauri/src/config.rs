@@ -87,6 +87,53 @@ pub struct Settings {
     pub cursor_style: String,
     pub click_sound: bool,
     pub show_clock: bool,
+    pub bg_source: String,
+    pub bg_color: String,
+    pub bg_color2: String,
+    pub bg_pin: String,
+    pub bg_transition: String,
+    pub bg_pan: bool,
+    pub weather: String,
+    pub clock_format: String,
+    pub clock_seconds: bool,
+    pub clock_style: String,
+    pub clock_position: String,
+    pub play_size: String,
+    pub play_text: String,
+    pub shard_layout: String,
+    pub hidden_shards: Vec<String>,
+    pub show_credit: bool,
+    pub show_social: bool,
+    pub show_shard_stats: bool,
+    pub show_last_played: bool,
+    pub dark_from: u32,
+    pub dark_to: u32,
+    pub accent_from_bg: bool,
+    pub color_success: String,
+    pub color_warning: String,
+    pub color_link: String,
+    pub high_contrast: bool,
+    pub font_scale: u32,
+    pub heading_style: String,
+    pub card_view: String,
+    pub card_hover: String,
+    pub cover_shade: u32,
+    pub instance_sort: String,
+    pub cover_position: String,
+    pub page_stats: bool,
+    pub rail_side: String,
+    pub rail_order: Vec<String>,
+    pub rail_hidden: Vec<String>,
+    pub hide_account_name: bool,
+    pub hidden_tools: Vec<String>,
+    pub start_page: String,
+    pub anim_speed: String,
+    pub click_sound_type: String,
+    pub click_volume: u32,
+    pub page_transition: String,
+    pub toast_position: String,
+    pub toast_seconds: u32,
+    pub launch_splash: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -181,6 +228,53 @@ impl Default for Settings {
             cursor_style: "system".into(),
             click_sound: false,
             show_clock: false,
+            bg_source: "auto".into(),
+            bg_color: String::new(),
+            bg_color2: String::new(),
+            bg_pin: String::new(),
+            bg_transition: "fade".into(),
+            bg_pan: false,
+            weather: "none".into(),
+            clock_format: "24".into(),
+            clock_seconds: false,
+            clock_style: "bold".into(),
+            clock_position: "right".into(),
+            play_size: "normal".into(),
+            play_text: String::new(),
+            shard_layout: "grid".into(),
+            hidden_shards: Vec::new(),
+            show_credit: true,
+            show_social: true,
+            show_shard_stats: true,
+            show_last_played: true,
+            dark_from: 19,
+            dark_to: 7,
+            accent_from_bg: false,
+            color_success: String::new(),
+            color_warning: String::new(),
+            color_link: String::new(),
+            high_contrast: false,
+            font_scale: 100,
+            heading_style: "game".into(),
+            card_view: "grid".into(),
+            card_hover: "lift".into(),
+            cover_shade: 35,
+            instance_sort: "manual".into(),
+            cover_position: "center".into(),
+            page_stats: true,
+            rail_side: "left".into(),
+            rail_order: Vec::new(),
+            rail_hidden: Vec::new(),
+            hide_account_name: false,
+            hidden_tools: Vec::new(),
+            start_page: "home".into(),
+            anim_speed: "normal".into(),
+            click_sound_type: "block".into(),
+            click_volume: 50,
+            page_transition: "rise".into(),
+            toast_position: "bottom-right".into(),
+            toast_seconds: 6,
+            launch_splash: false,
         }
     }
 }
@@ -195,6 +289,19 @@ pub fn clean_line(value: &mut String, max: usize) {
 
 pub fn clean_text(value: &mut String, max: usize) {
     *value = value.chars().filter(|c| *c == '\n' || !c.is_control()).take(max).collect();
+}
+
+pub const RAIL_VIEWS: &[&str] = &["home", "profile", "album", "instances", "explore", "accounts", "log", "settings", "about"];
+
+pub fn clean_hex(value: &mut String) {
+    if !(value.len() == 7 && value.starts_with('#') && value[1..].chars().all(|c| c.is_ascii_hexdigit())) {
+        value.clear();
+    }
+}
+
+pub fn clean_list(list: &mut Vec<String>, allowed: &[&str]) {
+    let mut seen = std::collections::HashSet::new();
+    list.retain(|v| allowed.contains(&v.as_str()) && seen.insert(v.clone()));
 }
 
 pub fn clean_choice(value: &mut String, allowed: &[&str], fallback: &str) {
@@ -245,12 +352,12 @@ impl Settings {
         clean_size(&mut self.height, HEIGHT_RANGE, false);
         self.backup_keep = self.backup_keep.clamp(1, 50);
         self.download_threads = self.download_threads.clamp(1, 64);
-        self.slide_seconds = self.slide_seconds.min(60);
+        self.slide_seconds = self.slide_seconds.min(300);
         self.ui_scale = self.ui_scale.clamp(80, 125);
         self.music_volume = self.music_volume.min(100);
         clean_choice(&mut self.after_launch, &["hide", "keep", "exit"], "hide");
-        clean_choice(&mut self.theme, &["auto", "light", "dark"], "auto");
-        clean_choice(&mut self.font, &["pixel", "system"], "pixel");
+        clean_choice(&mut self.theme, &["auto", "light", "dark", "schedule"], "auto");
+        clean_choice(&mut self.font, &["pixel", "system", "naikai", "serif"], "pixel");
         clean_choice(&mut self.mod_channel, &["release", "beta", "alpha"], "release");
         clean_choice(&mut self.launcher_update, &["auto", "notify", "off"], "auto");
         clean_choice(&mut self.mod_update, &["auto", "keep"], "auto");
@@ -269,6 +376,46 @@ impl Settings {
         clean_choice(&mut self.rail_style, &["glass", "solid", "accent"], "glass");
         clean_choice(&mut self.cover_height, &["short", "normal", "tall"], "normal");
         clean_choice(&mut self.cursor_style, &["system", "pixel"], "system");
+        clean_choice(&mut self.bg_source, &["auto", "color"], "auto");
+        for field in [&mut self.bg_color, &mut self.bg_color2, &mut self.color_success, &mut self.color_warning, &mut self.color_link] {
+            clean_hex(field);
+        }
+        clean_line(&mut self.bg_pin, 1024);
+        if !self.bg_pin.starts_with("https://") {
+            self.bg_pin.clear();
+        }
+        clean_choice(&mut self.bg_transition, &["fade", "slide", "pixel", "none"], "fade");
+        clean_choice(&mut self.weather, &["none", "snow", "rain", "sakura", "fireflies", "seasonal"], "none");
+        clean_choice(&mut self.clock_format, &["24", "12"], "24");
+        clean_choice(&mut self.clock_style, &["bold", "thin", "pixel"], "bold");
+        clean_choice(&mut self.clock_position, &["right", "center"], "right");
+        clean_choice(&mut self.play_size, &["normal", "large", "xl"], "normal");
+        clean_line(&mut self.play_text, 12);
+        clean_choice(&mut self.shard_layout, &["grid", "row"], "grid");
+        self.hidden_shards.retain(|h| h.len() <= 64 && h.ends_with(".brilliantw.net"));
+        self.hidden_shards.sort();
+        self.hidden_shards.dedup();
+        self.hidden_shards.truncate(16);
+        self.dark_from = self.dark_from.min(23);
+        self.dark_to = self.dark_to.min(23);
+        self.font_scale = self.font_scale.clamp(90, 130);
+        clean_choice(&mut self.heading_style, &["game", "modern"], "game");
+        clean_choice(&mut self.card_view, &["grid", "list", "poster"], "grid");
+        clean_choice(&mut self.card_hover, &["lift", "zoom", "none"], "lift");
+        self.cover_shade = self.cover_shade.min(80);
+        clean_choice(&mut self.instance_sort, &["manual", "recent", "name", "playtime", "created"], "manual");
+        clean_choice(&mut self.cover_position, &["top", "center", "bottom"], "center");
+        clean_choice(&mut self.rail_side, &["left", "right"], "left");
+        clean_list(&mut self.rail_order, RAIL_VIEWS);
+        clean_list(&mut self.rail_hidden, &["profile", "album", "explore", "accounts", "log"]);
+        clean_list(&mut self.hidden_tools, &["walker-toggle", "font-toggle", "theme-toggle"]);
+        clean_choice(&mut self.start_page, &["home", "instances", "last"], "home");
+        clean_choice(&mut self.anim_speed, &["fast", "normal", "slow"], "normal");
+        clean_choice(&mut self.click_sound_type, &["block", "button", "xp", "wood"], "block");
+        self.click_volume = self.click_volume.min(100);
+        clean_choice(&mut self.page_transition, &["rise", "fade", "slide", "none"], "rise");
+        clean_choice(&mut self.toast_position, &["bottom-right", "top-right", "top-center"], "bottom-right");
+        self.toast_seconds = self.toast_seconds.clamp(2, 15);
         self.bg_dim = self.bg_dim.min(80);
         self.tours_seen.retain(|t| t.len() <= 32 && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
         self.tours_seen.sort();
@@ -282,9 +429,7 @@ impl Settings {
         if !self.quick_join.is_empty() && !valid_host(&self.quick_join) {
             self.quick_join.clear();
         }
-        if !(self.accent.is_empty() || self.accent.len() == 7 && self.accent.starts_with('#') && self.accent[1..].chars().all(|c| c.is_ascii_hexdigit())) {
-            self.accent.clear();
-        }
+        clean_hex(&mut self.accent);
         for group in self.instance_groups.iter_mut() {
             clean_line(&mut group.name, 24);
             clean_line(&mut group.icon, 1024);

@@ -1,6 +1,6 @@
 import { api, fileSrc, openUrl } from '../api.js';
-import { idle, on, store } from '../store.js';
-import { $, clear, dialog, h } from '../ui.js';
+import { emit, idle, on, store } from '../store.js';
+import { $, clear, dialog, h, hexToHsl, hslToHex } from '../ui.js';
 
 const BOARDS = [
     { key: 'general', label: '一般公告' },
@@ -172,12 +172,47 @@ let slideIndex = 0;
 let front = 0;
 let appliedBackground = null;
 
+function setBgAccent(color) {
+    if (store.bgAccent === color) return;
+    store.bgAccent = color;
+    emit('bg-color');
+}
+
+function sampleColor(url) {
+    const image = new Image();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 32;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            ctx.drawImage(image, 0, 0, 32, 32);
+            const data = ctx.getImageData(0, 0, 32, 32).data;
+            const buckets = Array.from({ length: 12 }, () => ({ w: 0, hue: 0, sat: 0 }));
+            for (let i = 0; i < data.length; i += 4) {
+                const hex = `#${[data[i], data[i + 1], data[i + 2]].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+                const [hue, sat, light] = hexToHsl(hex);
+                const weight = (sat / 100) ** 2 * (1 - Math.abs(light - 50) / 50);
+                if (weight < 0.02) continue;
+                const bucket = buckets[Math.floor(hue / 30) % 12];
+                bucket.w += weight;
+                bucket.hue += hue * weight;
+                bucket.sat += sat * weight;
+            }
+            const best = buckets.reduce((a, b) => (b.w > a.w ? b : a));
+            if (best.w > 0) setBgAccent(hslToHex(Math.round(best.hue / best.w), Math.max(55, Math.min(85, Math.round(best.sat / best.w))), 62));
+        } catch {}
+    };
+    image.src = url;
+}
+
 async function showImage(url, credit) {
     try {
         await preload(url);
     } catch {
         return;
     }
+    if (store.settings?.accentFromBg) sampleColor(url);
     const layers = [$('#bg-a'), $('#bg-b')];
     front = 1 - front;
     layers[front].style.backgroundImage = `url("${url}")`;
@@ -195,15 +230,18 @@ function nextSlide() {
 }
 
 async function applyBackground() {
-    const custom = store.settings?.background || '';
-    const seconds = store.settings?.slideSeconds ?? 15;
-    const key = `${custom}|${seconds}`;
+    const settings = store.settings ?? {};
+    const solid = settings.bgSource === 'color';
+    const custom = solid ? '' : settings.background || '';
+    const pin = solid || custom ? '' : settings.bgPin || '';
+    const seconds = settings.slideSeconds ?? 15;
+    const key = `${solid ? `color:${settings.bgColor}` : custom}|${pin}|${seconds}|${settings.accentFromBg ? 1 : 0}`;
     if (key === appliedBackground) return;
-    const sourceChanged = !appliedBackground || appliedBackground.split('|')[0] !== custom;
+    const sourceChanged = !appliedBackground || appliedBackground.split('|').slice(0, 2).join('|') !== key.split('|').slice(0, 2).join('|') || (settings.accentFromBg && !appliedBackground.endsWith('|1'));
     appliedBackground = key;
     clearInterval(slideTimer);
     const video = $('#bg-video');
-    const isVideo = /\.(mp4|webm)$/i.test(custom);
+    const isVideo = !solid && /\.(mp4|webm)$/i.test(custom);
     video.classList.toggle('show', isVideo);
     video.classList.toggle('top', isVideo);
     if (isVideo) {
@@ -215,11 +253,18 @@ async function applyBackground() {
     video.pause();
     video.removeAttribute('src');
     video.load();
+    if (solid) {
+        $('#bg-credit').textContent = '';
+        if (/^#[0-9a-f]{6}$/i.test(settings.bgColor ?? '')) setBgAccent(settings.bgColor);
+        return;
+    }
     if (custom) return showImage(fileSrc(custom), '');
     if (!slides) {
         const data = await api.site_json({ path: '/api/launcher/hero' }).catch(() => null);
         slides = (data?.slides || []).sort(() => Math.random() - 0.5);
     }
+    const pinned = pin && slides.find((slide) => slide.image === pin);
+    if (pinned) return showImage(pinned.image, [pinned.description, pinned.author && `攝影：${pinned.author}`].filter(Boolean).join('｜'));
     if (sourceChanged) await nextSlide();
     if (seconds > 0 && slides.length > 1) slideTimer = setInterval(nextSlide, seconds * 1000);
 }

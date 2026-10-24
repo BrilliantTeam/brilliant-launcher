@@ -46,6 +46,7 @@ pub struct Instance {
     pub freeze_mods: bool,
     pub account: String,
     pub group: String,
+    pub accent: String,
 }
 
 impl Instance {
@@ -70,6 +71,7 @@ impl Instance {
         }
         clean_jvm_args(&mut self.jvm_args);
         clean_env_vars(&mut self.env_vars);
+        crate::config::clean_hex(&mut self.accent);
         for (field, max) in [(&mut self.java_path, 1024), (&mut self.wrapper, 1024), (&mut self.image, 1024), (&mut self.icon, 1024), (&mut self.group, 24), (&mut self.account, 64), (&mut self.active_profile, 24)] {
             clean_line(field, max);
         }
@@ -507,7 +509,26 @@ mod general_tests {
         s.cover_height = "giant".into();
         s.cursor_style = "url(x)".into();
         s.home_tagline = format!("我的伺服器\n{}", "長".repeat(80));
+        s.weather = "acid".into();
+        s.bg_color = "url(x)".into();
+        s.bg_color2 = "#00ff00".into();
+        s.bg_pin = "file:///C:/x.png".into();
+        s.play_text = "開始開始開始開始開始開始開始".into();
+        s.hidden_shards = vec!["s1.brilliantw.net".into(), "evil.com".into(), "s1.brilliantw.net".into()];
+        s.rail_order = vec!["home".into(), "x".into(), "log".into(), "home".into()];
+        s.rail_hidden = vec!["home".into(), "settings".into(), "album".into()];
+        s.hidden_tools = vec!["win-close".into(), "font-toggle".into()];
+        s.font_scale = 300;
+        s.toast_seconds = 0;
+        s.slide_seconds = 9999;
+        s.dark_from = 99;
+        s.font = "comic".into();
+        s.theme = "schedule".into();
         s.clean();
+        assert_eq!((s.weather.as_str(), s.bg_color.as_str(), s.bg_color2.as_str(), s.bg_pin.as_str(), s.play_text.chars().count()), ("none", "", "#00ff00", "", 12));
+        assert_eq!(s.hidden_shards, vec!["s1.brilliantw.net".to_string()]);
+        assert_eq!((s.rail_order.clone(), s.rail_hidden.clone(), s.hidden_tools.clone()), (vec!["home".to_string(), "log".to_string()], vec!["album".to_string()], vec!["font-toggle".to_string()]));
+        assert_eq!((s.font_scale, s.toast_seconds, s.slide_seconds, s.dark_from, s.font.as_str(), s.theme.as_str()), (130, 2, 300, 23, "pixel", "schedule"));
         assert_eq!((s.button_style.as_str(), s.corners.as_str(), s.card_size.as_str(), s.panel_opacity, s.bg_dim), ("pixel", "square", "comfy", 60, 80));
         assert_eq!(s.tours_seen, vec!["instances".to_string()]);
         assert_eq!((s.content_width.as_str(), s.density.as_str(), s.accent_bar.as_str(), s.bg_blur), ("standard", "comfy", "thick", 20));
@@ -520,6 +541,12 @@ mod general_tests {
         let mut ok = Settings { quick_join: "s2.brilliantw.net:25565".into(), accent: "#ff9ac8".into(), ..Default::default() };
         ok.clean();
         assert_eq!((ok.quick_join.as_str(), ok.accent.as_str()), ("s2.brilliantw.net:25565", "#ff9ac8"));
+        let mut tinted = Instance { accent: "#12ABef".into(), ..Default::default() };
+        tinted.clean();
+        assert_eq!(tinted.accent, "#12ABef");
+        tinted.accent = "red".into();
+        tinted.clean();
+        assert_eq!(tinted.accent, "");
         let mut i = Instance { name: "\u{7}\u{7}".into(), width: 99_999, height: 0, memory_mb: 100, java_major: 3, mod_channel: "evil".into(), ..Default::default() };
         i.clean();
         assert_eq!((i.name.as_str(), i.width, i.height, i.memory_mb, i.java_major, i.mod_channel.as_str()), ("未命名實例", 0, 0, 1024, 0, ""));

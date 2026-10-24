@@ -161,7 +161,7 @@ function renderPlayBar() {
         busy: ['準備中⋯', ''],
         create: ['建立實例', '一鍵建立輝煌實例'],
         login: ['登入帳號', '尚未登入，無法開始遊戲'],
-        play: ['開始遊戲', ready.has(instance?.id) ? `已就緒・${where}` : where]
+        play: [store.settings?.playText?.trim() || '開始遊戲', ready.has(instance?.id) ? `已就緒・${where}` : where]
     }[action];
     clear(button).append(label, sub ? h('small', {}, sub) : null);
     button.dataset.action = action;
@@ -244,6 +244,19 @@ const STAGE_TEXT = {
     launch: '啟動遊戲'
 };
 
+async function splash(title, sub) {
+    const box = $('#launch-splash');
+    $('#splash-title').textContent = title;
+    $('#splash-sub').textContent = sub;
+    box.hidden = false;
+    await new Promise((done) => setTimeout(done, 1800));
+    box.classList.add('out');
+    setTimeout(() => {
+        box.hidden = true;
+        box.classList.remove('out');
+    }, store.settings?.afterLaunch === 'keep' ? 400 : 0);
+}
+
 async function play(relogged = false, join = null) {
     const instance = selectedInstance();
     if (!instance) return;
@@ -278,6 +291,7 @@ async function play(relogged = false, join = null) {
         for (const note of notes) toast(note, 'warn');
         const target = instance.general ? null : shardOf(store.settings?.quickJoin);
         toast(join ? `遊戲已啟動，將直接連線 ${join.name}` : target ? `遊戲已啟動，將直接連線 ${target.label}` : '遊戲已啟動');
+        if (store.settings?.launchSplash) await splash(instance.name, join ? `直連 ${join.name}` : target ? `直連 ${target.label}` : '進入主畫面');
         await loadInstances();
         if (store.settings?.openLogOnLaunch) location.hash = '#log';
         const after = store.settings?.afterLaunch;
@@ -442,7 +456,8 @@ function shardTile(shard, status) {
 }
 
 function renderShards() {
-    clear($('#shards')).append(...SHARDS.map((shard, i) => shardTile(shard, statuses[i])));
+    const hidden = store.settings?.hiddenShards ?? [];
+    clear($('#shards')).append(...SHARDS.map((shard, i) => (hidden.includes(shard.host) ? null : shardTile(shard, statuses[i]))).filter(Boolean));
     const target = shardOf(store.settings?.quickJoin);
     clear($('#shard-hint')).append(...(selectedInstance()?.general
         ? ['這是一般實例，開始遊戲後會停在主畫面；分流選擇只套用在輝煌實例。']

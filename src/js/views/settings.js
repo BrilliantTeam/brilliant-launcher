@@ -1,8 +1,10 @@
 import { api, openUrl, pickFile } from '../api.js';
-import { $, acceptFiles, clampNumber, clear, confirm, fail, fmtBytes, h, rangeFill, toast, guard } from '../ui.js';
+import { $, $$, acceptFiles, clampNumber, clear, confirm, dialog, fail, fmtBytes, h, pickColor, rangeFill, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { icon } from '../icons.js';
 import { gpuName, isIntegratedGpu } from '../services.js';
+import { SHARDS } from './home.js';
+import { playClick } from '../sound.js';
 
 const FIELDS = {
     memoryMb: '#set-memory',
@@ -67,7 +69,45 @@ const FIELDS = {
     bgFilter: '#set-bg-filter',
     homeLayout: '#set-home-layout',
     showClock: '#set-clock',
-    clickSound: '#set-click-sound'
+    clickSound: '#set-click-sound',
+    theme: '#set-theme',
+    darkFrom: '#set-dark-from',
+    darkTo: '#set-dark-to',
+    accentFromBg: '#set-accent-bg',
+    highContrast: '#set-contrast',
+    font: '#set-font',
+    headingStyle: '#set-heading',
+    fontScale: '#set-font-scale',
+    bgSource: '#set-bg-source',
+    bgTransition: '#set-bg-transition',
+    bgPan: '#set-bg-pan',
+    weather: '#set-weather',
+    shardLayout: '#set-shard-layout',
+    playSize: '#set-play-size',
+    playText: '#set-play-text',
+    showCredit: '#set-credit',
+    showSocial: '#set-social',
+    showShardStats: '#set-shard-stats',
+    showLastPlayed: '#set-last-played',
+    clockFormat: '#set-clock-format',
+    clockStyle: '#set-clock-style',
+    clockPosition: '#set-clock-position',
+    clockSeconds: '#set-clock-seconds',
+    cardView: '#set-card-view',
+    instanceSort: '#set-inst-sort',
+    cardHover: '#set-card-hover',
+    coverPosition: '#set-cover-pos',
+    coverShade: '#set-cover-shade',
+    pageStats: '#set-page-stats',
+    railSide: '#set-rail-side',
+    startPage: '#set-start-page',
+    animSpeed: '#set-anim-speed',
+    pageTransition: '#set-page-transition',
+    clickSoundType: '#set-click-type',
+    clickVolume: '#set-click-volume',
+    toastPosition: '#set-toast-pos',
+    toastSeconds: '#set-toast-seconds',
+    launchSplash: '#set-launch-splash'
 };
 
 const LOOK_PRESETS = [
@@ -78,18 +118,187 @@ const LOOK_PRESETS = [
     ['像素懷舊', '方塊按鈕、懷舊色調、像素游標與點擊音效', { bgFilter: 'sepia', cursorStyle: 'pixel', clickSound: true, railStyle: 'solid', coverHeight: 'tall', bgDim: 15 }]
 ];
 
-const LOOK_DEFAULTS = { accent: '', buttonStyle: 'pixel', corners: 'square', cardSize: 'comfy', panelOpacity: 100, bgDim: 0, railLabels: true, showNews: true, uiScale: 100, reduceMotion: false, contentWidth: 'standard', density: 'comfy', accentBar: 'thick', bgBlur: 0, bgMotion: false, thinScrollbars: false, cardDetails: true, showBrand: true, homeTagline: '', railStyle: 'glass', coverHeight: 'normal', cursorStyle: 'system', bgFilter: 'none', homeLayout: 'standard', showClock: false, clickSound: false };
+const LOOK_DEFAULTS = {
+    accent: '', buttonStyle: 'pixel', corners: 'square', cardSize: 'comfy', panelOpacity: 100, bgDim: 0, railLabels: true, showNews: true, uiScale: 100, reduceMotion: false,
+    contentWidth: 'standard', density: 'comfy', accentBar: 'thick', bgBlur: 0, bgMotion: false, thinScrollbars: false, cardDetails: true, showBrand: true, homeTagline: '',
+    railStyle: 'glass', coverHeight: 'normal', cursorStyle: 'system', bgFilter: 'none', homeLayout: 'standard', showClock: false, clickSound: false,
+    theme: 'auto', darkFrom: 19, darkTo: 7, accentFromBg: false, colorSuccess: '', colorWarning: '', colorLink: '', highContrast: false,
+    font: 'pixel', headingStyle: 'game', fontScale: 100, slideSeconds: 15,
+    bgSource: 'auto', bgColor: '', bgColor2: '', bgPin: '', bgTransition: 'fade', bgPan: false, weather: 'none',
+    shardLayout: 'grid', hiddenShards: [], playSize: 'normal', playText: '', showCredit: true, showSocial: true, showShardStats: true, showLastPlayed: true,
+    clockFormat: '24', clockStyle: 'bold', clockPosition: 'right', clockSeconds: false,
+    cardView: 'grid', instanceSort: 'manual', cardHover: 'lift', coverPosition: 'center', coverShade: 35, pageStats: true,
+    railSide: 'left', railOrder: [], railHidden: [], hideAccountName: false, hiddenTools: [], startPage: 'home',
+    animSpeed: 'normal', pageTransition: 'rise', clickSoundType: 'block', clickVolume: 50, toastPosition: 'bottom-right', toastSeconds: 6, launchSplash: false
+};
+
+const STYLE_KEYS = ['buttonStyle', 'corners', 'cardSize', 'panelOpacity', 'bgDim', 'railLabels', 'showNews', 'contentWidth', 'density', 'accentBar', 'bgBlur', 'bgMotion',
+    'thinScrollbars', 'cardDetails', 'showBrand', 'railStyle', 'coverHeight', 'cursorStyle', 'bgFilter', 'homeLayout', 'showClock', 'clickSound', 'accentFromBg', 'highContrast',
+    'headingStyle', 'bgTransition', 'bgPan', 'weather', 'shardLayout', 'playSize', 'clockStyle', 'clockPosition', 'cardView', 'cardHover', 'coverPosition', 'coverShade',
+    'pageTransition', 'clickSoundType', 'launchSplash'];
+
+const LOOK_LOCAL = ['bgPin', 'railOrder', 'railHidden', 'hiddenTools', 'hiddenShards', 'startPage', 'hideAccountName', 'uiScale', 'reduceMotion'];
+
+function cleanLook(raw) {
+    const look = {};
+    for (const [key, value] of Object.entries(raw && typeof raw === 'object' ? raw : {})) {
+        const fallback = LOOK_DEFAULTS[key];
+        if (fallback === undefined) continue;
+        if (Array.isArray(fallback) ? Array.isArray(value) && value.every((v) => typeof v === 'string') : typeof value === typeof fallback) look[key] = value;
+    }
+    return look;
+}
+
+async function applyLook(raw, name) {
+    const base = Object.fromEntries(STYLE_KEYS.map((key) => [key, LOOK_DEFAULTS[key]]));
+    await persist({ ...base, ...cleanLook(raw) });
+    toast(`已套用「${name}」風格`);
+}
+
+const lookCard = (name, hint, look, by = '') => h('button', { type: 'button', class: 'look-preset', onclick: () => applyLook(look, name) },
+    h('b', {}, name, by ? h('span', { class: 'look-author' }, by) : null), h('small', {}, hint));
 
 function renderLookPresets() {
-    clear($('#look-presets')).append(...LOOK_PRESETS.map(([name, hint, patch]) => h('button', {
-        type: 'button',
-        class: 'look-preset',
-        onclick: async () => {
-            const { homeTagline, accent, uiScale, ...look } = LOOK_DEFAULTS;
-            await persist({ ...look, ...patch });
-            toast(`已套用「${name}」風格`);
-        }
-    }, h('b', {}, name), h('small', {}, hint))));
+    clear($('#look-presets')).append(...LOOK_PRESETS.map(([name, hint, patch]) => lookCard(name, hint, patch)));
+}
+
+async function renderCommunityLooks() {
+    const box = $('#look-community');
+    const data = await api.site_json({ path: '/api/launcher/looks' }).catch(() => null);
+    const looks = Array.isArray(data?.looks) ? data.looks.slice(0, 30) : null;
+    clear(box).append(...(looks?.length
+        ? looks.map((item) => lookCard(String(item.name).slice(0, 24), String(item.description ?? '').slice(0, 80), item.look, String(item.author ?? '').slice(0, 32)))
+        : [h('div', { class: 'hint' }, looks ? '目前還沒有社群風格。' : '暫時連不上官網，稍後再回來看看。')]));
+}
+
+const LOOK_CODE = 'BRLOOK1:';
+
+function exportLook() {
+    const settings = store.settings ?? {};
+    const look = Object.fromEntries(Object.keys(LOOK_DEFAULTS).filter((key) => !LOOK_LOCAL.includes(key) && settings[key] !== undefined).map((key) => [key, settings[key]]));
+    const bytes = new TextEncoder().encode(JSON.stringify(look));
+    const code = LOOK_CODE + btoa(String.fromCharCode(...bytes));
+    const text = h('textarea', { readonly: true, spellcheck: 'false', class: 'look-code' }, code);
+    navigator.clipboard?.writeText(code).then(() => toast('已複製外觀代碼'), () => {});
+    dialog({
+        title: '分享我的外觀',
+        content: h('div', { class: 'field' },
+            h('label', {}, '外觀代碼（已複製）'), text,
+            h('div', { class: 'hint' }, '把代碼貼給朋友，對方在「匯入外觀」貼上就能套用；也可以分享到輝煌 Discord，精選作品會上架到「社群風格」。背景圖片、音樂與側欄排序不會包含在代碼裡。')),
+        buttons: [{ label: '關閉', value: null }]
+    });
+    text.select();
+}
+
+async function importLook() {
+    const text = h('textarea', { spellcheck: 'false', class: 'look-code', placeholder: `${LOOK_CODE}⋯` });
+    const ok = await dialog({
+        title: '匯入外觀',
+        content: h('div', { class: 'field' }, h('label', {}, '貼上外觀代碼'), text),
+        buttons: [{ label: '取消', value: false }, { label: '套用', value: true }]
+    });
+    if (ok !== true) return;
+    const code = text.value.trim();
+    let look = null;
+    try {
+        if (!code.startsWith(LOOK_CODE)) throw new Error();
+        const bytes = Uint8Array.from(atob(code.slice(LOOK_CODE.length)), (c) => c.charCodeAt(0));
+        look = cleanLook(JSON.parse(new TextDecoder().decode(bytes)));
+    } catch {
+        return toast(`這不是有效的外觀代碼，代碼應該以「${LOOK_CODE}」開頭`, 'error');
+    }
+    if (!Object.keys(look).length) return toast('代碼裡沒有可以套用的外觀設定', 'warn');
+    await persist(look);
+    toast('已匯入外觀');
+}
+
+function renderColorFields() {
+    for (const field of $$('.color-field')) {
+        const key = field.dataset.colorKey;
+        const value = store.settings?.[key] ?? '';
+        const label = field.dataset.colorLabel;
+        const swatch = h('button', {
+            type: 'button',
+            class: `swatch${value ? '' : ' empty'}`,
+            style: value ? `--swatch:${value}` : '',
+            title: `選擇${label}`,
+            'aria-label': `選擇${label}`,
+            onclick: (e) => pickColor(e.currentTarget, value || '#8491ff', (v) => persist({ [key]: v }), label)
+        });
+        clear(field).append(swatch, h('span', {}, label, h('small', {}, value || '預設')),
+            value ? h('button', { type: 'button', class: 'link', onclick: () => persist({ [key]: '' }) }, '清除') : null);
+    }
+}
+
+function renderShardVisibility() {
+    const hidden = store.settings?.hiddenShards ?? [];
+    clear($('#shard-visibility')).append(...SHARDS.map((shard) => h('label', {},
+        h('input', {
+            type: 'checkbox',
+            checked: !hidden.includes(shard.host),
+            onchange: (e) => persist({ hiddenShards: e.target.checked ? hidden.filter((x) => x !== shard.host) : [...hidden, shard.host] })
+        }), shard.label)));
+}
+
+const RAIL_LOCKED = ['home', 'instances', 'settings'];
+
+export function railItems() {
+    const links = $$('.rail a[data-view]').filter((a) => a.dataset.view !== 'about');
+    const order = store.settings?.railOrder ?? [];
+    const rank = (view) => (order.includes(view) ? order.indexOf(view) : order.length + links.findIndex((a) => a.dataset.view === view));
+    return links.map((a) => a.dataset.view).sort((a, b) => rank(a) - rank(b));
+}
+
+function renderRailEditor() {
+    const items = railItems();
+    const hidden = store.settings?.railHidden ?? [];
+    const move = (i, step) => {
+        const next = [...items];
+        [next[i], next[i + step]] = [next[i + step], next[i]];
+        persist({ railOrder: next });
+    };
+    clear($('#rail-editor')).append(...items.map((view, i) => {
+        const link = $(`.rail a[data-view="${view}"]`);
+        return h('div', { class: 'rail-item' },
+            h('label', {},
+                h('input', {
+                    type: 'checkbox',
+                    checked: !hidden.includes(view),
+                    disabled: RAIL_LOCKED.includes(view),
+                    onchange: (e) => persist({ railHidden: e.target.checked ? hidden.filter((x) => x !== view) : [...hidden, view] })
+                }),
+                link.querySelector('svg')?.cloneNode(true), link.title),
+            h('button', { type: 'button', class: 'mc icon-btn', title: '往上移', 'aria-label': `${link.title}往上移`, disabled: i === 0, onclick: () => move(i, -1) }, icon('arrow-up')),
+            h('button', { type: 'button', class: 'mc icon-btn', title: '往下移', 'aria-label': `${link.title}往下移`, disabled: i === items.length - 1, onclick: () => move(i, 1) }, icon('arrow-down')));
+    }));
+}
+
+let heroSlides = null;
+
+async function renderBgPins() {
+    const box = $('#bg-pins');
+    heroSlides ??= await api.site_json({ path: '/api/launcher/hero' }).then((d) => d?.slides ?? [], () => []);
+    const pin = store.settings?.bgPin ?? '';
+    clear(box).append(
+        h('button', { type: 'button', class: 'bg-pin random', 'aria-pressed': String(!pin), onclick: () => persist({ bgPin: '' }) }, icon('reload'), '隨機輪播'),
+        ...heroSlides.map((slide) => h('button', {
+            type: 'button',
+            class: 'bg-pin',
+            title: [slide.description, slide.author && `攝影：${slide.author}`].filter(Boolean).join('｜'),
+            'aria-label': slide.description || '背景圖片',
+            'aria-pressed': String(pin === slide.image),
+            style: `background-image:url("${slide.image.replace(/&w=\d+$/, '&w=320')}")`,
+            onclick: () => persist({ bgPin: slide.image })
+        })));
+}
+
+function syncConditions() {
+    const settings = store.settings ?? {};
+    for (const el of $$('#view-settings [data-when]')) {
+        const [key, want] = el.dataset.when.split('=');
+        const value = settings[key] ?? LOOK_DEFAULTS[key];
+        el.style.display = (want === undefined ? !!value : String(value) === want) ? '' : 'none';
+    }
 }
 
 export const JVM_PRESETS = [
@@ -143,13 +352,17 @@ const ACCENTS = [
 
 const LABELS = {
     '#set-memory': (v) => v,
-    '#set-slide': (v) => (Number(v) ? `${v} 秒` : '不輪播'),
+    '#set-slide': (v) => (!Number(v) ? '不輪播' : v >= 60 ? `${Math.floor(v / 60)} 分${v % 60 ? ` ${v % 60} 秒` : '鐘'}` : `${v} 秒`),
     '#set-scale': (v) => `${v}%`,
     '#set-threads': (v) => `${v} 個`,
     '#set-volume': (v) => (Number(v) ? `${v}%` : '靜音'),
     '#set-panel': (v) => `${v}%`,
     '#set-dim': (v) => (Number(v) ? `${v}%` : '不暗化'),
-    '#set-blur': (v) => (Number(v) ? `${v}` : '不模糊')
+    '#set-blur': (v) => (Number(v) ? `${v}` : '不模糊'),
+    '#set-font-scale': (v) => `${v}%`,
+    '#set-cover-shade': (v) => (Number(v) ? `${v}%` : '不加遮罩'),
+    '#set-click-volume': (v) => (Number(v) ? `${v}%` : '靜音'),
+    '#set-toast-seconds': (v) => `${v} 秒`
 };
 
 let javaReady = false;
@@ -190,6 +403,7 @@ function read() {
         if (key === 'proxy' && el.value.trim() && !PROXY_PATTERN.test(el.value.trim())) continue;
         if (el.type === 'checkbox') patch[key] = el.checked;
         else if (el.type === 'number' || el.type === 'range') patch[key] = clampNumber(el);
+        else if (el.classList.contains('hour-select')) patch[key] = Number(el.value);
         else patch[key] = el.value;
     }
     patch.backupKeep = Math.max(1, patch.backupKeep);
@@ -199,112 +413,28 @@ function read() {
 function renderAccent() {
     const current = (store.settings?.accent ?? '').toLowerCase();
     const custom = current && !ACCENTS.some(([value]) => value.toLowerCase() === current);
-    const pop = colorPopover(custom ? current : '#8491ff');
-    const trigger = h('button', {
+    const swatch = ([value, label]) => h('button', {
         type: 'button',
-        class: 'swatch custom',
-        title: '自訂顏色',
-        'aria-label': '自訂顏色',
-        'aria-pressed': String(!!custom),
-        'aria-haspopup': 'dialog',
-        style: custom ? `--swatch:${current}` : '',
-        onclick: () => {
-            const r = trigger.getBoundingClientRect();
-            pop.style.left = `${Math.min(r.left, innerWidth - 300)}px`;
-            pop.style.top = `${r.bottom + 330 > innerHeight ? Math.max(8, r.top - 330) : r.bottom + 8}px`;
-            pop.showPopover();
-            pop.querySelector('input').focus();
-        }
+        class: `swatch${value ? '' : ' site'}`,
+        style: value ? `--swatch:${value}` : '',
+        title: label,
+        'aria-label': label,
+        'aria-pressed': String(value.toLowerCase() === current),
+        onclick: () => persist({ accent: value })
     });
     clear($('#set-accent')).append(
-        ...ACCENTS.map(([value, label]) => h('button', {
+        ...ACCENTS.map(swatch),
+        h('button', {
             type: 'button',
-            class: `swatch${value ? '' : ' site'}`,
-            style: value ? `--swatch:${value}` : '',
-            title: label,
-            'aria-label': label,
-            'aria-pressed': String(value.toLowerCase() === current),
-            onclick: () => persist({ accent: value })
-        })),
-        trigger,
-        pop
+            class: 'swatch custom',
+            title: '自訂顏色',
+            'aria-label': '自訂顏色',
+            'aria-pressed': String(!!custom),
+            'aria-haspopup': 'dialog',
+            style: custom ? `--swatch:${current}` : '',
+            onclick: (e) => pickColor(e.currentTarget, custom ? current : '#8491ff', (value) => persist({ accent: value }), '自訂主題色')
+        })
     );
-}
-
-const hslToHex = (hue, sat, light) => {
-    const a = (sat / 100) * Math.min(light / 100, 1 - light / 100);
-    const f = (n) => {
-        const k = (n + hue / 30) % 12;
-        return Math.round((light / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255).toString(16).padStart(2, '0');
-    };
-    return `#${f(0)}${f(8)}${f(4)}`;
-};
-
-function hexToHsl(hex) {
-    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const light = (max + min) / 2;
-    const d = max - min;
-    if (!d) return [0, 0, Math.round(light * 100)];
-    const sat = d / (1 - Math.abs(2 * light - 1));
-    const hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-    return [Math.round((hue * 60 + 360) % 360), Math.round(sat * 100), Math.round(light * 100)];
-}
-
-function colorPopover(start) {
-    const slider = (label, max) => h('input', { type: 'range', min: '0', max: String(max), 'aria-label': label });
-    const hue = slider('色相', 359);
-    const sat = slider('飽和度', 100);
-    const light = slider('亮度', 100);
-    const hex = h('input', { type: 'text', maxlength: '7', spellcheck: 'false', 'aria-label': '色碼' });
-    const preview = h('div', { class: 'color-preview' });
-    const pop = h('div', { class: 'color-pop', popover: 'auto', role: 'dialog', 'aria-label': '自訂顏色' });
-    let exact = null;
-    const paint = (from) => {
-        const value = exact ?? hslToHex(+hue.value, +sat.value, +light.value);
-        if (from !== hex) hex.value = value;
-        preview.style.setProperty('--swatch', value);
-        sat.style.setProperty('--track', `linear-gradient(to right, ${hslToHex(+hue.value, 0, +light.value)}, ${hslToHex(+hue.value, 100, +light.value)})`);
-        light.style.setProperty('--track', `linear-gradient(to right, #000, ${hslToHex(+hue.value, +sat.value, 50)}, #fff)`);
-    };
-    const load = (value) => {
-        [hue.value, sat.value, light.value] = hexToHsl(value).map(String);
-        exact = value;
-        paint();
-    };
-    for (const el of [hue, sat, light]) el.addEventListener('input', () => {
-        exact = null;
-        paint();
-    });
-    hex.addEventListener('input', () => {
-        const value = hex.value.trim().replace(/^(?!#)/, '#');
-        if (/^#[0-9a-f]{6}$/i.test(value)) {
-            [hue.value, sat.value, light.value] = hexToHsl(value).map(String);
-            exact = value.toLowerCase();
-            paint(hex);
-        }
-    });
-    const apply = async () => {
-        const value = exact ?? hslToHex(+hue.value, +sat.value, +light.value);
-        pop.hidePopover();
-        await persist({ accent: value });
-    };
-    pop.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.isComposing) apply();
-    });
-    pop.addEventListener('toggle', (e) => e.newState === 'open' && load(start));
-    pop.append(
-        h('div', { class: 'color-head' }, preview, h('label', {}, '色碼', hex)),
-        h('label', {}, '色相', hue),
-        h('label', {}, '飽和度', sat),
-        h('label', {}, '亮度', light),
-        h('div', { class: 'color-actions' },
-            h('button', { type: 'button', class: 'mc', onclick: () => pop.hidePopover() }, '取消'),
-            h('button', { type: 'button', class: 'mc primary', onclick: apply }, '套用'))
-    );
-    load(start);
-    return pop;
 }
 
 function write() {
@@ -322,9 +452,16 @@ function write() {
     $('#bg-state').textContent = !settings.background ? '目前使用官網輪播' : /\.(mp4|webm)$/i.test(settings.background) ? '目前使用自訂影片' : '目前使用自訂圖片';
     $('#music-state').textContent = settings.music ? `目前播放：${settings.music.split(/[\\/]/).pop().replace(/^music-\d+\./, '自訂音樂.')}` : '未設定';
     $('#btn-music-clear').disabled = !settings.music;
-    $('#set-slide').disabled = !!settings.background;
+    $('#set-slide').disabled = !!settings.background || !!settings.bgPin;
+    $('#set-account-name').checked = !settings.hideAccountName;
+    for (const box of $$('#tool-visibility [data-tool]')) box.checked = !(settings.hiddenTools ?? []).includes(box.dataset.tool);
     syncLabels();
+    syncConditions();
     renderAccent();
+    renderColorFields();
+    renderShardVisibility();
+    renderRailEditor();
+    if (heroSlides) renderBgPins();
 }
 
 let savedTimer = 0;
@@ -464,13 +601,28 @@ export function initSettings() {
         persist(read());
     });
 
+    for (const select of $$('.hour-select')) select.append(...Array.from({ length: 24 }, (_, hour) => h('option', { value: String(hour) }, `${String(hour).padStart(2, '0')}:00`)));
     initPages(view);
     renderLookPresets();
+    renderCommunityLooks();
+    renderBgPins();
     $('#btn-look-reset').addEventListener('click', guard(async () => {
-        if (!(await confirm('要把主題色、按鈕風格、邊角、透明度、側欄等外觀設定還原成預設嗎？\n背景圖片與音樂不會被移除。', '還原'))) return;
+        if (!(await confirm('要把主題色、按鈕風格、邊角、字體、側欄、動畫等外觀設定全部還原成預設嗎？\n背景圖片與音樂不會被移除。', '還原'))) return;
         await persist(LOOK_DEFAULTS);
         toast('已還原預設外觀');
     }));
+    $('#btn-look-export').addEventListener('click', exportLook);
+    $('#btn-look-import').addEventListener('click', guard(importLook));
+    $('#set-account-name').addEventListener('change', (e) => persist({ hideAccountName: !e.target.checked }));
+    $('#tool-visibility').addEventListener('change', (e) => {
+        const tool = e.target.dataset.tool;
+        if (!tool) return;
+        const hidden = store.settings?.hiddenTools ?? [];
+        persist({ hiddenTools: e.target.checked ? hidden.filter((x) => x !== tool) : [...hidden, tool] });
+    });
+    for (const sel of ['#set-click-type', '#set-click-volume']) {
+        $(sel).addEventListener('change', () => playClick($('#set-click-type').value, $('#set-click-volume').value));
+    }
 
     const setMedia = (kind) => async (path) => {
         if (!path) return;

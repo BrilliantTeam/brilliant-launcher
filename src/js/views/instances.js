@@ -1,5 +1,5 @@
 import { api, FILE_TYPES, fileSrc, isType, openUrl, pickFile, pickFiles, watchFolders } from '../api.js';
-import { $, $$, acceptFiles, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, rangeFill, toast, guard, RECYCLE_NOTE } from '../ui.js';
+import { $, $$, acceptFiles, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, pickColor, rangeFill, toast, guard, RECYCLE_NOTE } from '../ui.js';
 import { accountFor, emit, isRunning, loadInstances, on, saveSettings, selectedInstance, store } from '../store.js';
 import { icon, iconOf, INSTANCE_ICONS, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
 
@@ -46,6 +46,20 @@ async function editorDialog(title, source) {
     const group = groupInput(source.group);
     const iconPick = iconChooser(source.icon?.startsWith('img:') ? source.icon : instanceIconName(source.icon), INSTANCE_ICONS);
     const iconPicker = iconPick.el;
+    let accent = source.accent ?? '';
+    const accentBox = h('div', { class: 'color-fields' });
+    const renderAccentBox = () => clear(accentBox).append(
+        h('div', { class: 'color-field' },
+            h('button', {
+                type: 'button',
+                class: `swatch${accent ? '' : ' empty'}`,
+                style: accent ? `--swatch:${accent}` : '',
+                'aria-label': '選擇實例主題色',
+                onclick: (e) => pickColor(e.currentTarget, accent || '#8491ff', (value) => { accent = value; renderAccentBox(); }, '實例主題色')
+            }),
+            h('span', {}, '實例主題色', h('small', {}, accent || '跟隨啟動器')),
+            accent ? h('button', { type: 'button', class: 'link', onclick: () => { accent = ''; renderAccentBox(); } }, '清除') : null));
+    renderAccentBox();
     let pickedImage;
     const preview = h('div', { class: 'image-preview' });
     const imageClear = h('button', { type: 'button', class: 'mc', onclick: () => { pickedImage = ''; renderPreview(); } }, '移除圖片');
@@ -201,6 +215,7 @@ async function editorDialog(title, source) {
         h('div', { class: 'field' }, h('label', {}, '分組'), group, h('div', { class: 'hint' }, '同一組的實例會放在一起，可一鍵全部啟動，也能在分組設定裡共用存檔、資源包、光影或截圖。留空表示不分組。')),
         h('div', { class: 'field' }, h('label', {}, '圖示'), iconPicker),
         imageField,
+        h('div', { class: 'field' }, h('label', {}, '主題色（選填）'), accentBox, h('div', { class: 'hint' }, '進入這個實例的模組與資源頁時，整頁會換成這個顏色，卡片也會跟著變色。')),
         h('div', { class: 'field' }, h('label', {}, 'Minecraft 版本'), mcVersion, modSupported.size ? showAllBox : ''),
         h('div', { class: 'field' }, h('label', {}, '模組載入器'), loader),
         loaderField,
@@ -251,6 +266,7 @@ async function editorDialog(title, source) {
         freezeMods: freezeMods.checked,
         account: account.value,
         group: group.input.value.trim().slice(0, 24),
+        accent,
         pickedImage
     };
 }
@@ -882,6 +898,7 @@ function card(instance) {
         {
             class: `inst-card${active ? ' selected' : ''}`,
             'data-id': instance.id,
+            style: accentStyle(instance.accent),
             title: '點一下選擇，點兩下開啟模組與資源',
             onclick: (e) => {
                 clearTimeout(clickTimer);
@@ -1142,9 +1159,23 @@ async function togglePin(key) {
     toast(next ? '已置頂，原本置頂的項目已取消置頂' : '已取消置頂');
 }
 
+const SORTS = {
+    recent: (a, b) => (b.lastPlayed || 0) - (a.lastPlayed || 0),
+    name: (a, b) => a.name.localeCompare(b.name, 'zh-Hant'),
+    playtime: (a, b) => (b.playSeconds || 0) - (a.playSeconds || 0),
+    created: (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+};
+
 function sortMembers(members) {
     const pinned = pinnedKey();
-    return [...members].sort((a, b) => (pinned === `i:${b.id}`) - (pinned === `i:${a.id}`));
+    const by = SORTS[store.settings?.instanceSort] ?? (() => 0);
+    return [...members].sort((a, b) => (pinned === `i:${b.id}`) - (pinned === `i:${a.id}`) || by(a, b));
+}
+
+export function accentStyle(color) {
+    if (!/^#[0-9a-f]{6}$/i.test(color ?? '')) return '';
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
+    return `--accent:${color};--accent-hover:color-mix(in srgb, ${color} 85%, #000);--accent-ink:${0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#111111' : '#ffffff'}`;
 }
 
 function render() {

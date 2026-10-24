@@ -132,7 +132,7 @@ function showHistory(input) {
                 }
             }, '×'))));
     historyBox.popover = 'manual';
-    document.body.append(historyBox);
+    (input.closest('dialog') ?? document.body).append(historyBox);
     historyBox.showPopover();
     const box = historyBox;
     Promise.all(input.closest('dialog')?.getAnimations().map((a) => a.finished) ?? []).then(() => {
@@ -185,15 +185,14 @@ export function clear(el) {
     return el;
 }
 
-const TOAST_MS = 6000;
-
 export function toast(message, kind = '') {
     const box = h('div', { class: `toast ${kind}` }, String(message));
     $('#toasts').append(box);
+    const ms = (Number(document.documentElement.dataset.toastSeconds) || 6) * 1000;
     setTimeout(() => {
         box.classList.add('out');
         setTimeout(() => box.remove(), 250);
-    }, kind === 'error' ? TOAST_MS * 2 : TOAST_MS);
+    }, kind === 'error' ? Math.max(ms * 2, 8000) : ms);
 }
 
 export function fail(error) {
@@ -301,4 +300,97 @@ export function fmtDuration(seconds) {
 export function fmtDate(unixSeconds) {
     if (!unixSeconds) return '從未';
     return new Date(unixSeconds * 1000).toLocaleString('zh-TW', { hour12: false });
+}
+
+export const hslToHex = (hue, sat, light) => {
+    const a = (sat / 100) * Math.min(light / 100, 1 - light / 100);
+    const f = (n) => {
+        const k = (n + hue / 30) % 12;
+        return Math.round((light / 100 - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))) * 255).toString(16).padStart(2, '0');
+    };
+    return `#${f(0)}${f(8)}${f(4)}`;
+};
+
+export function hexToHsl(hex) {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const light = (max + min) / 2;
+    const d = max - min;
+    if (!d) return [0, 0, Math.round(light * 100)];
+    const sat = d / (1 - Math.abs(2 * light - 1));
+    const hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return [Math.round((hue * 60 + 360) % 360), Math.round(sat * 100), Math.round(light * 100)];
+}
+
+let colorPop = null;
+
+export function pickColor(anchor, start, onPick, title = '自訂顏色') {
+    if (!colorPop) {
+        const slider = (label, max) => h('input', { type: 'range', min: '0', max: String(max), 'aria-label': label });
+        const hue = slider('色相', 359);
+        const sat = slider('飽和度', 100);
+        const light = slider('亮度', 100);
+        const hex = h('input', { type: 'text', maxlength: '7', spellcheck: 'false', 'aria-label': '色碼' });
+        const preview = h('div', { class: 'color-preview' });
+        const heading = h('b', { class: 'color-title' });
+        const pop = h('div', { class: 'color-pop', popover: 'auto', role: 'dialog' });
+        let exact = null;
+        const paint = (from) => {
+            const value = exact ?? hslToHex(+hue.value, +sat.value, +light.value);
+            if (from !== hex) hex.value = value;
+            preview.style.setProperty('--swatch', value);
+            sat.style.setProperty('--track', `linear-gradient(to right, ${hslToHex(+hue.value, 0, +light.value)}, ${hslToHex(+hue.value, 100, +light.value)})`);
+            light.style.setProperty('--track', `linear-gradient(to right, #000, ${hslToHex(+hue.value, +sat.value, 50)}, #fff)`);
+        };
+        for (const el of [hue, sat, light]) el.addEventListener('input', () => {
+            exact = null;
+            paint();
+        });
+        hex.addEventListener('input', () => {
+            const value = hex.value.trim().replace(/^(?!#)/, '#');
+            if (/^#[0-9a-f]{6}$/i.test(value)) {
+                [hue.value, sat.value, light.value] = hexToHsl(value).map(String);
+                exact = value.toLowerCase();
+                paint(hex);
+            }
+        });
+        const apply = () => {
+            const value = exact ?? hslToHex(+hue.value, +sat.value, +light.value);
+            pop.hidePopover();
+            pop.onPick?.(value);
+        };
+        pop.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing) apply();
+        });
+        pop.append(
+            heading,
+            h('div', { class: 'color-head' }, preview, h('label', {}, '色碼', hex)),
+            h('label', {}, '色相', hue),
+            h('label', {}, '飽和度', sat),
+            h('label', {}, '亮度', light),
+            h('div', { class: 'color-actions' },
+                h('button', { type: 'button', class: 'mc', onclick: () => pop.hidePopover() }, '取消'),
+                h('button', { type: 'button', class: 'mc primary', onclick: apply }, '套用'))
+        );
+        pop.load = (value, text) => {
+            heading.textContent = text;
+            pop.setAttribute('aria-label', text);
+            [hue.value, sat.value, light.value] = hexToHsl(value).map(String);
+            exact = value.toLowerCase();
+            paint();
+        };
+        colorPop = pop;
+    }
+    const pop = colorPop;
+    if (pop.matches(':popover-open')) pop.hidePopover();
+    const host = anchor.closest('dialog') ?? document.body;
+    if (pop.parentElement !== host) host.append(pop);
+    pop.onPick = onPick;
+    pop.load(/^#[0-9a-f]{6}$/i.test(start) ? start : '#8491ff', title);
+    const r = anchor.getBoundingClientRect();
+    pop.style.left = `${Math.max(8, Math.min(r.left, innerWidth - 300))}px`;
+    pop.style.top = `${r.bottom + 350 > innerHeight ? Math.max(8, r.top - 350) : r.bottom + 8}px`;
+    pop.showPopover();
+    pop.querySelector('input[type="text"]').focus();
 }
