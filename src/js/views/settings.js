@@ -907,18 +907,29 @@ export function initSettings() {
     });
     $('#btn-update-page').addEventListener('click', () => openUrl('https://www.brilliantw.net/launcher/'));
     const view = $('#view-settings');
-    const isSetting = (el) => Object.values(FIELDS).some((sel) => el.matches(sel));
+    const keyOf = (el) => Object.entries(FIELDS).find(([, sel]) => el.matches(sel))?.[0];
+    const dirty = new Set();
+    const flush = () => {
+        const all = read();
+        const patch = Object.fromEntries([...dirty].filter((key) => key in all).map((key) => [key, all[key]]));
+        dirty.clear();
+        if (Object.keys(patch).length) persist(patch);
+    };
     let typing = 0;
     view.addEventListener('input', (e) => {
-        if (!isSetting(e.target)) return;
+        const key = keyOf(e.target);
+        if (!key) return;
+        dirty.add(key);
         syncLabels();
         clearTimeout(typing);
-        typing = setTimeout(() => persist(read()), e.target.type === 'range' ? 250 : 600);
+        typing = setTimeout(flush, e.target.type === 'range' ? 250 : 600);
     });
     view.addEventListener('change', (e) => {
-        if (!isSetting(e.target)) return;
+        const key = keyOf(e.target);
+        if (!key) return;
+        dirty.add(key);
         clearTimeout(typing);
-        persist(read());
+        flush();
     });
 
     for (const select of $$('.hour-select')) select.append(...Array.from({ length: 24 }, (_, hour) => h('option', { value: String(hour) }, `${String(hour).padStart(2, '0')}:00`)));
@@ -1051,7 +1062,7 @@ export function initSettings() {
     $('#btn-bg-reset').addEventListener('click', guard(() => persist({ background: '' })));
 
     $('#jvm-presets').append(...jvmPresetButtons($('#set-jvm'), () => {
-        persist(read());
+        persist({ jvmArgs: read().jvmArgs });
         toast('已套用 JVM 參數預設組');
     }));
     on('instances', renderSharedSummary);

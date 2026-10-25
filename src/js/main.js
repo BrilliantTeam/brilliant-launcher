@@ -344,14 +344,14 @@ function initChrome() {
 
     $('#theme-toggle').addEventListener('click', async (e) => {
         const order = ['auto', 'light', 'dark'];
-        const current = order.indexOf(store.settings.theme ?? 'auto');
-        store.settings.theme = order[(current + 1) % order.length];
+        const theme = order[(order.indexOf(store.settings.theme ?? 'auto') + 1) % order.length];
         const root = document.documentElement;
         root.style.setProperty('--reveal-x', `${e.clientX}px`);
         root.style.setProperty('--reveal-y', `${e.clientY}px`);
-        if (document.startViewTransition && !store.settings.reduceMotion && !matchMedia('(prefers-reduced-motion: reduce)').matches) document.startViewTransition(applyTheme);
-        else applyTheme();
-        await api.save_settings({ settings: store.settings }).catch(fail);
+        const preview = () => { store.settings = { ...store.settings, theme }; applyTheme(); };
+        if (document.startViewTransition && !store.settings.reduceMotion && !matchMedia('(prefers-reduced-motion: reduce)').matches) await document.startViewTransition(preview).updateCallbackDone;
+        else preview();
+        await saveSettings({ theme }).catch(fail);
     });
 
     $('#walker-toggle').addEventListener('click', () => saveSettings({ walkers: !store.settings?.walkers }).catch(fail));
