@@ -164,6 +164,7 @@ function pointerDown(e) {
 
 function pointerMove(e) {
     if (!drag) return;
+    if (!(e.buttons & 1)) return pointerUp();
     const dx = e.clientX - drag.x;
     const dy = e.clientY - drag.y;
     if (drag.resize) {
@@ -193,6 +194,7 @@ export function initWidgets() {
     addEventListener('pointerdown', pointerDown, true);
     addEventListener('pointermove', pointerMove);
     addEventListener('pointerup', pointerUp);
+    addEventListener('blur', pointerUp);
     addEventListener('keydown', (e) => { if (editing && e.key === 'Escape') setEditing(false); });
     addEventListener('hashchange', () => { if (editing && location.hash !== '#home') setEditing(false); });
     on('settings', () => {

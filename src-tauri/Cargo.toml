@@ -1,6 +1,6 @@
 [package]
 name = "brilliant-launcher"
-version = "1.2.0"
+version = "1.2.1"
 description = "輝煌伺服器 Minecraft 啟動器"
 authors = ["RiceChen_"]
 publish = false

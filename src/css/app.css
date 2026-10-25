@@ -1869,3 +1869,4 @@ body.home-editing .social { pointer-events: auto; }
 .date-pick select[data-part="y"] { flex-grow: 1.4; }
 .date-pick .reset-btn.icon-btn { flex: none; width: calc(18px * var(--fs, 1) + 18px); height: calc(18px * var(--fs, 1) + 18px); }
 .field-row:has(> .field > select) > .field > label:first-child:has(> input[type="checkbox"]) { margin-top: calc(13px * var(--fs, 1) * 1.4 + 4px + (18px * var(--fs, 1) + 18px - 18px) / 2); }
+.inst-menu[popover] { position: fixed; inset: auto; margin: 0; z-index: 300; color: var(--text); }

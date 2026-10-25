@@ -874,7 +874,7 @@ async function exportDiagnostics(instance) {
 export function moreMenu(instance) {
     const item = (name, label, handler, extra = '') =>
         h('button', { type: 'button', role: 'menuitem', class: extra, onclick: (e) => { e.stopPropagation(); closeMenus(); handler(); } }, icon(name), label);
-    const menu = h('div', { class: 'inst-menu', role: 'menu', hidden: true },
+    const menu = h('div', { class: 'inst-menu', role: 'menu', popover: 'manual', hidden: true },
         item('map', '世界管理', () => showWorlds(instance)),
         item('save', '存檔備份', () => manageBackups(instance)),
         item('image', '截圖', () => showScreenshots(instance)),
@@ -899,26 +899,32 @@ export function moreMenu(instance) {
             e.stopPropagation();
             const open = menu.hidden;
             closeMenus();
-            menu.hidden = !open;
-            if (open) placeMenu(menu, toggle);
+            if (!open) return;
+            menu.hidden = false;
+            menu.showPopover();
+            placeMenu(menu, toggle);
         }
     }, icon('more-horizontal'));
     return h('div', { class: 'inst-more' }, toggle, menu);
 }
 
 function placeMenu(menu, anchor) {
-    const bounds = (anchor.closest('.page-wrap') ?? document.body).getBoundingClientRect();
     const rect = anchor.getBoundingClientRect();
-    const above = rect.top - bounds.top - 12;
-    const below = bounds.bottom - rect.bottom - 12;
+    const above = rect.top - 12;
+    const below = innerHeight - rect.bottom - 12;
     menu.style.maxHeight = '';
     const down = menu.scrollHeight > above && below > above;
-    menu.classList.toggle('down', down);
     menu.style.maxHeight = `${Math.max(160, down ? below : above)}px`;
+    menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth)}px`;
+    menu.style.top = down ? `${rect.bottom + 6}px` : 'auto';
+    menu.style.bottom = down ? 'auto' : `${innerHeight - rect.top + 6}px`;
 }
 
+addEventListener('scroll', (e) => { if (!(e.target instanceof Element && e.target.closest('.inst-menu'))) closeMenus(); }, true);
+addEventListener('resize', () => closeMenus());
+
 function closeMenus() {
-    document.querySelectorAll('.inst-menu').forEach((m) => { m.hidden = true; });
+    document.querySelectorAll('.inst-menu').forEach((m) => { m.hidden = true; if (m.matches(':popover-open')) m.hidePopover(); });
     document.querySelectorAll('.inst-menu.floating').forEach((m) => m.remove());
 }
 
@@ -1457,6 +1463,7 @@ function startDrag(event, source, item) {
     addEventListener('pointermove', moveDrag);
     addEventListener('pointerup', endDrag, { once: true });
     addEventListener('pointercancel', cancelDrag, { once: true });
+    addEventListener('blur', cancelDrag, { once: true });
 }
 
 function dropTargetAt(x, y) {
@@ -1474,6 +1481,7 @@ function dropTargetAt(x, y) {
 
 function moveDrag(event) {
     if (!dragState) return;
+    if (!(event.buttons & 1)) return cancelDrag();
     if (!dragState.ghost) {
         if (Math.hypot(event.clientX - dragState.x, event.clientY - dragState.y) < 6) return;
         dragState.ghost = h('div', { class: 'drag-ghost' }, icon(dragState.item.kind === 'group' ? 'folder' : 'zap'), dragState.item.label);
@@ -1504,6 +1512,9 @@ function moveDrag(event) {
 
 function cancelDrag() {
     removeEventListener('pointermove', moveDrag);
+    removeEventListener('pointerup', endDrag);
+    removeEventListener('pointercancel', cancelDrag);
+    removeEventListener('blur', cancelDrag);
     if (dragState?.ghost) {
         dragState.ghost.remove();
         dragState.source.classList.remove('dragging');
@@ -1518,7 +1529,6 @@ async function endDrag(event) {
     const state = dragState;
     const moved = !!state?.ghost;
     const target = moved ? dropTargetAt(event.clientX, event.clientY) : null;
-    removeEventListener('pointercancel', cancelDrag);
     cancelDrag();
     if (!moved || !target) return;
     if (state.item.kind === 'group') {
