@@ -488,7 +488,8 @@ async function search(reset = true) {
     if (reset) clear(box);
     state.total = result.total_hits;
     state.offset += result.hits.length;
-    box.append(...result.hits.filter((hit) => hit.project_id !== FABRIC_API).map((hit) => {
+    const autoApi = !instance.general && instance.loader === 'fabric' && (instance.injectRichPresence ?? store.settings?.injectRichPresence ?? true);
+    box.append(...result.hits.filter((hit) => !autoApi || hit.project_id !== FABRIC_API).map((hit) => {
         const card = resultCard(hit);
         card._hit = hit;
         return card;
