@@ -388,11 +388,14 @@ async function fromTemplate() {
 
 async function duplicateInstance(instance) {
     const input = h('input', { type: 'text', value: `${instance.name} 的複本`, maxlength: '40' });
+    const checks = [['saves', '存檔'], ['config', '模組設定（config）'], ['options', '遊戲選項與按鍵'], ['packs', '資源包與光影'], ['screenshots', '截圖'], ['logs', '日誌與當機報告']]
+        .map(([part, label]) => h('label', {}, h('input', { type: 'checkbox', checked: true, value: part }), label));
     const ok = await dialog({
         title: '複製實例',
-        content: h('div', { class: 'field' },
-            h('label', {}, '新實例名稱'), input,
-            h('div', { class: 'hint' }, '存檔、設定與模組都會一併複製。')),
+        content: h('div', {},
+            h('div', { class: 'field' }, h('label', {}, '新實例名稱'), input),
+            h('div', { class: 'field import-parts' }, h('label', {}, '要一起複製的內容'), ...checks,
+                h('div', { class: 'hint' }, '模組、實例設定與伺服器清單一定會複製；分組共用的資料夾會依複本所在的分組重新連結。'))),
         buttons: [{ label: '取消', value: false }, { label: '複製', value: true }]
     });
     if (ok !== true) return;
@@ -401,7 +404,8 @@ async function duplicateInstance(instance) {
     if (nameTaken(name)) return toast(`已經有叫「${name}」的實例了，複本請取一個不同的名稱`, 'warn');
     toast(`正在複製「${instance.name}」，檔案多時需要一些時間⋯`);
     try {
-        await api.duplicate_instance({ id: instance.id, name });
+        const skip = checks.map((label) => label.querySelector('input')).filter((i) => !i.checked).map((i) => i.value);
+        await api.duplicate_instance({ id: instance.id, name, skip });
         await loadInstances();
         toast('已複製');
     } catch (error) {

@@ -373,9 +373,9 @@ pub async fn delete_instance(state: State<'_, AppState>, id: String) -> R<()> {
 }
 
 #[tauri::command]
-pub async fn duplicate_instance(state: State<'_, AppState>, id: String, name: String) -> R<Instance> {
+pub async fn duplicate_instance(state: State<'_, AppState>, id: String, name: String, skip: Option<Vec<String>>) -> R<Instance> {
     state.ensure_idle(&id).await?;
-    instance::duplicate(&id, &name).await
+    instance::duplicate(&id, &name, &skip.unwrap_or_default()).await
 }
 
 #[tauri::command]

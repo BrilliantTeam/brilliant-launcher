@@ -245,7 +245,16 @@ fn pick_unique(base: &str, taken: &[String]) -> String {
     (2..).map(|n| format!("{base} ({n})")).find(|n| !taken.contains(n)).unwrap_or_default()
 }
 
-pub async fn duplicate(id: &str, new_name: &str) -> R<Instance> {
+pub const COPY_PARTS: &[(&str, &[&str])] = &[
+    ("saves", &["saves"]),
+    ("config", &["config", "defaultconfigs"]),
+    ("options", &["options.txt", "optionsof.txt", "optionsshaders.txt"]),
+    ("packs", &["resourcepacks", "shaderpacks"]),
+    ("screenshots", &["screenshots"]),
+    ("logs", &["logs", "crash-reports"]),
+];
+
+pub async fn duplicate(id: &str, new_name: &str, skip: &[String]) -> R<Instance> {
     let source = get(id).await?;
     let new_name = new_name.trim();
     if new_name.is_empty() {
@@ -259,7 +268,8 @@ pub async fn duplicate(id: &str, new_name: &str) -> R<Instance> {
     copy.last_played = 0;
     copy.play_seconds = 0;
     let mut copy = create(copy).await?;
-    if let Err(error) = copy_dir(&paths::game_dir(id), &paths::game_dir(&copy.id)).await {
+    let skipped: Vec<&str> = COPY_PARTS.iter().filter(|(key, _)| skip.iter().any(|s| s == key)).flat_map(|(_, names)| names.iter().copied()).collect();
+    if let Err(error) = copy_dir(&paths::game_dir(id), &paths::game_dir(&copy.id), &skipped).await {
         let _ = tokio::fs::remove_dir_all(paths::instance_dir(&copy.id)).await;
         return Err(error.0.context(format!("複製「{}」失敗，已收回未完成的複本", source.name)).into());
     }
@@ -277,12 +287,15 @@ pub async fn duplicate(id: &str, new_name: &str) -> R<Instance> {
     Ok(copy)
 }
 
-async fn copy_dir(from: &std::path::Path, to: &std::path::Path) -> R<()> {
+async fn copy_dir(from: &std::path::Path, to: &std::path::Path, skip: &[&str]) -> R<()> {
     let mut stack = vec![(from.to_path_buf(), to.to_path_buf())];
     while let Some((src, dst)) = stack.pop() {
         tokio::fs::create_dir_all(&dst).await?;
         let mut entries = tokio::fs::read_dir(&src).await?;
         while let Some(entry) = entries.next_entry().await? {
+            if src == from && skip.iter().any(|s| entry.file_name() == *s) {
+                continue;
+            }
             let target = dst.join(entry.file_name());
             let kind = entry.file_type().await.with_context(|| format!("讀取 {} 失敗", entry.path().display()))?;
             if kind.is_symlink() {
@@ -372,6 +385,24 @@ pub async fn add_content(id: &str, source: &str) -> R<(String, String)> {
 mod content_kind_tests {
     use super::*;
 
+    #[tokio::test]
+    async fn copy_skips_unticked_parts() {
+        let root = std::env::temp_dir().join(format!("copy-parts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let game = root.join("game");
+        for dir in ["mods", "saves/w", "config", "mods/config"] {
+            std::fs::create_dir_all(game.join(dir)).unwrap();
+        }
+        for file in ["mods/a.jar", "saves/w/level.dat", "config/a.json", "mods/config/keep.json", "options.txt", "servers.dat"] {
+            std::fs::write(game.join(file), "x").unwrap();
+        }
+        let copy = root.join("copy");
+        copy_dir(&game, &copy, &["saves", "config", "options.txt"]).await.unwrap();
+        assert!(copy.join("mods/a.jar").is_file() && copy.join("mods/config/keep.json").is_file() && copy.join("servers.dat").is_file());
+        assert!(!copy.join("saves").exists() && !copy.join("config").exists() && !copy.join("options.txt").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     #[cfg(windows)]
     #[tokio::test]
     async fn copy_skips_shared_links() {
@@ -386,7 +417,7 @@ mod content_kind_tests {
         let status = std::process::Command::new("cmd").arg("/C").arg("mklink").arg("/J").arg(game.join("resourcepacks")).arg(&shared).stdout(std::process::Stdio::null()).status().unwrap();
         assert!(status.success());
         let copy = root.join("copy");
-        copy_dir(&game, &copy).await.unwrap();
+        copy_dir(&game, &copy, &[]).await.unwrap();
         assert!(copy.join("mods/a.jar").is_file());
         assert!(!copy.join("resourcepacks").exists());
         assert!(shared.join("pack.zip").is_file());
@@ -408,8 +439,8 @@ mod content_kind_tests {
         let shared = crate::advanced::group_base("k1");
         std::fs::write(shared.join("resourcepacks/Faithful.zip"), "pack").unwrap();
         std::fs::write(paths::game_dir(&source.id).join("options.txt"), "fov:1").unwrap();
-        assert!(duplicate(&source.id, "輝煌生存").await.is_err());
-        let copy = duplicate(&source.id, "輝煌生存 複本").await.unwrap();
+        assert!(duplicate(&source.id, "輝煌生存", &[]).await.is_err());
+        let copy = duplicate(&source.id, "輝煌生存 複本", &[]).await.unwrap();
         let game = paths::game_dir(&copy.id);
         assert_eq!(std::fs::read_to_string(game.join("options.txt")).unwrap(), "fov:1");
         assert!(crate::advanced::is_link(&game.join("resourcepacks")) && game.join("resourcepacks/Faithful.zip").is_file());
