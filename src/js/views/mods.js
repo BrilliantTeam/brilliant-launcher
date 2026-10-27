@@ -630,9 +630,17 @@ async function exportProfile(profile) {
     const files = list.filter((e) => !e.managed && profile.enabled.includes(keyOf(e))).map((e) => e.file);
     const api_ = list.find((e) => e.managed && e.project_id === FABRIC_API);
     if (api_) files.push(api_.file);
+    const format = await dialog({
+        title: `匯出「${profile.name}」`,
+        content: h('div', {},
+            h('p', {}, '要匯出成哪一種模組包？'),
+            h('p', { class: 'hint' }, 'Modrinth（.mrpack）：可匯入輝煌啟動器、Modrinth App、Prism Launcher 等。\nCurseForge（.zip）：可匯入輝煌啟動器、CurseForge App、Prism Launcher 等。\n不在該平台上的模組會直接打包進檔案裡。')),
+        buttons: [{ label: '取消', value: null }, { label: 'CurseForge（.zip）', value: 'curseforge' }, { label: 'Modrinth（.mrpack）', value: 'modrinth' }]
+    });
+    if (!format) return;
     try {
-        const path = await api.profile_export({ id: selectedInstance().id, name: profile.name, files });
-        toast(`已匯出「${profile.name}」到「下載」資料夾：${path.split(/[\\/]/).pop()}\n可匯入輝煌啟動器、Modrinth App、Prism Launcher 等啟動器。`);
+        const path = await api.profile_export({ id: selectedInstance().id, name: profile.name, files, format });
+        toast(`已匯出「${profile.name}」到「下載」資料夾：${path.split(/[\\/]/).pop()}`);
         api.open_path({ path: path.replace(/[\\/][^\\/]+$/, '') }).catch(() => {});
     } catch (error) {
         fail(error);
@@ -657,25 +665,32 @@ async function showBlocked(list, instanceId) {
     }
 }
 
+const PACK_PARTS = [['mods', '模組'], ['resourcepacks', '資源包'], ['shaderpacks', '光影'], ['other', '設定檔與其他檔案（config 等）']];
+
 export async function importPack(targetId = null, dropped = null) {
     const path = dropped ?? await pickFile('modpack').catch(fail);
     if (!path) return;
-    let target = targetId;
-    if (target === null && selectedInstance()) {
-        const mode = await dialog({
-            title: '匯入模組包',
+    const target = targetId;
+    let parts = null;
+    if (target) {
+        const instance = store.instances.find((i) => i.id === target);
+        const boxes = PACK_PARTS.map(([value, label]) => h('label', {}, h('input', { type: 'checkbox', checked: true, value }), label));
+        const ok = await dialog({
+            title: `匯入模組包到「${instance?.name ?? '目前實例'}」`,
             content: h('div', {},
-                h('p', {}, `「${path.split(/[\\/]/).pop()}」要匯入到哪裡？`),
-                h('p', { class: 'hint' }, `加入目前實例「${selectedInstance().name}」時，會下載缺少的模組並建立同名組合；版本不同時請選「建立新實例」。`)),
-            buttons: [{ label: '取消', value: null }, { label: '建立新實例', value: 'new' }, { label: '加入目前實例', value: 'current' }]
+                h('p', {}, `要從「${path.split(/[\\/]/).pop()}」匯入哪些內容？`),
+                h('div', { class: 'field import-parts' }, ...boxes),
+                h('p', { class: 'hint' }, '會下載缺少的檔案；被取代的檔案會先移到回收資料夾。模組會另外建立一個同名的模組組合。模組包的 Minecraft 版本與載入器要跟這個實例相同。')),
+            buttons: [{ label: '取消', value: false }, { label: '開始匯入', value: true }]
         });
-        if (!mode) return;
-        target = mode === 'current' ? selectedInstance().id : null;
+        if (ok !== true) return;
+        parts = boxes.map((b) => b.querySelector('input')).filter((i) => i.checked).map((i) => i.value);
+        if (!parts.length) return toast('沒有勾選任何內容', 'warn');
     }
-    toast('正在讀取模組包並下載模組⋯');
+    toast(target ? '正在讀取模組包並下載檔案⋯' : '正在讀取模組包並建立新實例⋯');
     let result;
     try {
-        result = await api.mrpack_import({ path, target });
+        result = await api.mrpack_import({ path, target, parts });
     } catch (error) {
         return fail(error);
     }
@@ -689,7 +704,9 @@ export async function importPack(targetId = null, dropped = null) {
         toast(`已建立實例「${result.name || '模組包'}」，共 ${result.mods.length} 個模組`);
         return;
     }
-    await loadInstalled('mod');
+    await Promise.all(['mod', 'resourcepack', 'shader'].map(loadInstalled));
+    renderAll();
+    if (!result.mods.length) return toast(`已匯入「${result.name || '模組包'}」`);
     const { profiles, editable } = profileInfo(installed.mod);
     const wanted = new Set(result.mods.map((m) => m.replace(/\.disabled$/, '')));
     const base = (result.name || path.split(/[\\/]/).pop().replace(/\.(mrpack|zip)$/i, '')).slice(0, 24);
@@ -744,7 +761,7 @@ function profileBar(list) {
                 title: `套用「${p.name}」（${p.enabled.length} 個模組）`,
                 onclick: () => applyProfile(p)
             }, p.name, h('small', {}, String(p.enabled.length))),
-            h('button', { type: 'button', class: 'chip-x', title: `匯出「${p.name}」（.mrpack）`, 'aria-label': `匯出「${p.name}」`, onclick: () => exportProfile(p) }, icon('download')),
+            h('button', { type: 'button', class: 'chip-x', title: `匯出「${p.name}」（.mrpack 或 CurseForge .zip）`, 'aria-label': `匯出「${p.name}」`, onclick: () => exportProfile(p) }, icon('download')),
             h('button', { type: 'button', class: 'chip-x', title: `編輯「${p.name}」`, 'aria-label': `編輯「${p.name}」`, onclick: () => editProfile(p) }, icon('edit')),
             h('button', { type: 'button', class: 'chip-x', title: `刪除「${p.name}」`, 'aria-label': `刪除「${p.name}」`, onclick: () => deleteProfile(p) }, icon('close')))),
         profiles.length ? null : h('span', { class: 'hint' }, '挑幾個模組組成「生存」「建築」等組合，之後一鍵切換。'),
@@ -759,7 +776,7 @@ function profileBar(list) {
                 renderAll();
             }
         }, '更新組合') : null,
-        h('button', { type: 'button', class: 'mc', disabled: working, title: '匯入模組包（Modrinth .mrpack 或 CurseForge .zip）', onclick: () => importPack() }, icon('download'), '匯入'),
+        h('button', { type: 'button', class: 'mc', disabled: working, title: '把模組包的內容加入這個實例（Modrinth .mrpack 或 CurseForge .zip）', onclick: () => selectedInstance() && importPack(selectedInstance().id) }, icon('download'), '匯入'),
         h('button', { type: 'button', class: 'mc', disabled: working, onclick: () => editProfile(null) }, icon('plus'), '新增組合'));
 }
 
@@ -1391,7 +1408,7 @@ export function initMods() {
         }
         if (modalOpen()) return toast('視窗開著時，請把檔案拖到視窗中對應的欄位上', 'warn');
         const pack = paths.find((p) => isType(p, 'mrpack'));
-        if (pack) return importPack(null, pack);
+        if (pack) return importPack($('#view-mods').classList.contains('active') ? selectedInstance()?.id ?? null : null, pack);
         if ($('#view-mods').classList.contains('active')) return installLocal(paths);
         if (!paths.some((p) => isType(p, 'content'))) return installLocal(paths);
         const target = hit ?? (store.instances.length === 1 ? store.instances[0] : await pickDropTarget(paths));

@@ -601,7 +601,6 @@ export async function importFlow() {
             h('div', { class: 'toolbar' },
                 h('span', { class: 'toolbar-label' }, '支援官方啟動器、Prism、MultiMC、PolyMC、CurseForge、Modrinth App、X Minecraft Launcher。原本的資料不會被移動或刪除。'),
                 h('span', { class: 'spacer' }),
-                h('button', { type: 'button', class: 'mc', onclick: () => { $('#dlg').close(); importPack(null); } }, icon('briefcase'), '匯入模組包（Modrinth / CurseForge）'),
                 pickFolder),
             box),
         buttons: [{ label: '取消', value: null }]
@@ -1632,6 +1631,7 @@ export function initInstances() {
     $('#btn-new-instance').addEventListener('click', guard(() => createInstance()));
     $('#btn-quick-instance').addEventListener('click', guard(() => quickCreate().catch(fail)));
     $('#btn-import').addEventListener('click', guard(() => importFlow().catch(fail)));
+    $('#btn-import-pack').addEventListener('click', guard(() => importPack(null).catch(fail)));
     $('#btn-from-template').addEventListener('click', guard(() => fromTemplate().catch(fail)));
     $('#btn-new-group').addEventListener('click', guard(() => groupDialog().catch(fail)));
     $('#btn-refresh-instances').addEventListener('click', guard(async () => {

@@ -135,8 +135,27 @@ fn file_name_safe(name: &str) -> String {
     if trimmed.is_empty() { "模組組合".into() } else { trimmed }
 }
 
+pub fn cf_manifest(inst: &Instance, name: &str, files: &[(u64, u64)]) -> Value {
+    let loaders: Vec<Value> = if inst.loader != "vanilla" && !inst.loader_version.is_empty() {
+        vec![json!({ "id": format!("{}-{}", inst.loader, inst.loader_version), "primary": true })]
+    } else {
+        Vec::new()
+    };
+    json!({
+        "minecraft": { "version": inst.mc_version, "modLoaders": loaders },
+        "manifestType": "minecraftModpack",
+        "manifestVersion": 1,
+        "name": name,
+        "version": "1.0.0",
+        "author": "",
+        "files": files.iter().map(|(project, file)| json!({ "projectID": project, "fileID": file, "required": true })).collect::<Vec<_>>(),
+        "overrides": "overrides"
+    })
+}
+
 #[tauri::command]
-pub async fn profile_export(id: String, name: String, files: Vec<String>) -> R<String> {
+pub async fn profile_export(id: String, name: String, files: Vec<String>, format: Option<String>) -> R<String> {
+    let curseforge = format.as_deref() == Some("curseforge");
     let inst = instance::get(&id).await?;
     let mods_dir = paths::game_dir(&id).join("mods");
     let mut locals = Vec::new();
@@ -147,6 +166,52 @@ pub async fn profile_export(id: String, name: String, files: Vec<String>) -> R<S
         let bytes = tokio::fs::read(mods_dir.join(file)).await.with_context(|| format!("讀取 {file} 失敗"))?;
         locals.push((file.trim_end_matches(".disabled").to_string(), net::sha1_hex(&bytes), bytes));
     }
+    let mut deps = serde_json::Map::new();
+    deps.insert("minecraft".into(), json!(inst.mc_version));
+    if inst.loader != "vanilla" && !inst.loader_version.is_empty() {
+        let key = if inst.loader == "fabric" { "fabric-loader" } else { inst.loader.as_str() };
+        deps.insert(key.into(), json!(inst.loader_version));
+    }
+    let (manifest_name, manifest, overrides, extension) = if curseforge {
+        let prints: Vec<u32> = locals.iter().map(|(_, _, b)| crate::curseforge::fingerprint(b)).collect();
+        let found = crate::curseforge::match_files(&prints).await;
+        let mut refs = Vec::new();
+        let mut overrides = Vec::new();
+        for ((file, _, bytes), print) in locals.into_iter().zip(&prints) {
+            match found.get(print) {
+                Some(pair) => refs.push(*pair),
+                None => overrides.push((file, bytes)),
+            }
+        }
+        ("manifest.json", cf_manifest(&inst, &name, &refs), overrides, "zip")
+    } else {
+        modrinth_index(&inst, &name, locals, deps).await
+    };
+    let out_dir = dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"));
+    std::fs::create_dir_all(&out_dir)?;
+    let stem = file_name_safe(&format!("{}-{}", inst.name, name));
+    let dest = paths::unused(out_dir.join(format!("{stem}.{extension}")));
+    let target = dest.clone();
+    tokio::task::spawn_blocking(move || -> R<()> {
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&target)?);
+        let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file(manifest_name, opts)?;
+        zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
+        for (file, bytes) in overrides {
+            zip.start_file(format!("overrides/mods/{file}"), opts)?;
+            zip.write_all(&bytes)?;
+        }
+        zip.finish()?;
+        Ok(())
+    })
+    .await
+    .context("匯出工作中斷")??;
+    Ok(dest.to_string_lossy().to_string())
+}
+
+type Local = (String, String, Vec<u8>);
+
+async fn modrinth_index(inst: &Instance, name: &str, locals: Vec<Local>, deps: serde_json::Map<String, Value>) -> (&'static str, Value, Vec<(String, Vec<u8>)>, &'static str) {
     let hashes: Vec<&String> = locals.iter().map(|(_, h, _)| h).collect();
     let found: HashMap<String, Value> = if hashes.is_empty() {
         HashMap::new()
@@ -169,13 +234,6 @@ pub async fn profile_export(id: String, name: String, files: Vec<String>) -> R<S
             None => overrides.push((file, bytes)),
         }
     }
-
-    let mut deps = serde_json::Map::new();
-    deps.insert("minecraft".into(), json!(inst.mc_version));
-    if inst.loader != "vanilla" && !inst.loader_version.is_empty() {
-        let key = if inst.loader == "fabric" { "fabric-loader" } else { inst.loader.as_str() };
-        deps.insert(key.into(), json!(inst.loader_version));
-    }
     let index = json!({
         "formatVersion": 1,
         "game": "minecraft",
@@ -185,27 +243,7 @@ pub async fn profile_export(id: String, name: String, files: Vec<String>) -> R<S
         "files": entries,
         "dependencies": deps
     });
-
-    let out_dir = dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"));
-    std::fs::create_dir_all(&out_dir)?;
-    let stem = file_name_safe(&format!("{}-{}", inst.name, name));
-    let dest = paths::unused(out_dir.join(format!("{stem}.mrpack")));
-    let target = dest.clone();
-    tokio::task::spawn_blocking(move || -> R<()> {
-        let mut zip = zip::ZipWriter::new(std::fs::File::create(&target)?);
-        let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-        zip.start_file("modrinth.index.json", opts)?;
-        zip.write_all(serde_json::to_string_pretty(&index)?.as_bytes())?;
-        for (file, bytes) in overrides {
-            zip.start_file(format!("overrides/mods/{file}"), opts)?;
-            zip.write_all(&bytes)?;
-        }
-        zip.finish()?;
-        Ok(())
-    })
-    .await
-    .context("匯出工作中斷")??;
-    Ok(dest.to_string_lossy().to_string())
+    ("modrinth.index.json", index, overrides, "mrpack")
 }
 
 type Pack = (Index, Vec<(u64, u64)>, Vec<(PathBuf, Vec<u8>)>);
@@ -246,10 +284,21 @@ fn read_pack(path: &Path) -> R<Pack> {
     Ok((index, refs, overrides))
 }
 
+pub fn part_of(rel: &Path) -> &'static str {
+    match rel.components().next().and_then(|c| c.as_os_str().to_str()) {
+        Some("mods") => "mods",
+        Some("resourcepacks") => "resourcepacks",
+        Some("shaderpacks") => "shaderpacks",
+        _ => "other",
+    }
+}
+
 #[tauri::command]
-pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: String, target: Option<String>) -> R<Imported> {
+pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: String, target: Option<String>, parts: Option<Vec<String>>) -> R<Imported> {
     let source = PathBuf::from(&path);
-    let (mut index, refs, overrides) = tokio::task::spawn_blocking(move || read_pack(&source)).await.context("讀取模組包中斷")??;
+    let (mut index, refs, mut overrides) = tokio::task::spawn_blocking(move || read_pack(&source)).await.context("讀取模組包中斷")??;
+    let wanted = |rel: &Path| parts.as_ref().is_none_or(|p| p.iter().any(|x| x == part_of(rel)));
+    overrides.retain(|(rel, _)| wanted(rel));
     if refs.len() > MAX_FILES {
         bail!("模組包的檔案太多了（超過 {MAX_FILES} 個）");
     }
@@ -321,6 +370,9 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
             skipped.push(file.path.clone());
             continue;
         };
+        if !wanted(&rel) {
+            continue;
+        }
         let Some(url) = file.downloads.iter().find(|u| allowed_url(u)) else {
             skipped.push(file.path.clone());
             continue;
@@ -407,7 +459,7 @@ mod tests {
                 files.push(n);
             }
         }
-        let out = profile_export(inst.id.clone(), "生存".into(), files.clone()).await.unwrap();
+        let out = profile_export(inst.id.clone(), "生存".into(), files.clone(), None).await.unwrap();
         let (index, _, overrides) = read_pack(Path::new(&out)).unwrap();
         println!("{out}
 共 {} 個模組 → 索引 {} 個、內嵌 {} 個，相依 {:?}", files.len(), index.files.len(), overrides.len(), index.dependencies);
@@ -429,6 +481,14 @@ mod tests {
         assert!(!allowed_url("http://cdn.modrinth.com/x.jar"));
         assert!(!allowed_url("https://cdn.modrinth.com.evil.example/x.jar"));
         assert_eq!(file_name_safe("輝煌/生存:建築?"), "輝煌_生存_建築_");
+        assert_eq!(part_of(Path::new("mods/a.jar")), "mods");
+        assert_eq!(part_of(Path::new("shaderpacks/x.zip")), "shaderpacks");
+        assert_eq!(part_of(Path::new("config/a.toml")), "other");
+        let inst = Instance { mc_version: "26.3".into(), loader: "neoforge".into(), loader_version: "26.3.0.99".into(), ..Default::default() };
+        let manifest: CfManifest = serde_json::from_value(cf_manifest(&inst, "生存", &[(306612, 5)])).unwrap();
+        let (index, refs) = manifest.into_index();
+        assert_eq!((index.name.as_str(), refs), ("生存", vec![(306612, 5)]));
+        assert_eq!((index.dependencies.get("minecraft").map(String::as_str), index.dependencies.get("neoforge").map(String::as_str)), (Some("26.3"), Some("26.3.0.99")));
     }
 
     #[test]

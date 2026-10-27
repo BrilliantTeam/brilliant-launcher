@@ -307,6 +307,10 @@ async fn identify(prints: &[u32]) -> HashMap<u32, File> {
         .unwrap_or_default()
 }
 
+pub async fn match_files(prints: &[u32]) -> HashMap<u32, (u64, u64)> {
+    identify(prints).await.into_iter().map(|(print, f)| (print, (f.mod_id, f.id))).collect()
+}
+
 fn hit(m: Mod) -> Hit {
     Hit {
         project_id: tag(m.id),
