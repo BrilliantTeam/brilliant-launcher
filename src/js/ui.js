@@ -394,3 +394,13 @@ export function pickColor(anchor, start, onPick, title = '自訂顏色') {
     pop.showPopover();
     pop.querySelector('input[type="text"]').focus();
 }
+
+export function autoTokens({ hue, sat }, mode) {
+    const s = Math.min(55, Math.max(10, sat * 0.9));
+    const c = (factor, light) => hslToHex(hue, Math.round(s * factor), light);
+    return mode === 'dark'
+        ? { 'content-bg': c(0.6, 9), 'content-bg-alt': c(0.6, 12), 'content-bg-sunken': c(0.6, 6), 'panel-face': c(0.6, 15), text: c(0.4, 93), 'text-subtle': c(0.3, 70),
+            border: c(0.6, 28), 'border-soft': c(0.6, 20), 'chrome-bg': c(0.6, 5), 'chrome-ink': c(0.5, 88), 'glass-bg': c(0.6, 7), 'glass-ink': c(0.3, 96) }
+        : { 'content-bg': c(0.8, 97), 'content-bg-alt': c(0.8, 94), 'content-bg-sunken': c(0.8, 89), 'panel-face': c(0.8, 92), text: c(0.6, 14), 'text-subtle': c(0.4, 38),
+            border: c(0.6, 72), 'border-soft': c(0.6, 85), 'chrome-bg': c(0.8, 91), 'chrome-ink': c(0.6, 15), 'glass-bg': c(0.8, 97), 'glass-ink': c(0.6, 14) };
+}

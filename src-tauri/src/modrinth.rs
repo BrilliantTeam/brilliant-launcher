@@ -18,6 +18,7 @@ pub struct Digest {
     pub nested: Vec<String>,
     pub size: u64,
     pub icon: Option<String>,
+    pub print: u32,
 }
 
 pub fn embedded_icon(bytes: &[u8], is_mod: bool) -> Option<String> {
@@ -73,7 +74,7 @@ pub async fn digest(path: &Path) -> Option<Digest> {
         let is_mod = name.ends_with(".jar") || name.ends_with(".jar.disabled");
         let nested = if is_mod { nested_jars(&bytes) } else { Vec::new() };
         let icon = if is_mod || name.ends_with(".zip") || name.ends_with(".zip.disabled") { embedded_icon(&bytes, is_mod) } else { None };
-        Some(Digest { sha1: sha1_hex(&bytes), nested, size: bytes.len() as u64, icon })
+        Some(Digest { sha1: sha1_hex(&bytes), nested, size: bytes.len() as u64, icon, print: crate::curseforge::fingerprint(&bytes) })
     })
     .await
     .ok()??;
@@ -118,11 +119,14 @@ impl Kind {
         }
     }
 
-    fn loaders(self) -> &'static str {
-        match self {
-            Kind::Mod => "[\"fabric\"]",
-            Kind::ResourcePack => "[\"minecraft\"]",
-            Kind::Shader => "[\"iris\"]",
+    fn loaders(self, loader: &str) -> &'static str {
+        match (self, mod_loader(loader)) {
+            (Kind::Mod, "forge") => "[\"forge\"]",
+            (Kind::Mod, "neoforge") => "[\"neoforge\"]",
+            (Kind::Mod, _) => "[\"fabric\"]",
+            (Kind::ResourcePack, _) => "[\"minecraft\"]",
+            (Kind::Shader, "forge") => "[\"iris\",\"optifine\"]",
+            (Kind::Shader, _) => "[\"iris\"]",
         }
     }
 
@@ -135,6 +139,14 @@ impl Kind {
 
     pub fn dir(self, instance_id: &str) -> PathBuf {
         paths::game_dir(instance_id).join(self.folder())
+    }
+}
+
+pub fn mod_loader(loader: &str) -> &'static str {
+    match loader {
+        "forge" => "forge",
+        "neoforge" => "neoforge",
+        _ => "fabric",
     }
 }
 
@@ -378,7 +390,7 @@ fn valid_word(text: &str) -> bool {
     text.len() <= 32 && text.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
 }
 
-fn safe_file(name: &str, kind: Kind) -> bool {
+pub(crate) fn safe_file(name: &str, kind: Kind) -> bool {
     let base = name.trim_end_matches(DISABLED_SUFFIX);
     base.ends_with(kind.extension()) && !name.contains(['/', '\\']) && !name.contains("..") && !name.is_empty()
 }
@@ -393,13 +405,14 @@ fn side_facets(side: &str) -> R<&'static [&'static str]> {
     })
 }
 
-pub async fn search(kind: Kind, query: &str, mc: &str, category: &str, sort: &str, offset: u32, side: &str) -> R<SearchResult> {
+#[allow(clippy::too_many_arguments)]
+pub async fn search(kind: Kind, loader: &str, query: &str, mc: &str, category: &str, sort: &str, offset: u32, side: &str) -> R<SearchResult> {
     if !valid_mc(mc) || !valid_word(category) || !valid_word(sort) {
         bail!("搜尋參數不正確");
     }
     let mut facets = vec![format!("[\"project_type:{}\"]", kind.project_type()), format!("[\"versions:{mc}\"]")];
     if kind == Kind::Mod {
-        facets.push("[\"categories:fabric\"]".into());
+        facets.push(format!("[\"categories:{}\"]", mod_loader(loader)));
         facets.extend(side_facets(side)?.iter().map(|f| f.to_string()));
     }
     if !category.is_empty() {
@@ -418,7 +431,7 @@ pub async fn search(kind: Kind, query: &str, mc: &str, category: &str, sort: &st
     net::get_json(&url, false).await
 }
 
-fn clip(text: &str, max: usize) -> String {
+pub(crate) fn clip(text: &str, max: usize) -> String {
     if text.chars().count() > max {
         text.chars().take(max).collect::<String>() + "\n⋯"
     } else {
@@ -426,13 +439,13 @@ fn clip(text: &str, max: usize) -> String {
     }
 }
 
-pub async fn detail(project: &str, kind: Option<Kind>, mc: Option<&str>) -> R<Detail> {
+pub async fn detail(project: &str, kind: Option<Kind>, mc: Option<&str>, loader: &str) -> R<Detail> {
     if !valid_id(project) || mc.is_some_and(|m| !valid_mc(m)) {
         bail!("模組代號不正確");
     }
     let compat_version = async {
         match (kind, mc) {
-            (Some(kind), Some(mc)) => version_for(kind, project, mc, "release").await.ok(),
+            (Some(kind), Some(mc)) => version_for(kind, loader, project, mc, "release").await.ok(),
             _ => None,
         }
     };
@@ -488,11 +501,11 @@ pub fn channel_allows(channel: &str, version_type: &str) -> bool {
     channel_rank(version_type) <= channel_rank(channel)
 }
 
-async fn version_for(kind: Kind, project: &str, mc: &str, channel: &str) -> R<Version> {
+async fn version_for(kind: Kind, loader: &str, project: &str, mc: &str, channel: &str) -> R<Version> {
     let url = format!(
         "{API}/project/{project}/version?game_versions={}&loaders={}",
         encode(&format!("[\"{mc}\"]")),
-        encode(kind.loaders())
+        encode(kind.loaders(loader))
     );
     let mut versions: Vec<Version> = net::get_json(&url, false).await?;
     if versions.is_empty() {
@@ -507,7 +520,8 @@ fn primary(files: Vec<VersionFile>) -> Option<VersionFile> {
     files.into_iter().nth(index)
 }
 
-pub async fn install(app: &AppHandle, instance_id: &str, kind: Kind, project: &str, mc: &str, skip_fabric_api: bool, channel: &str) -> R<Vec<String>> {
+#[allow(clippy::too_many_arguments)]
+pub async fn install(app: &AppHandle, instance_id: &str, kind: Kind, loader: &str, project: &str, mc: &str, skip_fabric_api: bool, channel: &str) -> R<Vec<String>> {
     if !valid_id(project) || !valid_mc(mc) {
         bail!("項目或版本參數不正確");
     }
@@ -522,7 +536,7 @@ pub async fn install(app: &AppHandle, instance_id: &str, kind: Kind, project: &s
         }
         let version: Version = match version_id {
             Some(id) if valid_id(&id) => net::get_json(&format!("{API}/version/{id}"), false).await?,
-            _ => version_for(kind, &project_id, mc, channel).await?,
+            _ => version_for(kind, loader, &project_id, mc, channel).await?,
         };
         if skip_fabric_api && version.project_id == FABRIC_API_ID {
             continue;
@@ -566,10 +580,23 @@ fn managed_name(file: &str) -> Option<&'static str> {
     }
 }
 
-pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String], auto_api: bool, channel: &str, frozen: bool) -> R<Vec<Installed>> {
+#[derive(Clone, Copy)]
+pub struct Scope<'a> {
+    pub loader: &'a str,
+    pub mc: &'a str,
+    pub pinned: &'a [String],
+    pub auto_api: bool,
+    pub channel: &'a str,
+    pub frozen: bool,
+    pub curseforge_first: bool,
+}
+
+pub async fn installed(instance_id: &str, kind: Kind, scope: &Scope<'_>) -> R<Vec<Installed>> {
+    let Scope { loader, mc, pinned, auto_api, channel, frozen, curseforge_first } = *scope;
     let dir = kind.dir(instance_id);
     let mut out = Vec::new();
     let mut hashes = Vec::new();
+    let mut prints = Vec::new();
     let mut embedded: Vec<Vec<String>> = Vec::new();
     let mut local_icons: Vec<Option<String>> = Vec::new();
     if let Ok(mut entries) = tokio::fs::read_dir(&dir).await {
@@ -580,6 +607,7 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
             }
             let Some(found) = digest(&entry.path()).await else { continue };
             hashes.push(found.sha1);
+            prints.push(found.print);
             embedded.push(if kind == Kind::Mod { found.nested } else { Vec::new() });
             local_icons.push(found.icon);
             let enabled = !file.ends_with(DISABLED_SUFFIX);
@@ -603,11 +631,15 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
             });
         }
     }
+    let mut cf_slugs = HashMap::new();
+    if curseforge_first {
+        cf_slugs = crate::curseforge::fill(&mut out, &prints, &embedded, kind, scope).await;
+    }
     if !hashes.is_empty() {
         let current: HashMap<String, Version> = net::post_json(&format!("{API}/version_files"), &json!({ "hashes": hashes, "algorithm": "sha1" }))
             .await
             .unwrap_or_default();
-        let loaders: Vec<String> = serde_json::from_str(kind.loaders()).unwrap_or_default();
+        let loaders: Vec<String> = serde_json::from_str(kind.loaders(loader)).unwrap_or_default();
         let latest: HashMap<String, Version> = net::post_json(
             &format!("{API}/version_files/update"),
             &json!({ "hashes": hashes, "algorithm": "sha1", "loaders": loaders, "game_versions": [mc] }),
@@ -643,7 +675,7 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
         let mut needed_by: HashMap<String, Vec<String>> = HashMap::new();
         let mut fallback: Vec<(usize, String, String, String)> = Vec::new();
         for (index, (entry, hash)) in out.iter_mut().zip(&hashes).enumerate() {
-            let Some(version) = current.get(hash) else { continue };
+            let Some(version) = current.get(hash).filter(|_| entry.project_id.is_none()) else { continue };
             entry.project_id = Some(version.project_id.clone());
             entry.version = Some(version.version_number.clone());
             entry.version_id = Some(version.id.clone());
@@ -692,17 +724,31 @@ pub async fn installed(instance_id: &str, kind: Kind, mc: &str, pinned: &[String
             }
         }
         for (index, project_id, current_id, current_date) in fallback {
-            let Ok(list) = versions(kind, &project_id, Some(mc)).await else { continue };
+            let Ok(list) = versions(kind, loader, &project_id, Some(mc)).await else { continue };
             let Some(pick) = list.into_iter().find(|v| channel_allows(channel, &v.version_type)) else { continue };
             if pick.id != current_id && pick.date_published > current_date {
                 out[index].update = pick.file;
             }
         }
+        if !curseforge_first {
+            cf_slugs = crate::curseforge::fill(&mut out, &prints, &embedded, kind, scope).await;
+        }
+        cf_slugs.extend(projects.iter().map(|p| (p.id.clone(), p.slug.to_lowercase())));
         for entry in out.iter_mut() {
             if let Some(names) = entry.project_id.as_ref().and_then(|id| needed_by.get(id)) {
                 entry.dependents = names.clone();
             }
         }
+    }
+    let present: HashSet<&String> = out.iter().filter(|e| e.enabled).filter_map(|e| cf_slugs.get(e.project_id.as_ref()?)).collect();
+    let satisfied: HashSet<String> = out
+        .iter()
+        .flat_map(|e| e.missing.iter())
+        .filter(|d| !d.disabled && cf_slugs.get(&d.project_id).is_some_and(|slug| present.contains(slug)))
+        .map(|d| d.project_id.clone())
+        .collect();
+    for entry in out.iter_mut() {
+        entry.missing.retain(|d| !satisfied.contains(&d.project_id));
     }
     for (entry, icon) in out.iter_mut().zip(local_icons) {
         if entry.icon_url.is_none() {
@@ -746,11 +792,11 @@ async fn installed_projects(dir: &std::path::Path, kind: Kind) -> HashSet<String
     current.into_values().map(|v| v.project_id).collect()
 }
 
-pub async fn versions(kind: Kind, project: &str, mc: Option<&str>) -> R<Vec<VersionInfo>> {
+pub async fn versions(kind: Kind, loader: &str, project: &str, mc: Option<&str>) -> R<Vec<VersionInfo>> {
     if !valid_id(project) || mc.is_some_and(|m| !valid_mc(m)) {
         bail!("項目或版本參數不正確");
     }
-    let mut url = format!("{API}/project/{project}/version?loaders={}", encode(kind.loaders()));
+    let mut url = format!("{API}/project/{project}/version?loaders={}", encode(kind.loaders(loader)));
     if let Some(mc) = mc {
         url.push_str(&format!("&game_versions={}", encode(&format!("[\"{mc}\"]"))));
     }
@@ -777,7 +823,7 @@ pub async fn versions(kind: Kind, project: &str, mc: Option<&str>) -> R<Vec<Vers
 }
 
 pub async fn replace(app: &AppHandle, instance_id: &str, kind: Kind, old_file: &str, update: Update) -> R<String> {
-    if !safe_file(old_file, kind) || !safe_file(&update.filename, kind) || !update.url.starts_with(CDN) || update.sha1.len() != 40 {
+    if !safe_file(old_file, kind) || !safe_file(&update.filename, kind) || !(update.url.starts_with(CDN) || crate::curseforge::cdn(&update.url)) || update.sha1.len() != 40 {
         bail!("更新資訊不正確");
     }
     let dir = kind.dir(instance_id);
@@ -805,12 +851,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn real_detail_has_compat_and_authors() {
-        let d = detail("AANobbMI", Some(Kind::Mod), Some("1.21.1")).await.unwrap();
+        let d = detail("AANobbMI", Some(Kind::Mod), Some("1.21.1"), "fabric").await.unwrap();
         assert!(!d.authors.is_empty() || d.license.is_some());
         let c = d.compat.expect("Sodium 要有 1.21.1 版本");
         assert_eq!(c.mc, "1.21.1");
         assert!(!c.version_number.is_empty());
-        let d = detail("mOgUt4GM", Some(Kind::Mod), Some("1.21.1")).await.unwrap();
+        let d = detail("mOgUt4GM", Some(Kind::Mod), Some("1.21.1"), "fabric").await.unwrap();
         println!("{:?} {:?} {:?}", d.authors, d.license, d.compat.as_ref().map(|c| &c.deps));
     }
 
@@ -840,7 +886,8 @@ mod tests {
                 std::fs::copy(entry.path(), dir.join(entry.file_name())).unwrap();
             }
         }
-        let list = installed("real", Kind::Mod, &mc, &[], false, "release", false).await.unwrap();
+        let scope = Scope { loader: "fabric", mc: &mc, pinned: &[], auto_api: false, channel: "release", frozen: false, curseforge_first: false };
+        let list = installed("real", Kind::Mod, &scope).await.unwrap();
         let known = list.iter().filter(|e| e.project_id.is_some()).count();
         println!("共 {} 個，Modrinth 認得 {} 個", list.len(), known);
         for e in &list {

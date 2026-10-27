@@ -12,7 +12,7 @@ use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, State};
 
 const API: &str = "https://api.modrinth.com/v2";
-const ALLOWED_HOSTS: [&str; 4] = ["cdn.modrinth.com", "github.com", "raw.githubusercontent.com", "gitlab.com"];
+const ALLOWED_HOSTS: [&str; 6] = ["cdn.modrinth.com", "github.com", "raw.githubusercontent.com", "gitlab.com", "edge.forgecdn.net", "mediafilez.forgecdn.net"];
 const MAX_FILES: usize = 600;
 const MAX_INDEX: u64 = 8 << 20;
 const MAX_OVERRIDES: u64 = 1 << 30;
@@ -43,6 +43,61 @@ struct IndexFile {
     file_size: u64,
 }
 
+#[derive(Deserialize)]
+struct CfManifest {
+    minecraft: CfMinecraft,
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    files: Vec<CfFile>,
+    #[serde(default)]
+    overrides: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CfMinecraft {
+    version: String,
+    #[serde(default)]
+    mod_loaders: Vec<CfLoader>,
+}
+
+#[derive(Deserialize)]
+struct CfLoader {
+    id: String,
+}
+
+#[derive(Deserialize)]
+struct CfFile {
+    #[serde(rename = "projectID")]
+    project_id: u64,
+    #[serde(rename = "fileID")]
+    file_id: u64,
+    #[serde(default = "yes")]
+    required: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+impl CfManifest {
+    fn into_index(self) -> (Index, Vec<(u64, u64)>) {
+        let mut dependencies = HashMap::from([("minecraft".to_string(), self.minecraft.version)]);
+        for loader in self.minecraft.mod_loaders {
+            let (name, version) = loader.id.split_once('-').unwrap_or((loader.id.as_str(), ""));
+            let key = match name {
+                "fabric" => "fabric-loader",
+                "quilt" => "quilt-loader",
+                other => other,
+            };
+            dependencies.insert(key.to_string(), version.to_string());
+        }
+        let refs = self.files.iter().filter(|f| f.required).map(|f| (f.project_id, f.file_id)).collect();
+        (Index { game: "minecraft".into(), name: self.name, files: Vec::new(), dependencies }, refs)
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Imported {
@@ -50,6 +105,7 @@ pub struct Imported {
     pub name: String,
     pub mods: Vec<String>,
     pub skipped: Vec<String>,
+    pub blocked: Vec<crate::curseforge::Blocked>,
 }
 
 pub fn safe_relative(path: &str) -> Option<PathBuf> {
@@ -116,8 +172,9 @@ pub async fn profile_export(id: String, name: String, files: Vec<String>) -> R<S
 
     let mut deps = serde_json::Map::new();
     deps.insert("minecraft".into(), json!(inst.mc_version));
-    if inst.loader == "fabric" && !inst.loader_version.is_empty() {
-        deps.insert("fabric-loader".into(), json!(inst.loader_version));
+    if inst.loader != "vanilla" && !inst.loader_version.is_empty() {
+        let key = if inst.loader == "fabric" { "fabric-loader" } else { inst.loader.as_str() };
+        deps.insert(key.into(), json!(inst.loader_version));
     }
     let index = json!({
         "formatVersion": 1,
@@ -151,11 +208,22 @@ pub async fn profile_export(id: String, name: String, files: Vec<String>) -> R<S
     Ok(dest.to_string_lossy().to_string())
 }
 
-fn read_pack(path: &Path) -> R<(Index, Vec<(PathBuf, Vec<u8>)>)> {
-    let mut zip = zip::ZipArchive::new(std::fs::File::open(path).context("打不開這個檔案")?).context("這不是有效的 .mrpack 檔")?;
+type Pack = (Index, Vec<(u64, u64)>, Vec<(PathBuf, Vec<u8>)>);
+
+fn read_pack(path: &Path) -> R<Pack> {
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(path).context("打不開這個檔案")?).context("這不是有效的模組包")?;
     let mut raw = String::new();
-    zip.by_name("modrinth.index.json").context("檔案裡找不到 modrinth.index.json")?.take(MAX_INDEX).read_to_string(&mut raw).context("modrinth.index.json 讀取失敗")?;
-    let index: Index = serde_json::from_str(&raw).context("modrinth.index.json 格式不正確")?;
+    let (index, refs, roots) = if zip.by_name("modrinth.index.json").is_ok() {
+        zip.by_name("modrinth.index.json")?.take(MAX_INDEX).read_to_string(&mut raw).context("modrinth.index.json 讀取失敗")?;
+        let index: Index = serde_json::from_str(&raw).context("modrinth.index.json 格式不正確")?;
+        (index, Vec::new(), vec!["overrides/".to_string(), "client-overrides/".to_string()])
+    } else {
+        zip.by_name("manifest.json").context("這不是模組包：找不到 modrinth.index.json 或 CurseForge 的 manifest.json")?.take(MAX_INDEX).read_to_string(&mut raw).context("manifest.json 讀取失敗")?;
+        let manifest: CfManifest = serde_json::from_str(raw.trim_start_matches('\u{feff}')).context("manifest.json 格式不正確")?;
+        let root = manifest.overrides.clone().filter(|o| safe_relative(o).is_some()).unwrap_or_else(|| "overrides".into());
+        let (index, refs) = manifest.into_index();
+        (index, refs, vec![format!("{}/", root.trim_end_matches('/'))])
+    };
     let mut overrides = Vec::new();
     let mut total = 0u64;
     for i in 0..zip.len() {
@@ -164,7 +232,7 @@ fn read_pack(path: &Path) -> R<(Index, Vec<(PathBuf, Vec<u8>)>)> {
             continue;
         }
         let name = entry.name().replace('\\', "/");
-        let rel = name.strip_prefix("overrides/").or_else(|| name.strip_prefix("client-overrides/"));
+        let rel = roots.iter().find_map(|root| name.strip_prefix(root.as_str()));
         if let Some(rel) = rel.and_then(safe_relative) {
             total += entry.size();
             if total > MAX_OVERRIDES {
@@ -175,26 +243,44 @@ fn read_pack(path: &Path) -> R<(Index, Vec<(PathBuf, Vec<u8>)>)> {
             overrides.push((rel, bytes));
         }
     }
-    Ok((index, overrides))
+    Ok((index, refs, overrides))
 }
 
 #[tauri::command]
 pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: String, target: Option<String>) -> R<Imported> {
     let source = PathBuf::from(&path);
-    let (index, overrides) = tokio::task::spawn_blocking(move || read_pack(&source)).await.context("讀取模組包中斷")??;
+    let (mut index, refs, overrides) = tokio::task::spawn_blocking(move || read_pack(&source)).await.context("讀取模組包中斷")??;
+    if refs.len() > MAX_FILES {
+        bail!("模組包的檔案太多了（超過 {MAX_FILES} 個）");
+    }
+    let mut blocked = Vec::new();
+    let mut skipped = Vec::new();
+    if !refs.is_empty() {
+        if index.dependencies.contains_key("quilt-loader") {
+            bail!("這是 Quilt 模組包，輝煌啟動器只支援 Fabric、Forge 與 NeoForge");
+        }
+        let (files, stopped, missing) = crate::curseforge::resolve_pack(&refs).await.map_err(|e| e.0.context("向 CurseForge 查詢模組包內容失敗"))?;
+        blocked = stopped;
+        skipped = missing;
+        index.files = files
+            .into_iter()
+            .map(|f| IndexFile { path: f.path, hashes: HashMap::from([("sha1".to_string(), f.sha1)]), env: None, downloads: vec![f.url], file_size: f.size })
+            .collect();
+    }
     if index.game != "minecraft" {
         bail!("這不是 Minecraft 的模組包");
     }
     if index.files.len() > MAX_FILES {
         bail!("模組包的檔案太多了（超過 {MAX_FILES} 個）");
     }
-    for loader in ["forge", "neoforge", "quilt-loader"] {
-        if index.dependencies.contains_key(loader) {
-            bail!("這是 {loader} 模組包，輝煌啟動器只支援 Fabric");
-        }
+    if index.dependencies.contains_key("quilt-loader") {
+        bail!("這是 Quilt 模組包，輝煌啟動器只支援 Fabric、Forge 與 NeoForge");
     }
     let mc = index.dependencies.get("minecraft").cloned().context("模組包沒有標示 Minecraft 版本")?;
-    let fabric = index.dependencies.get("fabric-loader").cloned();
+    let (loader, loader_version) = [("fabric-loader", "fabric"), ("neoforge", "neoforge"), ("forge", "forge")]
+        .iter()
+        .find_map(|(key, name)| Some((name.to_string(), index.dependencies.get(*key)?.clone())))
+        .unwrap_or_else(|| ("vanilla".into(), String::new()));
 
     let target_was_new = target.is_none();
     let inst: Instance = match target {
@@ -204,6 +290,9 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
             if inst.mc_version != mc {
                 bail!("這個模組包是給 Minecraft {mc} 的，目前實例是 {}，請改用「建立新實例」", inst.mc_version);
             }
+            if inst.loader != loader && loader != "vanilla" {
+                bail!("這個模組包要用 {}，目前實例是 {}，請改用「建立新實例」", crate::forge::display(&loader), crate::forge::display(&inst.loader));
+            }
             inst
         }
         None => {
@@ -212,8 +301,8 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
                 name: crate::instance::unique_name(&base).await,
                 icon: "briefcase".into(),
                 mc_version: mc.clone(),
-                loader: if fabric.is_some() { "fabric".into() } else { "vanilla".into() },
-                loader_version: fabric.clone().unwrap_or_default(),
+                loader: loader.clone(),
+                loader_version: loader_version.clone(),
                 ..Default::default()
             };
             crate::commands::create_instance(draft).await?
@@ -224,7 +313,6 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
     let game = paths::game_dir(&inst.id);
     let mut jobs = Vec::new();
     let mut mods = Vec::new();
-    let mut skipped = Vec::new();
     for file in &index.files {
         if file.env.as_ref().and_then(|e| e.get("client")).is_some_and(|c| c == "unsupported") {
             continue;
@@ -258,7 +346,7 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
     }
     mods.sort();
     mods.dedup();
-    Ok(Imported { instance_id: inst.id, name: index.name, mods, skipped })
+    Ok(Imported { instance_id: inst.id, name: index.name, mods, skipped, blocked })
 }
 
 async fn write_pack(app: &AppHandle, game: &Path, jobs: Vec<DlFile>, overrides: Vec<(PathBuf, Vec<u8>)>, mods: &mut Vec<String>, existing: Option<&str>) -> R<()> {
@@ -320,7 +408,7 @@ mod tests {
             }
         }
         let out = profile_export(inst.id.clone(), "生存".into(), files.clone()).await.unwrap();
-        let (index, overrides) = read_pack(Path::new(&out)).unwrap();
+        let (index, _, overrides) = read_pack(Path::new(&out)).unwrap();
         println!("{out}
 共 {} 個模組 → 索引 {} 個、內嵌 {} 個，相依 {:?}", files.len(), index.files.len(), overrides.len(), index.dependencies);
         let ok = index.files.iter().filter(|f| f.downloads.iter().all(|u| allowed_url(u)) && f.hashes.get("sha512").is_some_and(|h| h.len() == 128)).count();
@@ -357,11 +445,26 @@ mod tests {
         zip.start_file("overrides/../evil.txt", opts).unwrap();
         zip.write_all(b"x").unwrap();
         zip.finish().unwrap();
-        let (index, overrides) = read_pack(&pack).unwrap();
+        let (index, refs, overrides) = read_pack(&pack).unwrap();
         assert_eq!(index.dependencies.get("fabric-loader").map(String::as_str), Some("0.19.5"));
         assert_eq!(index.files.len(), 1);
+        assert!(refs.is_empty());
         assert_eq!(overrides.len(), 1);
         assert_eq!(overrides[0].0, PathBuf::from("mods").join("local.jar"));
+
+        let cf = dir.join("t.zip");
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&cf).unwrap());
+        zip.start_file("manifest.json", opts).unwrap();
+        zip.write_all("\u{feff}{\"minecraft\":{\"version\":\"1.21.1\",\"modLoaders\":[{\"id\":\"fabric-0.16.5\",\"primary\":true}]},\"manifestType\":\"minecraftModpack\",\"name\":\"CF\",\"files\":[{\"projectID\":306612,\"fileID\":5,\"required\":true},{\"projectID\":2,\"fileID\":6,\"required\":false}],\"overrides\":\"extra\"}".as_bytes()).unwrap();
+        zip.start_file("extra/config/a.txt", opts).unwrap();
+        zip.write_all(b"a").unwrap();
+        zip.start_file("overrides/config/b.txt", opts).unwrap();
+        zip.write_all(b"b").unwrap();
+        zip.finish().unwrap();
+        let (index, refs, overrides) = read_pack(&cf).unwrap();
+        assert_eq!((index.name.as_str(), index.dependencies.get("fabric-loader").map(String::as_str), index.dependencies.get("minecraft").map(String::as_str)), ("CF", Some("0.16.5"), Some("1.21.1")));
+        assert_eq!(refs, vec![(306612, 5)]);
+        assert_eq!(overrides.iter().map(|o| o.0.clone()).collect::<Vec<_>>(), vec![PathBuf::from("config").join("a.txt")]);
         let _ = std::fs::remove_dir_all(dir);
     }
 }

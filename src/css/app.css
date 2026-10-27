@@ -683,6 +683,9 @@ button.mc.icon-btn.danger:hover { color: var(--danger); }
 .pick-tag { display: inline-flex; align-items: center; gap: 3px; font-size: calc(11px * var(--fs, 1)); color: var(--success); }
 
 .store-search { display: flex; gap: 8px; margin-bottom: 8px; }
+.source-bar { align-items: center; flex-wrap: wrap; }
+.source-bar select { flex: 0 0 auto; width: auto; }
+.source-bar .hint { flex: 1 1 240px; margin: 0; }
 .store-search input { flex: 1 1 auto; }
 .store-search select { flex: 0 0 140px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
@@ -1890,3 +1893,4 @@ body.home-editing .social { pointer-events: auto; }
 .look-import-info { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
 .look-import-info small { color: var(--text-subtle); }
 .look-preview.has-image .lp-body { background: linear-gradient(color-mix(in srgb, var(--p-content-bg-alt) 55%, transparent), color-mix(in srgb, var(--p-content-bg-alt) 55%, transparent)), var(--p-image) center / cover no-repeat; }
+.auto-locked { opacity: 0.45; filter: grayscale(0.4); cursor: not-allowed; }

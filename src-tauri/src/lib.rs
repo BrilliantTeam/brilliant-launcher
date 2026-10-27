@@ -6,6 +6,7 @@ pub mod config;
 pub mod err;
 pub mod extras;
 pub mod fabric;
+pub mod forge;
 pub mod instance;
 pub mod launch;
 pub mod leftovers;
@@ -14,6 +15,7 @@ pub mod mc;
 pub mod modinject;
 pub mod modrinth;
 pub mod mrpack;
+pub mod curseforge;
 pub mod net;
 pub mod paths;
 pub mod ping;
@@ -126,6 +128,8 @@ pub fn run() {
             commands::content_install,
             commands::content_list,
             commands::content_versions,
+            commands::content_categories,
+            commands::set_content_source,
             commands::content_pin,
             commands::set_mod_profiles,
             mrpack::profile_export,

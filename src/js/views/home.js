@@ -1,6 +1,6 @@
 import { api, listen, openUrl } from '../api.js';
 import { $, clear, confirm, dialog, fail, fmtBytes, h, toast } from '../ui.js';
-import { accountFor, avatarUrl, emit, isRunning, loadAccounts, loadInstances, on, selectedAccount, selectedInstance, store, saveSettings } from '../store.js';
+import { accountFor, avatarUrl, emit, isRunning, loaderLabel, loadAccounts, loadInstances, modded, on, selectedAccount, selectedInstance, store, saveSettings } from '../store.js';
 import { initNews } from './news.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
 import { addOffline, loginMicrosoft } from './accounts.js';
@@ -148,11 +148,11 @@ function renderPlayBar() {
 
     clear($('#home-thumb')).append(...(instance ? [instanceVisual(instance)] : []));
     clear($('#home-instance')).append(...[h('span', { class: 'pick-title' }, instance ? instance.name : '尚未建立實例'), instance && account ? h('img', { class: 'name-face', src: avatarUrl(account), alt: '', title: account.name }) : null].filter(Boolean));
-    $('#instance-pick').title = instance ? `${instance.name}｜Minecraft ${instance.mcVersion}${instance.loader === 'fabric' ? `・Fabric ${instance.loaderVersion || ''}` : '・原版'}${account ? `｜${account.name}` : ''}（點一下切換實例）` : '切換遊戲實例';
+    $('#instance-pick').title = instance ? `${instance.name}｜Minecraft ${instance.mcVersion}・${loaderLabel(instance, true)}${account ? `｜${account.name}` : ''}（點一下切換實例）` : '切換遊戲實例';
     clear($('#home-meta')).append(...(!instance
         ? ['點右邊按鈕即可建立']
         : [
-            h('span', { class: 'meta-fixed' }, `${instance.mcVersion}・${instance.loader === 'fabric' ? 'Fabric' : '原版'}`)
+            h('span', { class: 'meta-fixed' }, `${instance.mcVersion}・${loaderLabel(instance)}`)
         ]));
     renderUpgrade(instance);
     document.body.classList.toggle('launching', busy);
@@ -543,7 +543,7 @@ function toggleInstanceMenu(force) {
                 },
                 h('span', { class: 'inst-thumb' }, instanceVisual(instance)),
                 h('span', { class: 'menu-name' }, instance.name),
-                h('span', { class: 'sub' }, `${instance.mcVersion}${instance.loader === 'fabric' ? '・Fabric' : ''}`)
+                h('span', { class: 'sub' }, `${instance.mcVersion}${modded(instance) ? `・${loaderLabel(instance)}` : ''}`)
             )
         ),
         store.instances.length ? h('hr') : '',

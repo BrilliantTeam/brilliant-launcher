@@ -3,7 +3,7 @@ use crate::err::R;
 use crate::instance::Instance;
 use crate::mc::{java::JavaInfo, manifest};
 use crate::state::AppState;
-use crate::{auth, fabric, instance, launch, modinject, modrinth, paths, ping};
+use crate::{auth, curseforge, fabric, forge, instance, launch, modinject, modrinth, paths, ping};
 use crate::bail;
 use anyhow::Context;
 use serde::Serialize;
@@ -264,9 +264,12 @@ pub async fn list_versions() -> R<VersionList> {
 }
 
 #[tauri::command]
-pub async fn list_fabric_loaders(game_version: String) -> R<Vec<fabric::LoaderInfo>> {
+pub async fn list_fabric_loaders(game_version: String, loader: Option<String>) -> R<Vec<fabric::LoaderInfo>> {
     let settings = config::load_settings().await;
-    fabric::loaders(&game_version, settings.use_mirror).await
+    match loader.as_deref() {
+        Some(other) if forge::is_forge_like(other) => forge::loaders(other, &game_version, settings.use_mirror).await,
+        _ => fabric::loaders(&game_version, settings.use_mirror).await,
+    }
 }
 
 #[tauri::command]
@@ -296,6 +299,13 @@ pub(crate) async fn resolve_version(draft: &mut Instance, settings: &Settings) -
             draft.loader_version = latest.version;
         }
         fabric::install(&draft.mc_version, &draft.loader_version, settings.use_mirror).await?
+    } else if forge::is_forge_like(&draft.loader) {
+        if draft.loader_version.trim().is_empty() {
+            let list = forge::loaders(&draft.loader, &draft.mc_version, settings.use_mirror).await?;
+            let pick = list.iter().find(|l| l.stable).or(list.first()).with_context(|| format!("Minecraft {} 還沒有 {} 可以用", draft.mc_version, forge::display(&draft.loader)))?;
+            draft.loader_version = pick.version.clone();
+        }
+        forge::version_id(&draft.loader, &draft.mc_version, &draft.loader_version)
     } else {
         draft.loader = "vanilla".into();
         draft.loader_version.clear();
@@ -392,19 +402,33 @@ pub async fn set_mod_enabled(state: State<'_, AppState>, id: String, file: Strin
 }
 
 #[tauri::command]
-pub async fn content_search(id: String, kind: String, query: String, category: String, sort: String, offset: u32, side: Option<String>) -> R<modrinth::SearchResult> {
+#[allow(clippy::too_many_arguments)]
+pub async fn content_search(id: String, kind: String, query: String, category: String, sort: String, offset: u32, side: Option<String>, source: Option<String>) -> R<modrinth::SearchResult> {
     let instance = instance::get(&id).await?;
-    modrinth::search(modrinth::Kind::parse(&kind)?, &query, &instance.mc_version, &category, &sort, offset, side.as_deref().unwrap_or("")).await
+    if source.as_deref() == Some("curseforge") {
+        return curseforge::search(modrinth::Kind::parse(&kind)?, &instance.loader, &query, &instance.mc_version, &category, &sort, offset).await;
+    }
+    modrinth::search(modrinth::Kind::parse(&kind)?, &instance.loader, &query, &instance.mc_version, &category, &sort, offset, side.as_deref().unwrap_or("")).await
 }
 
 #[tauri::command]
 pub async fn content_detail(project: String, kind: Option<String>, id: Option<String>) -> R<modrinth::Detail> {
     let kind = kind.as_deref().map(modrinth::Kind::parse).transpose()?;
-    let mc = match id {
-        Some(id) => instance::get(&id).await.ok().map(|i| i.mc_version),
+    let found = match id {
+        Some(id) => instance::get(&id).await.ok(),
         None => None,
     };
-    modrinth::detail(&project, kind, mc.as_deref()).await
+    let mc = found.as_ref().map(|i| i.mc_version.as_str());
+    let loader = found.as_ref().map(|i| i.loader.as_str()).unwrap_or("fabric");
+    if curseforge::is_cf(&project) {
+        return curseforge::detail(&project, kind, mc, loader).await;
+    }
+    modrinth::detail(&project, kind, mc, loader).await
+}
+
+#[tauri::command]
+pub async fn content_categories(kind: String) -> R<Vec<curseforge::CategoryInfo>> {
+    curseforge::categories(modrinth::Kind::parse(&kind)?).await
 }
 
 #[tauri::command]
@@ -415,7 +439,10 @@ pub async fn content_install(app: AppHandle, id: String, kind: String, project: 
     if kind == modrinth::Kind::Mod {
         crate::snapshots::take(&id).await;
     }
-    modrinth::install(&app, &id, kind, &project, &instance.mc_version, instance.wants_rich_presence(&settings), instance.channel(&settings)).await
+    if curseforge::is_cf(&project) {
+        return curseforge::install(&app, &id, kind, &instance.loader, &project, &instance.mc_version, instance.wants_rich_presence(&settings), instance.channel(&settings)).await;
+    }
+    modrinth::install(&app, &id, kind, &instance.loader, &project, &instance.mc_version, instance.wants_rich_presence(&settings), instance.channel(&settings)).await
 }
 
 #[tauri::command]
@@ -423,13 +450,17 @@ pub async fn content_list(id: String, kind: String, mc: Option<String>) -> R<Vec
     let instance = instance::get(&id).await?;
     let mc = mc.filter(|m| !m.is_empty() && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')).unwrap_or_else(|| instance.mc_version.clone());
     let settings = config::load_settings().await;
-    modrinth::installed(&id, modrinth::Kind::parse(&kind)?, &mc, &instance.pinned, instance.wants_rich_presence(&settings), instance.channel(&settings), instance.freeze_mods).await
+    modrinth::installed(&id, modrinth::Kind::parse(&kind)?, &instance.scope(&settings, &mc, instance.freeze_mods)).await
 }
 
 #[tauri::command]
 pub async fn content_versions(id: String, kind: String, project: String, all: bool) -> R<Vec<modrinth::VersionInfo>> {
     let instance = instance::get(&id).await?;
-    modrinth::versions(modrinth::Kind::parse(&kind)?, &project, (!all).then_some(instance.mc_version.as_str())).await
+    let (kind, mc) = (modrinth::Kind::parse(&kind)?, (!all).then_some(instance.mc_version.as_str()));
+    if curseforge::is_cf(&project) {
+        return curseforge::versions(kind, &instance.loader, &project, mc).await;
+    }
+    modrinth::versions(kind, &instance.loader, &project, mc).await
 }
 
 #[tauri::command]
@@ -440,6 +471,13 @@ pub async fn set_mod_profiles(id: String, profiles: Vec<instance::ModProfile>, a
     }
     current.mod_profiles = profiles;
     current.active_profile = active;
+    instance::save(&current).await
+}
+
+#[tauri::command]
+pub async fn set_content_source(id: String, source: String) -> R<()> {
+    let mut current = instance::get(&id).await?;
+    current.content_source = source;
     instance::save(&current).await
 }
 

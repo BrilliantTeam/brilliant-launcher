@@ -1,6 +1,6 @@
 import { api, appVersion, appWindow, fileSrc, listen, openUrl, setZoom } from './api.js';
 import { icon } from './icons.js';
-import { $, $$, confirm, dialog, fail, h, modalOpen, rangeFill, toast, guard, workPending } from './ui.js';
+import { $, $$, autoTokens, confirm, dialog, fail, h, modalOpen, rangeFill, toast, guard, workPending } from './ui.js';
 import { emit, loadAccounts, loadInstances, loadSettings, on, saveSettings, selectedAccount, store } from './store.js';
 import { initHome } from './views/home.js';
 import { initInstances } from './views/instances.js';
@@ -58,8 +58,10 @@ const THEMES = {
     auto: { icon: 'invert', label: '主題：跟隨系統（點一下切換為亮色）' },
     light: { icon: 'sun', label: '主題：亮色（點一下切換為深色）' },
     dark: { icon: 'moon', label: '主題：深色（點一下改為跟隨系統）' },
-    schedule: { icon: 'clock', label: '主題：依時段自動切換（點一下改為跟隨系統）' }
+    schedule: { icon: 'clock', label: '主題：依時段自動切換（點一下改為跟隨系統）' },
+    background: { icon: 'image', label: '主題：跟著背景亮度（點一下改為跟隨系統）' }
 };
+
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -140,7 +142,7 @@ async function applyWalkers() {
 function applyTheme() {
     const root = document.documentElement;
     const theme = THEMES[store.settings?.theme] ? store.settings.theme : 'auto';
-    const effective = theme === 'schedule' ? scheduledTheme(store.settings) : theme;
+    const effective = theme === 'schedule' ? scheduledTheme(store.settings) : theme === 'background' ? (store.bgPalette ? (store.bgPalette.light >= 55 ? 'light' : 'dark') : 'auto') : theme;
     if (effective === 'auto') delete root.dataset.theme;
     else root.dataset.theme = effective;
     root.dataset.font = pick(store.settings?.font, ['pixel', 'system', 'naikai', 'serif', ...(store.settings?.customFont ? ['custom'] : [])], 'pixel');
@@ -149,8 +151,9 @@ function applyTheme() {
     toggle.replaceChildren(icon(THEMES[theme].icon));
     toggle.title = THEMES[theme].label;
     toggle.setAttribute('aria-label', THEMES[theme].label);
-    const fromBg = store.settings?.accentFromBg && HEX.test(store.bgAccent ?? '') ? store.bgAccent : '';
-    const accent = fromBg || (HEX.test(store.settings?.accent ?? '') ? store.settings.accent : '');
+    const auto = !!store.settings?.autoPalette;
+    const fromBg = (store.settings?.accentFromBg || auto) && HEX.test(store.bgAccent ?? '') ? store.bgAccent : '';
+    const accent = fromBg || (!auto && HEX.test(store.settings?.accent ?? '') ? store.settings.accent : '');
     if (accent) {
         const [r, g, b] = [1, 3, 5].map((i) => parseInt(accent.slice(i, i + 2), 16));
         root.style.setProperty('--accent', accent);
@@ -186,8 +189,10 @@ function applyTheme() {
     root.dataset.layout = look.homeLayout === 'mirrored' ? 'mirrored' : 'standard';
     const tones = { mono: 'grayscale(1)', sepia: 'sepia(0.75) saturate(1.1)', cool: 'saturate(0.9) hue-rotate(12deg) brightness(0.97)', warm: 'sepia(0.25) saturate(1.3)', vivid: 'saturate(1.5) contrast(1.08)' };
     root.style.setProperty('--bg-tone', tones[look.bgFilter] ?? 'saturate(1)');
+    const autoPalette = look.autoPalette && store.bgPalette ? store.bgPalette : null;
     for (const [key, cssVar] of [['colorSuccess', '--success'], ['colorWarning', '--warning'], ['colorLink', '--link']]) {
-        if (HEX.test(look[key] ?? '')) root.style.setProperty(cssVar, look[key]);
+        const value = look.autoPalette ? (key === 'colorLink' && autoPalette ? autoPalette.link : '') : HEX.test(look[key] ?? '') ? look[key] : '';
+        if (value) root.style.setProperty(cssVar, value);
         else root.style.removeProperty(cssVar);
     }
     root.dataset.contrast = look.highContrast ? 'high' : 'normal';
@@ -195,8 +200,9 @@ function applyTheme() {
     const mode = root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     root.dataset.mode = mode;
     const props = {};
+    const generated = autoPalette ? autoTokens(autoPalette, mode) : {};
     for (const token of COLOR_TOKENS) {
-        const value = look.colorOverrides?.[`${mode}.${token}`];
+        const value = look.autoPalette ? generated[token] : look.colorOverrides?.[`${mode}.${token}`];
         if (!HEX.test(value ?? '')) continue;
         const alpha = TRANSLUCENT[token]?.[mode];
         props[token] = alpha ? `color-mix(in srgb, ${value} ${alpha}%, transparent)` : value;
@@ -574,7 +580,7 @@ async function boot() {
     document.addEventListener('animationstart', speedAnimations, true);
     document.addEventListener('transitionrun', speedAnimations, true);
     on('bg-color', () => {
-        if (store.settings?.accentFromBg) applyTheme();
+        if (store.settings?.accentFromBg || store.settings?.autoPalette || store.settings?.theme === 'background') applyTheme();
     });
 
     emit('settings');

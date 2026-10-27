@@ -194,6 +194,10 @@
                 <div id="store-explore">
                     <div class="presets" id="presets"></div>
                     <div class="store-search">
+                        <select id="store-source" aria-label="來源">
+                            <option value="modrinth">Modrinth</option>
+                            <option value="curseforge">CurseForge</option>
+                        </select>
                         <input type="search" id="mod-search" placeholder="搜尋 Modrinth⋯⋯" spellcheck="false">
                         <select id="store-sort" aria-label="排序">
                             <option value="relevance">最相關</option>
@@ -217,6 +221,14 @@
                 </div>
 
                 <div id="store-installed" hidden>
+                    <div class="toolbar source-bar">
+                        <span class="toolbar-label">供應來源</span>
+                        <select id="installed-source" aria-label="供應來源">
+                            <option value="modrinth">Modrinth 優先</option>
+                            <option value="curseforge">CurseForge 優先</option>
+                        </select>
+                        <span class="hint" id="installed-source-hint"></span>
+                    </div>
                     <div id="share-notice"></div>
                     <div class="toolbar">
                         <button type="button" class="mc primary" id="btn-update-all" hidden>全部更新</button>
@@ -427,6 +439,7 @@
                             <option value="light">亮色</option>
                             <option value="dark">深色</option>
                             <option value="schedule">依時段自動切換</option>
+                            <option value="background">跟著背景亮度</option>
                         </select>
                     </div>
                     <div class="field" data-when="theme=schedule">
@@ -438,14 +451,16 @@
                         <select id="set-dark-to" class="hour-select"></select>
                     </div>
                 </div>
-                <div class="field">
+                <div class="field" data-auto-lock>
                     <label>主題色</label>
                     <div class="swatches" id="set-accent"></div>
                 </div>
                 <div class="field">
-                    <label><input type="checkbox" id="set-accent-bg">主題色跟著主頁背景變化（從目前的背景圖取主要顏色，換背景就換色）</label>
+                    <label data-auto-lock><input type="checkbox" id="set-accent-bg">主題色跟著主頁背景變化（從目前的背景圖取主要顏色，換背景就換色）</label>
+                    <label><input type="checkbox" id="set-auto-palette">整套配色跟著背景（背景、面板、文字、邊框、側欄與按鈕都依背景的色調自動配色，換背景就重新配色）</label>
+                    <div class="hint">開啟後，主題色、輔助色與進階配色會鎖住，全部改用從背景自動產生的顏色；你手動設定的值會保留，關掉就恢復。主題選「跟著背景亮度」時，背景偏亮用亮色、偏暗用深色。</div>
                 </div>
-                <div class="field">
+                <div class="field" data-auto-lock>
                     <label>輔助色</label>
                     <div class="color-fields">
                         <div class="color-field" data-color-key="colorSuccess" data-color-label="成功"></div>
@@ -454,7 +469,7 @@
                     </div>
                     <div class="hint">留空使用預設顏色。</div>
                 </div>
-                <div class="field">
+                <div class="field" data-auto-lock>
                     <label>進階配色</label>
                     <div class="hint" id="color-editor-mode"></div>
                     <div class="color-fields color-editor" id="color-editor"></div>

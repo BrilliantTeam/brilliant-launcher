@@ -48,6 +48,7 @@ pub struct Instance {
     pub group: String,
     pub accent: String,
     pub note: String,
+    pub content_source: String,
 }
 
 impl Instance {
@@ -77,7 +78,10 @@ impl Instance {
         for (field, max) in [(&mut self.java_path, 1024), (&mut self.wrapper, 1024), (&mut self.image, 1024), (&mut self.icon, 1024), (&mut self.group, 24), (&mut self.account, 64), (&mut self.active_profile, 24)] {
             clean_line(field, max);
         }
-        if !["vanilla", "fabric"].contains(&self.loader.as_str()) {
+        if !["", "modrinth", "curseforge"].contains(&self.content_source.as_str()) {
+            self.content_source.clear();
+        }
+        if !["vanilla", "fabric", "forge", "neoforge"].contains(&self.loader.as_str()) {
             self.loader = "vanilla".into();
         }
         for field in [&mut self.mc_version, &mut self.loader_version, &mut self.version_id] {
@@ -85,7 +89,7 @@ impl Instance {
                 field.clear();
             }
         }
-        self.pinned.retain(|p| p.len() <= 64 && p.chars().all(|c| c.is_ascii_alphanumeric()));
+        self.pinned.retain(|p| p.len() <= 64 && p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
         self.pinned.truncate(1000);
         self.mod_profiles.truncate(30);
         for profile in self.mod_profiles.iter_mut() {
@@ -142,6 +146,17 @@ impl Instance {
     pub fn wrapper_cmd(&self, s: &Settings) -> Vec<String> {
         let own = self.wrapper.trim();
         crate::advanced::split_args(if own.is_empty() { &s.wrapper } else { own })
+    }
+    pub fn scope<'a>(&'a self, s: &'a Settings, mc: &'a str, frozen: bool) -> crate::modrinth::Scope<'a> {
+        crate::modrinth::Scope {
+            loader: &self.loader,
+            mc,
+            pinned: &self.pinned,
+            auto_api: self.wants_rich_presence(s),
+            channel: self.channel(s),
+            frozen,
+            curseforge_first: self.content_source == "curseforge",
+        }
     }
     pub fn wants_rich_presence(&self, s: &Settings) -> bool {
         !self.general && self.loader == "fabric" && self.inject_rich_presence.unwrap_or(s.inject_rich_presence)
@@ -652,11 +667,14 @@ c")];
         let mut i = Instance { name: "\u{7}\u{7}".into(), width: 99_999, height: 0, memory_mb: 100, java_major: 3, mod_channel: "evil".into(), ..Default::default() };
         i.clean();
         assert_eq!((i.name.as_str(), i.width, i.height, i.memory_mb, i.java_major, i.mod_channel.as_str()), ("未命名實例", 0, 0, 1024, 0, ""));
-        let mut odd = Instance { loader: "forge".into(), mc_version: "../../x".into(), loader_version: "0.19.5".into(), pinned: vec!["P7dR8mSH".into(), "../x".into()], ..Default::default() };
+        let mut odd = Instance { loader: "quilt".into(), mc_version: "../../x".into(), loader_version: "0.19.5".into(), pinned: vec!["P7dR8mSH".into(), "../x".into(), "cf-306612".into()], content_source: "evil".into(), ..Default::default() };
         odd.mod_profiles = (0..40).map(|n| ModProfile { name: if n == 0 { String::new() } else { format!("組合{n}") }, ..Default::default() }).collect();
         odd.clean();
         assert_eq!((odd.loader.as_str(), odd.mc_version.as_str(), odd.loader_version.as_str()), ("vanilla", "", "0.19.5"));
-        assert_eq!((odd.pinned.clone(), odd.mod_profiles.len()), (vec!["P7dR8mSH".to_string()], 29));
+        assert_eq!((odd.pinned.clone(), odd.mod_profiles.len(), odd.content_source.as_str()), (vec!["P7dR8mSH".to_string(), "cf-306612".to_string()], 29, ""));
+        let mut neo = Instance { loader: "neoforge".into(), content_source: "curseforge".into(), ..Default::default() };
+        neo.clean();
+        assert_eq!((neo.loader.as_str(), neo.content_source.as_str()), ("neoforge", "curseforge"));
         let mut keep = Instance { name: "  我的世界  ".into(), memory_mb: 0, width: 1280, height: 720, java_major: 21, ..Default::default() };
         keep.clean();
         assert_eq!((keep.name.as_str(), keep.memory_mb, keep.width, keep.height, keep.java_major), ("我的世界", 0, 1280, 720, 21));

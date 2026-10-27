@@ -99,8 +99,14 @@ async fn prepare(
     let game_dir = paths::game_dir(&instance.id);
     tokio::fs::create_dir_all(&game_dir).await?;
 
-    net::emit_stage(app, "version", &format!("解析版本 {}", instance.version_id));
-    let resolved = version::resolve(&instance.version_id, mirror).await?;
+    let forge_like = crate::forge::is_forge_like(&instance.loader);
+    let version_id = if forge_like {
+        crate::forge::install(app, &instance.loader, &instance.mc_version, &instance.loader_version, mirror).await?
+    } else {
+        instance.version_id.clone()
+    };
+    net::emit_stage(app, "version", &format!("解析版本 {version_id}"));
+    let resolved = version::resolve(&version_id, mirror).await?;
 
     let (width, height, fullscreen) = instance.resolution(settings);
     let quick_join = settings.quick_join.trim().to_string();
@@ -177,7 +183,16 @@ async fn prepare(
     };
 
     let mut classpath = plan.classpath.clone();
-    classpath.push(client_jar);
+    if forge_like && resolved.id != resolved.base_id {
+        let named = paths::version_jar(&resolved.id);
+        let same = std::fs::metadata(&named).ok().map(|m| m.len()) == std::fs::metadata(&client_jar).ok().map(|m| m.len());
+        if !same {
+            tokio::fs::copy(&client_jar, &named).await.with_context(|| format!("複製遊戲本體到 {} 失敗", named.display()))?;
+        }
+        classpath.push(named);
+    } else {
+        classpath.push(client_jar);
+    }
     let classpath_str = classpath
         .iter()
         .map(|p| p.to_string_lossy().to_string())
@@ -339,10 +354,10 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     if stale_login {
         early_notes.push("目前沒有網路，用上次的登入狀態開始遊戲：單人遊戲可以正常玩，連線伺服器要等網路恢復。".to_string());
     }
-    if settings.auto_update_mods && !instance.freeze_mods && instance.loader == "fabric" {
+    if settings.auto_update_mods && !instance.freeze_mods && instance.loader != "vanilla" {
         net::emit_stage(app, "mods", "檢查模組更新");
         let mods_kind = crate::modrinth::Kind::Mod;
-        match crate::modrinth::installed(&instance.id, mods_kind, &instance.mc_version, &instance.pinned, instance.wants_rich_presence(&settings), instance.channel(&settings), false).await {
+        match crate::modrinth::installed(&instance.id, mods_kind, &instance.scope(&settings, &instance.mc_version, false)).await {
             Ok(list) => {
                 let mut updated = 0;
                 let pending: Vec<_> = list.into_iter().filter(|e| !e.pinned && !e.managed && e.update.is_some()).collect();

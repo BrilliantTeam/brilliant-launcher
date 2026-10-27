@@ -171,48 +171,88 @@ let slideTimer = 0;
 let slideIndex = 0;
 let front = 0;
 let appliedBackground = null;
+let generation = 0;
+let loadingSlide = false;
+let retryTimer = 0;
 
-function setBgAccent(color) {
-    if (store.bgAccent === color) return;
-    store.bgAccent = color;
+function setBgPalette(palette) {
+    if (store.bgAccent === palette.accent && JSON.stringify(store.bgPalette) === JSON.stringify(palette)) return;
+    store.bgAccent = palette.accent;
+    store.bgPalette = palette;
     emit('bg-color');
 }
 
-function sampleColor(url) {
+const wantsBgColors = (settings) => !!(settings?.accentFromBg || settings?.autoPalette || settings?.theme === 'background');
+
+export function paletteFromPixels(data) {
+    const buckets = Array.from({ length: 12 }, () => ({ w: 0, hue: 0, sat: 0 }));
+    let x = 0;
+    let y = 0;
+    let satSum = 0;
+    let lightSum = 0;
+    let count = 0;
+    for (let i = 0; i < data.length; i += 4) {
+        const hex = `#${[data[i], data[i + 1], data[i + 2]].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+        const [hue, sat, light] = hexToHsl(hex);
+        count++;
+        lightSum += light;
+        satSum += sat;
+        x += Math.cos((hue * Math.PI) / 180) * sat;
+        y += Math.sin((hue * Math.PI) / 180) * sat;
+        const weight = (sat / 100) ** 2 * (1 - Math.abs(light - 50) / 50);
+        if (weight < 0.02) continue;
+        const bucket = buckets[Math.floor(hue / 30) % 12];
+        bucket.w += weight;
+        bucket.hue += hue * weight;
+        bucket.sat += sat * weight;
+    }
+    if (!count) return null;
+    const ranked = buckets.filter((b) => b.w > 0).map((b) => ({ hue: b.hue / b.w, sat: b.sat / b.w, w: b.w })).sort((a, b) => b.w - a.w);
+    const base = Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
+    const first = ranked[0] ?? { hue: base, sat: 60 };
+    const far = (a, b) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b)) >= 45;
+    const second = ranked.find((b) => far(b.hue, first.hue)) ?? { hue: (first.hue + 150) % 360, sat: first.sat };
+    const vivid = (b) => Math.max(55, Math.min(85, Math.round(b.sat)));
+    return {
+        accent: hslToHex(Math.round(first.hue), vivid(first), 62),
+        link: hslToHex(Math.round(second.hue), vivid(second), 64),
+        hue: base,
+        sat: Math.round(satSum / count),
+        light: Math.round(lightSum / count)
+    };
+}
+
+function sampleColor(source) {
+    try {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 32;
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(source, 0, 0, 32, 32);
+        const palette = paletteFromPixels(ctx.getImageData(0, 0, 32, 32).data);
+        if (palette) setBgPalette(palette);
+    } catch {}
+}
+
+function sampleUrl(url) {
     const image = new Image();
     image.crossOrigin = 'anonymous';
-    image.onload = () => {
-        try {
-            const canvas = document.createElement('canvas');
-            canvas.width = canvas.height = 32;
-            const ctx = canvas.getContext('2d', { willReadFrequently: true });
-            ctx.drawImage(image, 0, 0, 32, 32);
-            const data = ctx.getImageData(0, 0, 32, 32).data;
-            const buckets = Array.from({ length: 12 }, () => ({ w: 0, hue: 0, sat: 0 }));
-            for (let i = 0; i < data.length; i += 4) {
-                const hex = `#${[data[i], data[i + 1], data[i + 2]].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
-                const [hue, sat, light] = hexToHsl(hex);
-                const weight = (sat / 100) ** 2 * (1 - Math.abs(light - 50) / 50);
-                if (weight < 0.02) continue;
-                const bucket = buckets[Math.floor(hue / 30) % 12];
-                bucket.w += weight;
-                bucket.hue += hue * weight;
-                bucket.sat += sat * weight;
-            }
-            const best = buckets.reduce((a, b) => (b.w > a.w ? b : a));
-            if (best.w > 0) setBgAccent(hslToHex(Math.round(best.hue / best.w), Math.max(55, Math.min(85, Math.round(best.sat / best.w))), 62));
-        } catch {}
-    };
+    image.onload = () => sampleColor(image);
     image.src = url;
 }
 
-async function showImage(url, credit) {
+function solidPalette(hex) {
+    const [hue, sat, light] = hexToHsl(hex);
+    return { accent: hslToHex(hue, Math.max(55, Math.min(85, sat)), 62), link: hslToHex((hue + 150) % 360, Math.max(55, Math.min(85, sat)), 64), hue, sat, light };
+}
+
+async function showImage(url, credit, gen) {
     try {
         await preload(url);
     } catch {
         return;
     }
-    if (store.settings?.accentFromBg) sampleColor(url);
+    if (gen !== generation) return;
+    if (wantsBgColors(store.settings)) sampleUrl(url);
     const layers = [$('#bg-a'), $('#bg-b')];
     front = 1 - front;
     layers[front].style.backgroundImage = `url("${url}")`;
@@ -223,10 +263,15 @@ async function showImage(url, credit) {
     $('#bg-credit').textContent = credit;
 }
 
-function nextSlide() {
-    if (!slides?.length || idle()) return;
+async function nextSlide(gen) {
+    if (!slides?.length || idle() || loadingSlide) return;
     const slide = slides[slideIndex++ % slides.length];
-    return showImage(slide.image, [slide.description, slide.author && `攝影：${slide.author}`].filter(Boolean).join('｜'));
+    loadingSlide = true;
+    try {
+        await showImage(slide.image, [slide.description, slide.author && `攝影：${slide.author}`].filter(Boolean).join('｜'), gen);
+    } finally {
+        loadingSlide = false;
+    }
 }
 
 async function applyBackground() {
@@ -235,17 +280,22 @@ async function applyBackground() {
     const custom = solid ? '' : settings.background || '';
     const pin = solid || custom ? '' : settings.bgPin || '';
     const seconds = settings.slideSeconds ?? 15;
-    const key = `${solid ? `color:${settings.bgColor}` : custom}|${pin}|${seconds}|${settings.accentFromBg ? 1 : 0}`;
+    const key = `${solid ? `color:${settings.bgColor}` : custom}|${pin}|${seconds}|${wantsBgColors(settings) ? 1 : 0}`;
     if (key === appliedBackground) return;
-    const sourceChanged = !appliedBackground || appliedBackground.split('|').slice(0, 2).join('|') !== key.split('|').slice(0, 2).join('|') || (settings.accentFromBg && !appliedBackground.endsWith('|1'));
+    const sourceChanged = !appliedBackground || appliedBackground.split('|').slice(0, 2).join('|') !== key.split('|').slice(0, 2).join('|') || (wantsBgColors(settings) && !appliedBackground.endsWith('|1'));
     appliedBackground = key;
+    const gen = ++generation;
+    loadingSlide = false;
     clearInterval(slideTimer);
+    clearTimeout(retryTimer);
     const video = $('#bg-video');
     const isVideo = !solid && /\.(mp4|webm)$/i.test(custom);
     video.classList.toggle('show', isVideo);
     video.classList.toggle('top', isVideo);
     if (isVideo) {
         video.src = fileSrc(custom);
+        video.crossOrigin = 'anonymous';
+        if (wantsBgColors(settings)) video.addEventListener('loadeddata', () => sampleColor(video), { once: true });
         video.play().catch(() => {});
         $('#bg-credit').textContent = '';
         return;
@@ -255,18 +305,27 @@ async function applyBackground() {
     video.load();
     if (solid) {
         $('#bg-credit').textContent = '';
-        if (/^#[0-9a-f]{6}$/i.test(settings.bgColor ?? '')) setBgAccent(settings.bgColor);
+        if (/^#[0-9a-f]{6}$/i.test(settings.bgColor ?? '')) setBgPalette(solidPalette(settings.bgColor));
         return;
     }
-    if (custom) return showImage(fileSrc(custom), '');
+    if (custom) return showImage(fileSrc(custom), '', gen);
     if (!slides) {
         const data = await api.site_json({ path: '/api/launcher/hero' }).catch(() => null);
-        slides = (data?.slides || []).sort(() => Math.random() - 0.5);
+        if (gen !== generation) return;
+        if (!Array.isArray(data?.slides)) {
+            retryTimer = setTimeout(() => {
+                appliedBackground = null;
+                applyBackground();
+            }, 30_000);
+            return;
+        }
+        slides = data.slides.sort(() => Math.random() - 0.5);
     }
     const pinned = pin && slides.find((slide) => slide.image === pin);
-    if (pinned) return showImage(pinned.image, [pinned.description, pinned.author && `攝影：${pinned.author}`].filter(Boolean).join('｜'));
-    if (sourceChanged) await nextSlide();
-    if (seconds > 0 && slides.length > 1) slideTimer = setInterval(nextSlide, seconds * 1000);
+    if (pinned) return showImage(pinned.image, [pinned.description, pinned.author && `攝影：${pinned.author}`].filter(Boolean).join('｜'), gen);
+    if (sourceChanged) await nextSlide(gen);
+    if (gen !== generation) return;
+    if (seconds > 0 && slides.length > 1) slideTimer = setInterval(() => nextSlide(gen), seconds * 1000);
 }
 
 function syncVideo() {

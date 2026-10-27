@@ -1,5 +1,12 @@
 import { api } from './api.js';
 
+export const LOADER_NAME = { fabric: 'Fabric', forge: 'Forge', neoforge: 'NeoForge', quilt: 'Quilt', vanilla: '原版' };
+export const loaderLabel = (instance, withVersion = false) => {
+    const label = LOADER_NAME[instance?.loader] || '原版';
+    return withVersion && instance?.loader !== 'vanilla' && instance?.loaderVersion ? `${label} ${instance.loaderVersion}` : label;
+};
+export const modded = (instance) => !!instance && instance.loader !== 'vanilla' && !!LOADER_NAME[instance.loader];
+
 export const store = {
     settings: null,
     instances: [],

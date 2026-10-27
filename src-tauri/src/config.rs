@@ -109,6 +109,7 @@ pub struct Settings {
     pub dark_from: u32,
     pub dark_to: u32,
     pub accent_from_bg: bool,
+    pub auto_palette: bool,
     pub color_success: String,
     pub color_warning: String,
     pub color_link: String,
@@ -341,6 +342,7 @@ impl Default for Settings {
             dark_from: 19,
             dark_to: 7,
             accent_from_bg: false,
+            auto_palette: false,
             color_success: String::new(),
             color_warning: String::new(),
             color_link: String::new(),
@@ -472,7 +474,7 @@ impl Settings {
         self.ui_scale = self.ui_scale.clamp(80, 125);
         self.music_volume = self.music_volume.min(100);
         clean_choice(&mut self.after_launch, &["hide", "keep", "exit"], "hide");
-        clean_choice(&mut self.theme, &["auto", "light", "dark", "schedule"], "auto");
+        clean_choice(&mut self.theme, &["auto", "light", "dark", "schedule", "background"], "auto");
         clean_choice(&mut self.font, &["pixel", "system", "naikai", "serif", "custom"], "pixel");
         clean_line(&mut self.custom_font, 1024);
         clean_media(&mut self.fonts, &self.custom_font, "自訂字型");

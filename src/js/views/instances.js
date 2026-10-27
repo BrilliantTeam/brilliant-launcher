@@ -1,6 +1,6 @@
 import { api, FILE_TYPES, fileSrc, isType, openUrl, pickFile, pickFiles, watchFolders } from '../api.js';
 import { $, $$, acceptFiles, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, pickColor, rangeFill, toast, guard, RECYCLE_NOTE } from '../ui.js';
-import { accountFor, emit, isRunning, loadInstances, on, saveSettings, selectedInstance, store } from '../store.js';
+import { accountFor, emit, isRunning, LOADER_NAME, loaderLabel, loadInstances, modded, on, saveSettings, selectedInstance, store } from '../store.js';
 import { provide } from '../commands.js';
 import { icon, iconOf, INSTANCE_ICONS, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
 
@@ -107,7 +107,8 @@ async function editorDialog(title, source) {
     const showAllBox = h('label', { style: 'margin-top:8px' },
         h('input', { type: 'checkbox', checked: showAll, onchange: (e) => { showAll = e.target.checked; renderVersions(); refreshLoaders(); } }),
         '顯示所有 Minecraft 版本（輝煌不支援的版本無法連上伺服器）');
-    const loader = segmented([['fabric', 'Fabric'], ['vanilla', '原版']], source.loader === 'fabric' ? 'fabric' : 'vanilla');
+    const loader = segmented([['fabric', 'Fabric'], ['neoforge', 'NeoForge'], ['forge', 'Forge'], ['vanilla', '原版']], ['fabric', 'forge', 'neoforge'].includes(source.loader) ? source.loader : 'vanilla');
+    let loaderKind = loader.value;
     const loaderVersion = h('select', {}, h('option', { value: '' }, '最新穩定版'),
         source.loaderVersion ? h('option', { value: source.loaderVersion, selected: true }, source.loaderVersion) : '');
     let loaderSeq = 0;
@@ -122,7 +123,9 @@ async function editorDialog(title, source) {
     const rpc = segmented([['', '沿用全域'], ['on', '啟用'], ['off', '停用']],
         source.injectRichPresence === true ? 'on' : source.injectRichPresence === false ? 'off' : '');
 
-    const loaderField = h('div', { class: 'field' }, h('label', {}, 'Fabric Loader 版本'), loaderVersion);
+    const loaderLabelEl = h('label', {}, 'Fabric Loader 版本');
+    const loaderHint = h('div', { class: 'hint' });
+    const loaderField = h('div', { class: 'field' }, loaderLabelEl, loaderVersion, loaderHint);
     const account = h('select', {}, h('option', { value: '' }, '跟隨目前選擇的帳號'),
         ...store.accounts.map((a) => h('option', { value: a.id, selected: a.id === source.account }, `${a.name}${a.kind === 'msa' ? '' : '（離線）'}`)));
     const accountField = h('div', { class: 'field' }, h('label', {}, '使用帳號'), account,
@@ -132,25 +135,32 @@ async function editorDialog(title, source) {
 
     async function refreshLoaders() {
         const isFabric = loader.value === 'fabric';
+        const isModded = loader.value !== 'vanilla';
         const general = kind.value === 'general';
-        loaderField.style.display = isFabric ? '' : 'none';
+        if (loaderKind !== loader.value) {
+            loaderKind = loader.value;
+            clear(loaderVersion).append(h('option', { value: '' }, '最新穩定版'));
+        }
+        loaderLabelEl.textContent = isFabric ? 'Fabric Loader 版本' : `${LOADER_NAME[loader.value]} 版本`;
+        loaderHint.textContent = isFabric ? '' : `第一次開始遊戲時會執行 ${LOADER_NAME[loader.value]} 官方安裝器，需要幾分鐘；Brilliant-Server-Mod 只支援 Fabric，不會自動安裝。`;
+        loaderField.style.display = isModded ? '' : 'none';
         rpcField.style.display = isFabric && !general ? '' : 'none';
         showAllBox.style.display = general ? 'none' : '';
         kindHint.textContent = general
             ? '給合作伺服器或單人遊戲用：任何版本都能選，不會自動安裝輝煌模組、不會預載伺服器資源包，也不會跳出輝煌的升版提醒。'
             : '玩輝煌用：自動安裝 Brilliant-Server-Mod、預載伺服器資源包，伺服器升版時會提醒你一鍵跟上。';
-        if (!isFabric) return;
+        if (!isModded) return;
         const seq = ++loaderSeq;
         const keep = loaderVersion.value;
         loaderVersion.disabled = true;
         try {
-            const list = await api.list_fabric_loaders({ gameVersion: mcVersion.value });
+            const list = await api.list_fabric_loaders({ gameVersion: mcVersion.value, loader: loader.value });
             if (seq !== loaderSeq) return;
             clear(loaderVersion).append(
-                h('option', { value: '' }, '最新穩定版'),
+                h('option', { value: '' }, list.length ? '最新穩定版' : `Minecraft ${mcVersion.value} 還沒有 ${LOADER_NAME[loader.value]}`),
                 ...list.map((l) =>
                     h('option', { value: l.version, selected: l.version === keep },
-                        `${l.version}${l.stable ? '' : '（測試版）'}`)
+                        `${l.version}${l.stable && !isFabric ? '（推薦）' : !l.stable && (isFabric || /beta|alpha/.test(l.version)) ? '（測試版）' : ''}`)
                 )
             );
         } catch (error) {
@@ -253,7 +263,7 @@ async function editorDialog(title, source) {
         icon: iconPick.value,
         mcVersion: mcVersion.value,
         loader: loader.value,
-        loaderVersion: loader.value === 'fabric' ? loaderVersion.value : '',
+        loaderVersion: loader.value !== 'vanilla' ? loaderVersion.value : '',
         memoryMb: Math.max(0, Number(memory.value) || 0),
         injectRichPresence: rpc.value === '' ? null : rpc.value === 'on',
         general: kind.value === 'general',
@@ -358,7 +368,7 @@ async function fromTemplate() {
     const list = h('div', { class: 'media-list' });
     const paint = () => clear(list).append(...templates.map((t) => h('label', { class: `media-row${t.key === chosen ? ' current' : ''}` },
         h('input', { type: 'radio', name: 'tpl', checked: t.key === chosen, onchange: () => { chosen = t.key; name.value = t.name; paint(); } }),
-        h('span', { class: 'media-name' }, iconOf(t.instance.icon), t.name, h('small', {}, `Minecraft ${t.instance.mcVersion}・${t.instance.loader === 'fabric' ? 'Fabric' : '原版'}・${new Date(t.createdAt * 1000).toLocaleDateString('zh-TW')}`)),
+        h('span', { class: 'media-name' }, iconOf(t.instance.icon), t.name, h('small', {}, `Minecraft ${t.instance.mcVersion}・${loaderLabel(t.instance)}・${new Date(t.createdAt * 1000).toLocaleDateString('zh-TW')}`)),
         h('button', { type: 'button', class: 'mc icon-btn danger', title: '刪除範本', 'aria-label': `刪除範本「${t.name}」`, onclick: async (e) => {
             e.preventDefault();
             if (!(await confirm(`要刪除範本「${t.name}」嗎？${RECYCLE_NOTE}`, '刪除'))) return;
@@ -483,6 +493,8 @@ export async function upgradeFlow(instance, target) {
         content: h('div', {},
             h('p', { class: 'hint' }, instance.loader === 'fabric'
                 ? `「${instance.name}」目前是 ${instance.mcVersion}。升級後 Fabric Loader 會換成最新穩定版，Brilliant-Server-Mod 與 Fabric API 會在下次啟動自動換成對應版本。`
+                : modded(instance)
+                ? `「${instance.name}」目前是 ${instance.mcVersion}。升級後 ${loaderLabel(instance)} 會換成新版本的推薦版，下次開始遊戲時自動安裝。`
                 : `「${instance.name}」目前是 ${instance.mcVersion}，升級後下次開始遊戲會自動下載新版本。`),
             !instance.general && store.versions?.modVersions?.length && !store.versions.modVersions.includes(target)
                 ? h('p', { class: 'hint warn' }, `輝煌伺服器目前還不支援 ${target}，升級後可能無法連線輝煌。`)
@@ -589,7 +601,7 @@ export async function importFlow() {
             h('div', { class: 'toolbar' },
                 h('span', { class: 'toolbar-label' }, '支援官方啟動器、Prism、MultiMC、PolyMC、CurseForge、Modrinth App、X Minecraft Launcher。原本的資料不會被移動或刪除。'),
                 h('span', { class: 'spacer' }),
-                h('button', { type: 'button', class: 'mc', onclick: () => { $('#dlg').close(); importPack(null); } }, icon('briefcase'), '匯入 .mrpack 模組包'),
+                h('button', { type: 'button', class: 'mc', onclick: () => { $('#dlg').close(); importPack(null); } }, icon('briefcase'), '匯入模組包（Modrinth / CurseForge）'),
                 pickFolder),
             box),
         buttons: [{ label: '取消', value: null }]
@@ -601,7 +613,7 @@ export async function importFlow() {
     const name = h('input', { type: 'text', value: chosen.name.slice(0, 40), maxlength: '40' });
     const target = segmented([['new', '建立新實例'], ['current', '匯入到目前的實例']], 'new');
     const checks = Object.entries(PART_LABEL).map(([part, label]) => {
-        const sameGame = chosen.mcVersion === mc && chosen.loader === 'fabric';
+        const sameGame = chosen.mcVersion === mc && ['fabric', 'forge', 'neoforge'].includes(chosen.loader);
         const input = h('input', { type: 'checkbox', checked: part === 'mods' ? sameGame : part !== 'screenshots', value: part });
         return h('label', {}, input, label);
     });
@@ -610,7 +622,7 @@ export async function importFlow() {
         content: h('div', {},
             h('div', { class: 'field' }, target),
             h('div', { class: 'field' }, h('label', {}, '新實例名稱'), name,
-                h('div', { class: 'hint' }, `會建立 Minecraft ${mc || '（請先選版本）'}${chosen.loader === 'fabric' ? ' + Fabric' : ''} 的實例${known ? '' : '（原版本不在清單上，改用推薦版本）'}。${['forge', 'neoforge', 'quilt'].includes(chosen.loader) ? `輝煌啟動器只支援 Fabric，${LOADER[chosen.loader]} 模組不會帶過來。` : ''}`)),
+                h('div', { class: 'hint' }, `會建立 Minecraft ${mc || '（請先選版本）'}${['fabric', 'forge', 'neoforge'].includes(chosen.loader) ? ` + ${LOADER[chosen.loader]}` : ''} 的實例${known ? '' : '（原版本不在清單上，改用推薦版本）'}。${chosen.loader === 'quilt' ? '輝煌啟動器不支援 Quilt，Quilt 模組不會帶過來。' : ''}`)),
             h('div', { class: 'field import-parts' }, h('label', {}, '要帶過來的內容'), ...checks)),
         buttons: [{ label: '取消', value: false }, { label: '開始匯入', value: true }]
     });
@@ -621,7 +633,7 @@ export async function importFlow() {
         let instance = selectedInstance();
         if (target.value === 'new' || !instance) {
             if (!mc) throw new Error('無法判斷要用的 Minecraft 版本');
-            instance = await createFromDraft({ ...BLANK, name: name.value.trim() || chosen.name, icon: 'archive', mcVersion: mc, loader: chosen.loader === 'fabric' ? 'fabric' : 'vanilla', loaderVersion: known ? chosen.loaderVersion : '' });
+            instance = await createFromDraft({ ...BLANK, name: name.value.trim() || chosen.name, icon: 'archive', mcVersion: mc, loader: ['fabric', 'forge', 'neoforge'].includes(chosen.loader) ? chosen.loader : 'vanilla', loaderVersion: known ? chosen.loaderVersion : '' });
         }
         toast('正在複製檔案⋯');
         const bytes = await api.import_into({ request: { path: chosen.path, instanceId: instance.id, parts } });
@@ -941,7 +953,7 @@ export async function playInstance(instance) {
 
 export async function manageMods(instance) {
     await selectInstance(instance).catch(fail);
-    openStore(instance.loader === 'fabric' ? 'mod' : 'resourcepack', 'installed');
+    openStore(modded(instance) ? 'mod' : 'resourcepack', 'installed');
     location.hash = '#mods';
 }
 
@@ -993,7 +1005,7 @@ function card(instance) {
             h('div', { class: 'inst-title', title: instance.name }, instance.name),
             h('div', { class: 'inst-tags' },
                 h('span', { class: 'tag' }, `Minecraft ${instance.mcVersion}`),
-                h('span', { class: 'tag' }, fabric ? `Fabric${instance.loaderVersion ? ` ${instance.loaderVersion}` : ''}` : '原版'),
+                h('span', { class: 'tag' }, loaderLabel(instance, true)),
                 instance.general ? h('span', { class: 'tag' }, '一般實例') : null,
                 inject ? h('span', { class: 'tag accent' }, 'Brilliant-Server-Mod') : null,
                 owner ? h('span', { class: 'tag', title: '這個實例固定用這個帳號啟動' }, icon('user'), owner.name) : null,
@@ -1014,7 +1026,7 @@ function card(instance) {
                 onclick: (e) => { e.stopPropagation(); playInstance(instance); }
             }, icon(running ? 'close' : 'play'), running ? '結束遊戲' : '開始遊戲'),
             tool('edit', '設定', () => editInstance(instance)),
-            tool('zap', fabric ? '模組與資源' : '資源包與光影', () => manageMods(instance)),
+            tool('zap', modded(instance) ? '模組與資源' : '資源包與光影', () => manageMods(instance)),
             moreMenu(instance))
     );
 }

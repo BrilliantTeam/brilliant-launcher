@@ -1,5 +1,5 @@
 import { api, fileSrc, openUrl, pickFile } from '../api.js';
-import { $, $$, acceptFiles, clampNumber, clear, confirm, dialog, fail, fmtBytes, h, pickColor, rangeFill, toast, guard } from '../ui.js';
+import { $, $$, acceptFiles, autoTokens, clampNumber, clear, confirm, dialog, fail, fmtBytes, h, pickColor, rangeFill, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { icon } from '../icons.js';
 import { gpuName, isIntegratedGpu, nextTrack, nowPlaying } from '../services.js';
@@ -76,6 +76,7 @@ const FIELDS = {
     darkFrom: '#set-dark-from',
     darkTo: '#set-dark-to',
     accentFromBg: '#set-accent-bg',
+    autoPalette: '#set-auto-palette',
     highContrast: '#set-contrast',
     font: '#set-font',
     headingStyle: '#set-heading',
@@ -132,7 +133,7 @@ const LOOK_DEFAULTS = {
     accent: '', buttonStyle: 'pixel', corners: 'square', cardSize: 'comfy', panelOpacity: 100, bgDim: 0, railLabels: true, showNews: true, uiScale: 100, reduceMotion: false,
     contentWidth: 'standard', density: 'comfy', accentBar: 'thick', bgBlur: 0, bgMotion: false, thinScrollbars: false, cardDetails: true, showBrand: true, homeTagline: '',
     railStyle: 'glass', coverHeight: 'normal', cursorStyle: 'system', bgFilter: 'none', homeLayout: 'standard', showClock: false, clickSound: false,
-    theme: 'auto', darkFrom: 19, darkTo: 7, accentFromBg: false, colorSuccess: '', colorWarning: '', colorLink: '', colorOverrides: {}, highContrast: false,
+    theme: 'auto', darkFrom: 19, darkTo: 7, accentFromBg: false, autoPalette: false, colorSuccess: '', colorWarning: '', colorLink: '', colorOverrides: {}, highContrast: false,
     font: 'pixel', headingStyle: 'game', fontScale: 100, slideSeconds: 15,
     bgSource: 'auto', bgColor: '', bgColor2: '', bgPin: '', bgTransition: 'fade', bgPan: false, weather: 'none',
     shardLayout: 'grid', hiddenShards: [], playSize: 'normal', playText: '', showCredit: true, showSocial: true, showShardStats: true, showLastPlayed: true,
@@ -143,7 +144,7 @@ const LOOK_DEFAULTS = {
 };
 
 const STYLE_KEYS = ['buttonStyle', 'corners', 'cardSize', 'panelOpacity', 'bgDim', 'railLabels', 'showNews', 'contentWidth', 'density', 'accentBar', 'bgBlur', 'bgMotion',
-    'thinScrollbars', 'cardDetails', 'showBrand', 'railStyle', 'coverHeight', 'cursorStyle', 'bgFilter', 'homeLayout', 'showClock', 'clickSound', 'accentFromBg', 'highContrast',
+    'thinScrollbars', 'cardDetails', 'showBrand', 'railStyle', 'coverHeight', 'cursorStyle', 'bgFilter', 'homeLayout', 'showClock', 'clickSound', 'accentFromBg', 'autoPalette', 'highContrast',
     'headingStyle', 'bgTransition', 'bgPan', 'weather', 'shardLayout', 'playSize', 'clockStyle', 'clockPosition', 'cardView', 'cardHover', 'coverPosition', 'coverShade',
     'pageTransition', 'clickSoundType', 'launchSplash'];
 
@@ -194,6 +195,27 @@ function currentLook() {
     const look = Object.fromEntries(Object.keys(LOOK_DEFAULTS).filter((key) => !LOOK_LOCAL.includes(key) && settings[key] !== undefined).map((key) => [key, settings[key]]));
     look.colorOverrides ??= {};
     return look;
+}
+
+function bakeLook(look, keepAuto) {
+    const palette = store.bgPalette;
+    const baked = { ...look };
+    if ((look.autoPalette || look.accentFromBg) && palette) baked.accent = palette.accent;
+    if (look.autoPalette && palette) {
+        baked.colorLink = palette.link;
+        baked.colorSuccess = '';
+        baked.colorWarning = '';
+        baked.colorOverrides = Object.fromEntries(['light', 'dark'].flatMap((mode) => Object.entries(autoTokens(palette, mode)).map(([token, value]) => [`${mode}.${token}`, value])));
+    }
+    const shown = document.documentElement.dataset.mode || 'dark';
+    baked.bakedTheme = look.theme === 'background' ? shown : look.theme;
+    return keepAuto ? baked : staticLook(baked);
+}
+
+function staticLook(look) {
+    const fixed = { ...look, autoPalette: false, accentFromBg: false };
+    if (fixed.theme === 'background') fixed.theme = ['light', 'dark'].includes(look.bakedTheme) ? look.bakedTheme : 'auto';
+    return fixed;
 }
 
 function encodeLook(look, name, description) {
@@ -323,8 +345,10 @@ async function exportLook() {
     const desc = description.value.trim();
     const music = withTracks.checked ? tracks : [];
     try {
-        const result = await writeLookFile(title, desc, look, withBackground.checked && hasBackground ? settings.background : '', music);
-        await rememberLook({ name: title, description: desc, code: encodeLook(look, title, desc), background: result.background, music: music.map((item) => item.path) });
+        const keepBackground = withBackground.checked && hasBackground;
+        const shared = bakeLook(look, keepBackground);
+        const result = await writeLookFile(title, desc, shared, keepBackground ? settings.background : '', music);
+        await rememberLook({ name: title, description: desc, code: encodeLook(cleanLook(shared), title, desc), background: result.background, music: music.map((item) => item.path) });
     } catch (error) {
         fail(error);
     }
@@ -351,6 +375,7 @@ async function importLook(initial = null) {
         try {
             const result = await api.inspect_look({ path });
             const look = cleanLook(result.look);
+            if (typeof result.look?.bakedTheme === 'string') look.bakedTheme = result.look.bakedTheme;
             if (!Object.keys(look).length) throw new Error('這個外觀檔裡沒有可以套用的外觀設定');
             loaded = { ...result, look };
             file = path;
@@ -374,9 +399,11 @@ async function importLook(initial = null) {
     const installed = await api.install_look({ path: file, background: useBackground.checked, music: useMusic.checked }).catch((error) => (fail(error), null));
     if (!installed) return;
     const name = loaded.name || '匯入的外觀';
-    await rememberLook({ name, description: loaded.description, code: encodeLook(loaded.look, name, loaded.description), background: installed.background, music: installed.music.map((item) => item.path) });
+    const { bakedTheme, ...rest } = loaded.look;
+    const look = installed.background ? rest : cleanLook(staticLook(loaded.look));
+    await rememberLook({ name, description: loaded.description, code: encodeLook(look, name, loaded.description), background: installed.background, music: installed.music.map((item) => item.path) });
     if (choice === 'apply') {
-        await persist({ ...loaded.look, ...(installed.background ? { background: installed.background, bgSource: 'auto' } : {}), ...withMusic(installed.music) });
+        await persist({ ...look, ...(installed.background ? { background: installed.background, bgSource: 'auto' } : {}), ...withMusic(installed.music) });
         toast(`已套用「${name}」並存進「我的外觀」`);
     } else {
         toast(`已把「${name}」存進「我的外觀」`);
@@ -737,6 +764,12 @@ async function renderBgPins() {
 
 function syncConditions() {
     const settings = store.settings ?? {};
+    for (const el of $$('#view-settings [data-auto-lock]')) {
+        const locked = !!settings.autoPalette;
+        el.inert = locked;
+        el.classList.toggle('auto-locked', locked);
+        el.title = locked ? '已開啟「整套配色跟著背景」，這裡的顏色會自動調整；關掉後才能手動設定' : '';
+    }
     for (const el of $$('#view-settings [data-when]')) {
         const [key, want] = el.dataset.when.split('=');
         const value = settings[key] ?? LOOK_DEFAULTS[key];

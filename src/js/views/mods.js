@@ -1,6 +1,6 @@
 import { api, fileSrc, isType, listen, openUrl, pickFile, typeLabel, watchFolders } from '../api.js';
 import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtBytes, fmtDuration, h, modalOpen, toast, guard } from '../ui.js';
-import { emit, isRunning, loadInstances, on, selectedInstance, store } from '../store.js';
+import { emit, isRunning, loaderLabel, loadInstances, modded, on, selectedInstance, store } from '../store.js';
 import { icon, iconOf, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
 import { accentStyle, editInstance, moreMenu, playInstance, selectInstance, shareNotice } from './instances.js';
 
@@ -36,6 +36,11 @@ async function modSnapshots() {
 import { renderMarkdown } from '../markdown.js';
 
 const FABRIC_API = 'P7dR8mSH';
+const CF_FABRIC_API = 'cf-306612';
+const SOURCE_NAME = { modrinth: 'Modrinth', curseforge: 'CurseForge' };
+const CF_PATH = { mod: 'mc-mods', resourcepack: 'texture-packs', shader: 'shaders' };
+const isCf = (id) => String(id || '').startsWith('cf-');
+const cfCats = {};
 const KIND_LABEL = { mod: '模組', resourcepack: '資源包', shader: '光影' };
 const KIND_ICON = { mod: 'zap', resourcepack: 'image', shader: 'sun' };
 const MODRINTH_PATH = { mod: 'mod', resourcepack: 'resourcepack', shader: 'shader' };
@@ -79,7 +84,7 @@ export const PRESETS = [
     }
 ];
 
-const state = { kind: 'mod', tab: 'installed', category: '', offset: 0, total: 0, searchSeq: 0, listSeq: 0, searchedFor: '', filter: '' };
+const state = { kind: 'mod', source: 'modrinth', tab: 'installed', category: '', offset: 0, total: 0, searchSeq: 0, listSeq: 0, searchedFor: '', filter: '' };
 const installed = { mod: null, resourcepack: null, shader: null };
 const busy = new Set();
 let timer = 0;
@@ -89,8 +94,8 @@ const fmtCount = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(
 function instanceProblem(kind = state.kind) {
     const instance = selectedInstance();
     if (!instance) return '請先到「實例」建立並選擇一個遊戲實例。';
-    if (kind === 'mod' && instance.loader !== 'fabric') return '原版實例不會載入模組，請到「實例」把載入器改成 Fabric。';
-    if (kind === 'shader' && instance.loader !== 'fabric') return '光影需要 Fabric 與 Iris，請先把實例改成 Fabric 並安裝「光影包」。';
+    if (kind === 'mod' && !modded(instance)) return '原版實例不會載入模組，請到「實例」把載入器改成 Fabric、NeoForge 或 Forge。';
+    if (kind === 'shader' && !modded(instance)) return '光影需要模組載入器與 Iris（Forge 可用 Oculus 或 OptiFine），請先到「實例」換成有載入器的版本。';
     return '';
 }
 
@@ -220,7 +225,15 @@ const CATEGORY_LABEL = {
     combat: '戰鬥', audio: '音效', blocks: '方塊', entities: '實體', environment: '環境', fonts: '字型', items: '物品', locale: '語言',
     models: '模型', atmosphere: '大氣', bloom: '泛光', 'colored-lighting': '彩色光源', foliage: '植被', 'path-tracing': '路徑追蹤',
     pbr: 'PBR', reflections: '反射', shadows: '陰影', high: '高配', medium: '中配', low: '低配', screenshot: '截圖用', themed: '主題',
-    'core-shaders': '核心光影', '8x-': '8x 以下', '48x': '48x', '64x': '64x', '128x': '128x', '256x': '256x', '512x+': '512x 以上'
+    'core-shaders': '核心光影', '8x-': '8x 以下', '48x': '48x', '64x': '64x', '128x': '128x', '256x': '256x', '512x+': '512x 以上',
+    performance: '效能優化', 'utility-qol': '實用工具', 'adventure-rpg': '冒險', 'library-api': '前置函式庫', 'map-information': '地圖資訊',
+    cosmetic: '外觀裝飾', 'armor-weapons-tools': '裝備', 'world-gen': '世界生成', 'server-utility': '伺服器工具', redstone: '紅石',
+    'mc-miscellaneous': '其他', 'mc-addons': '模組附加', education: '教育', 'bug-fixes': '錯誤修正', 'twitch-integration': '直播互動',
+    'mc-creator': 'MCreator', structures: '建築結構', 'ores-resources': '礦物資源', 'player-transport': '交通', 'processing': '加工',
+    'energy': '能源', 'farming': '農業', 'dimensions': '維度', 'biomes': '生態域', 'genetics': '基因', 'automation': '自動化',
+    '512x-and-higher': '512x 以上', medieval: '中世紀', modern: '現代', 'photo-realistic': '寫實', steampunk: '蒸汽龐克',
+    traditional: '傳統', animated: '動態', 'font-packs': '字型', 'data-packs': '資料包', 'mod-support': '模組支援', miscellaneous: '其他',
+    vanilla: '原版風', realistic: '寫實', fantasy: '奇幻', 'mc-food': '食物', creativemode: '創造模式', horror: '恐怖'
 };
 const LOADER_TAGS = new Set(['fabric', 'quilt', 'forge', 'neoforge', 'iris', 'optifine', 'canvas', 'vanilla', 'minecraft', 'bukkit', 'spigot', 'paper', 'purpur', 'folia', 'sponge', 'datapack', 'velocity', 'waterfall', 'bungeecord']);
 const catName = (c) => CATEGORY_LABEL[c] || c;
@@ -273,6 +286,7 @@ async function showDetail(kind, hit) {
     const license = detail.license?.name || detail.license?.id || '';
     const side = sideLabel(kind, detail.client_side, detail.server_side);
     const stat = (name, text) => (text ? h('span', { class: 'dstat' }, icon(name), text) : null);
+    const cf = isCf(detail.id);
     const links = [
         ['script-text', '原始碼', detail.source_url],
         ['bug', '問題回報', detail.issues_url],
@@ -313,7 +327,7 @@ async function showDetail(kind, hit) {
             holder),
         h('div', { class: 'detail-stats' },
             stat('download', `${fmtCount(detail.downloads)} 次下載`),
-            stat('heart', `${fmtCount(detail.followers)} 人關注`),
+            stat('heart', `${fmtCount(detail.followers)} ${cf ? '個讚' : '人關注'}`),
             stat('clock', detail.updated ? `${ago(detail.updated)}更新` : ''),
             stat('archive', detail.published ? `${dateText(detail.published)} 上架` : ''),
             stat('book', license ? `授權 ${license}` : ''),
@@ -327,9 +341,9 @@ async function showDetail(kind, hit) {
         title: detail.title,
         wide: true,
         content,
-        buttons: [{ label: '在 Modrinth 查看', value: 'web' }, { label: '關閉', value: null }]
+        buttons: [{ label: `在 ${cf ? 'CurseForge' : 'Modrinth'} 查看`, value: 'web' }, { label: '關閉', value: null }]
     });
-    if (value === 'web') openUrl(`https://modrinth.com/${MODRINTH_PATH[kind]}/${detail.slug}`);
+    if (value === 'web') openUrl(cf ? `https://www.curseforge.com/minecraft/${CF_PATH[kind]}/${detail.slug}` : `https://modrinth.com/${MODRINTH_PATH[kind]}/${detail.slug}`);
 }
 
 function resultCard(hit) {
@@ -403,7 +417,7 @@ async function customizePreset(preset) {
 
 function renderPresets() {
     const box = clear($('#presets'));
-    box.hidden = state.kind !== 'mod';
+    box.hidden = state.kind !== 'mod' || selectedInstance()?.loader !== 'fabric';
     if (box.hidden) return;
     box.append(...PRESETS.map((preset) => {
         const { missing, running } = presetState(preset);
@@ -430,8 +444,22 @@ function renderPresets() {
     }));
 }
 
+function categoryList() {
+    if (state.source !== 'curseforge') return CATEGORIES[state.kind];
+    const kind = state.kind;
+    if (!cfCats[kind]) {
+        cfCats[kind] = [];
+        api.content_categories({ kind }).then((list) => {
+            if (!Array.isArray(list) || !list.length) return;
+            cfCats[kind] = list;
+            if (state.kind === kind && state.source === 'curseforge') renderCategories();
+        }).catch(() => { delete cfCats[kind]; });
+    }
+    return [['', '全部'], ...cfCats[kind].map((c) => [c.id, CATEGORY_LABEL[c.slug] || c.name])];
+}
+
 function renderCategories() {
-    clear($('#store-cats')).append(...CATEGORIES[state.kind].map(([value, label]) =>
+    clear($('#store-cats')).append(...categoryList().map(([value, label]) =>
         h('button', {
             type: 'button',
             class: 'chip',
@@ -463,8 +491,8 @@ async function search(reset = true) {
         clear(box).append(h('div', { class: 'empty-state' }, instanceProblem()));
         return;
     }
-    const side = state.kind === 'mod' ? $('#store-side').value : '';
-    state.searchedFor = `${instance.id}|${instance.mcVersion}|${state.kind}|${state.category}|${$('#store-sort').value}|${side}|${query}`;
+    const side = state.kind === 'mod' && state.source === 'modrinth' ? $('#store-side').value : '';
+    state.searchedFor = `${instance.id}|${instance.mcVersion}|${state.source}|${state.kind}|${state.category}|${$('#store-sort').value}|${side}|${query}`;
     const seq = ++state.searchSeq;
     if (reset && box.querySelector('.mod-card:not(.skeleton)')) {
         box.classList.add('refreshing');
@@ -474,9 +502,9 @@ async function search(reset = true) {
     let result;
     state.loadingMore = true;
     try {
-        result = await api.content_search({ id: instance.id, kind: state.kind, query, category: state.category, sort: $('#store-sort').value, offset: state.offset, side });
+        result = await api.content_search({ id: instance.id, kind: state.kind, query, category: state.category, sort: $('#store-sort').value, offset: state.offset, side, source: state.source });
     } catch {
-        if (seq === state.searchSeq) clear(box).append(h('div', { class: 'empty-state' }, '暫時連不上 Modrinth，請稍後再試。'));
+        if (seq === state.searchSeq) clear(box).append(h('div', { class: 'empty-state' }, `暫時連不上 ${SOURCE_NAME[state.source]}，請稍後再試。`));
         return;
     } finally {
         if (seq === state.searchSeq) {
@@ -489,7 +517,7 @@ async function search(reset = true) {
     state.total = result.total_hits;
     state.offset += result.hits.length;
     const autoApi = !instance.general && instance.loader === 'fabric' && (instance.injectRichPresence ?? store.settings?.injectRichPresence ?? true);
-    box.append(...result.hits.filter((hit) => !autoApi || hit.project_id !== FABRIC_API).map((hit) => {
+    box.append(...result.hits.filter((hit) => !autoApi || (hit.project_id !== FABRIC_API && hit.project_id !== CF_FABRIC_API)).map((hit) => {
         const card = resultCard(hit);
         card._hit = hit;
         return card;
@@ -611,8 +639,26 @@ async function exportProfile(profile) {
     }
 }
 
+async function showBlocked(list, instanceId) {
+    const value = await dialog({
+        title: '有模組需要手動下載',
+        content: h('div', {},
+            h('p', {}, `下面 ${list.length} 個項目的作者不允許第三方啟動器下載，請到 CurseForge 網頁下載後，放進實例的 mods（資源包放 resourcepacks、光影放 shaderpacks）資料夾。`),
+            h('div', { class: 'rows' }, ...list.map((b) => h('div', { class: 'row' },
+                h('div', { class: 'grow' }, h('div', { class: 'name' }, b.name)),
+                /^https:\/\//.test(b.url) ? h('button', { type: 'button', class: 'mc', onclick: () => openUrl(b.url) }, icon('external-link'), '開啟網頁') : null)))),
+        buttons: [{ label: '開啟 mods 資料夾', value: 'folder' }, { label: '知道了', value: null }]
+    });
+    if (value !== 'folder') return;
+    try {
+        await api.open_path({ path: await api.open_instance_folder({ id: instanceId, sub: 'mods' }) });
+    } catch (error) {
+        fail(error);
+    }
+}
+
 export async function importPack(targetId = null, dropped = null) {
-    const path = dropped ?? await pickFile('mrpack').catch(fail);
+    const path = dropped ?? await pickFile('modpack').catch(fail);
     if (!path) return;
     let target = targetId;
     if (target === null && selectedInstance()) {
@@ -634,6 +680,7 @@ export async function importPack(targetId = null, dropped = null) {
         return fail(error);
     }
     if (result.skipped.length) toast(`有 ${result.skipped.length} 個檔案來源不受信任或格式不正確，已略過：${result.skipped.slice(0, 3).join('、')}`, 'warn');
+    if (result.blocked?.length) await showBlocked(result.blocked, result.instanceId);
     if (!target) {
         await api.select_instance({ id: result.instanceId }).catch(() => {});
         store.settings.selectedInstance = result.instanceId;
@@ -645,7 +692,7 @@ export async function importPack(targetId = null, dropped = null) {
     await loadInstalled('mod');
     const { profiles, editable } = profileInfo(installed.mod);
     const wanted = new Set(result.mods.map((m) => m.replace(/\.disabled$/, '')));
-    const base = (result.name || path.split(/[\\/]/).pop().replace(/\.mrpack$/i, '')).slice(0, 24);
+    const base = (result.name || path.split(/[\\/]/).pop().replace(/\.(mrpack|zip)$/i, '')).slice(0, 24);
     let name = base;
     for (let n = 2; profiles.some((p) => p.name === name); n++) name = `${base.slice(0, 20)} ${n}`;
     const profile = { name, enabled: editable.filter((e) => wanted.has(e.file.replace(/\.disabled$/, ''))).map(keyOf), known: editable.map(keyOf) };
@@ -712,7 +759,7 @@ function profileBar(list) {
                 renderAll();
             }
         }, '更新組合') : null,
-        h('button', { type: 'button', class: 'mc', disabled: working, title: '匯入 .mrpack 模組包', onclick: () => importPack() }, icon('download'), '匯入'),
+        h('button', { type: 'button', class: 'mc', disabled: working, title: '匯入模組包（Modrinth .mrpack 或 CurseForge .zip）', onclick: () => importPack() }, icon('download'), '匯入'),
         h('button', { type: 'button', class: 'mc', disabled: working, onclick: () => editProfile(null) }, icon('plus'), '新增組合'));
 }
 
@@ -903,7 +950,7 @@ function depBanner(list) {
     const unknown = list.filter((e) => !e.project_id && !e.managed).length;
     if (!missing.length && !conflicts.length) {
         return h('div', { class: 'dep-check ok' }, icon('check'),
-            `前置檢查通過：${list.filter((e) => e.enabled).length} 個啟用中的模組依賴都齊全${unknown ? `（${unknown} 個不在 Modrinth 上，無法檢查）` : ''}`);
+            `前置檢查通過：${list.filter((e) => e.enabled).length} 個啟用中的模組依賴都齊全${unknown ? `（${unknown} 個不在 Modrinth 或 CurseForge 上，無法檢查）` : ''}`);
     }
     const needs = new Map();
     for (const entry of missing) for (const dep of entry.missing) needs.set(dep.project_id, dep);
@@ -1018,7 +1065,6 @@ function renderInstalled() {
     const all = $('#btn-update-all');
     all.hidden = !updates.length;
     all.textContent = `全部更新（${updates.length}）`;
-    $('#store-side').hidden = state.kind !== 'mod';
     const problem = instanceProblem();
     if (problem) return box.append(h('div', { class: 'empty-state' }, problem));
     if (!list) return box.append(h('div', { class: 'empty-state' }, '讀取中⋯'));
@@ -1033,7 +1079,7 @@ function renderInstalled() {
         return box.append(...(hits.length
             ? [h('div', { class: 'hint' }, `找到 ${hits.length} 個符合「${state.filter.trim()}」的${KIND_LABEL[state.kind]}`), ...hits.map(installedRow)]
             : [h('div', { class: 'empty-state' }, `已安裝的${KIND_LABEL[state.kind]}裡沒有「${state.filter.trim()}」。`,
-                h('button', { type: 'button', class: 'mc primary', onclick: () => { $('#mod-search').value = state.filter.trim(); state.filter = ''; $('#installed-search').value = ''; selectTab('explore'); search(); } }, `到 Modrinth 搜尋`))]));
+                h('button', { type: 'button', class: 'mc primary', onclick: () => { $('#mod-search').value = state.filter.trim(); state.filter = ''; $('#installed-search').value = ''; selectTab('explore'); search(); } }, `到 ${SOURCE_NAME[state.source]} 搜尋`))]));
     }
     box.append(...[profileBar(list), packPanel(), depBanner(list), ...list.map(installedRow)].filter(Boolean));
 }
@@ -1058,7 +1104,7 @@ function toggleTargetMenu(force) {
         },
         h('span', { class: 'inst-thumb' }, instanceVisual(instance)),
         h('span', { class: 'menu-name' }, instance.name),
-        h('span', { class: 'sub' }, `${instance.mcVersion}・${instance.loader === 'fabric' ? 'Fabric' : '原版'}`))),
+        h('span', { class: 'sub' }, `${instance.mcVersion}・${loaderLabel(instance)}`))),
         store.instances.length ? h('hr') : null,
         h('button', { type: 'button', role: 'menuitem', onclick: () => { toggleTargetMenu(false); location.hash = '#instances'; } }, store.instances.length ? '管理實例⋯' : '建立實例⋯')
     );
@@ -1074,7 +1120,6 @@ addEventListener('keydown', (e) => {
 function renderHeader() {
     const instance = selectedInstance();
     const running = instance && isRunning(instance.id);
-    const fabric = instance?.loader === 'fabric';
     const cover = instance?.image || '';
     const vector = /\.svg$/i.test(cover);
     const head = $('#store-instance');
@@ -1090,7 +1135,7 @@ function renderHeader() {
                 h('div', { class: 'account-menu target-menu glass', role: 'menu', hidden: true })),
             instance
                 ? h('div', { class: 'inst-page-meta' },
-                    h('span', {}, icon('zap'), `${fabric ? `Fabric${instance.loaderVersion ? ` ${instance.loaderVersion}` : ''}` : '原版'}・Minecraft ${instance.mcVersion}`),
+                    h('span', {}, icon('zap'), `${loaderLabel(instance, true)}・Minecraft ${instance.mcVersion}`),
                     h('span', {}, icon('clock'), fmtDuration(instance.playSeconds)),
                     instance.lastPlayed ? h('span', {}, `上次遊玩 ${new Date(instance.lastPlayed * 1000).toLocaleDateString('zh-TW')}`) : null)
                 : h('div', { class: 'inst-page-meta' }, '請先到「實例」建立或選擇一個實例'),
@@ -1106,7 +1151,12 @@ function renderHeader() {
     $('#store-explore').hidden = state.tab !== 'explore';
     $('#btn-mod-snapshots').hidden = state.kind !== 'mod';
     $('#store-installed').hidden = state.tab !== 'installed';
-    $('#mod-search').placeholder = `搜尋 Modrinth 上的${KIND_LABEL[state.kind]}⋯⋯`;
+    $('#mod-search').placeholder = `搜尋 ${SOURCE_NAME[state.source]} 上的${KIND_LABEL[state.kind]}⋯⋯`;
+    $('#store-source').value = state.source;
+    $('#installed-source').value = state.source;
+    const other = state.source === 'curseforge' ? 'Modrinth' : 'CurseForge';
+    $('#installed-source-hint').textContent = `辨識、版本清單、更新與前置檢查先查 ${SOURCE_NAME[state.source]}，找不到的再查 ${other}；瀏覽內容也會預設用這個來源。`;
+    $('#store-side').hidden = state.kind !== 'mod' || state.source !== 'modrinth';
     $('#installed-search').placeholder = `搜尋已安裝的${KIND_LABEL[state.kind]}⋯`;
 }
 
@@ -1143,12 +1193,35 @@ async function reloadInstalled() {
     if (seq === state.listSeq) renderAll();
 }
 
+async function setSource(source) {
+    const instance = selectedInstance();
+    if (!SOURCE_NAME[source] || source === state.source) return;
+    state.source = source;
+    state.category = '';
+    renderCategories();
+    if (instance) {
+        instance.contentSource = source;
+        await api.set_content_source({ id: instance.id, source }).catch(fail);
+        onInstanceChange.last = `${instance.id}|${instance.mcVersion}|${instance.loader}|${source}`;
+    }
+    installed.mod = installed.resourcepack = installed.shader = null;
+    renderAll();
+    reloadInstalled();
+    search();
+}
+
 function onInstanceChange() {
     if (location.hash !== '#mods') return;
     const instance = selectedInstance();
-    const key = `${instance?.id}|${instance?.mcVersion}|${instance?.loader}`;
+    const source = instance?.contentSource === 'curseforge' ? 'curseforge' : 'modrinth';
+    const key = `${instance?.id}|${instance?.mcVersion}|${instance?.loader}|${source}`;
     if (key === onInstanceChange.last) return;
     onInstanceChange.last = key;
+    if (state.source !== source) {
+        state.source = source;
+        state.category = '';
+        renderCategories();
+    }
     installed.mod = installed.resourcepack = installed.shader = null;
     renderAll();
     reloadInstalled();
@@ -1257,7 +1330,7 @@ function pickDropTarget(paths) {
                 type: 'button',
                 class: `drop-target${instance.id === current?.id ? ' current' : ''}`,
                 onclick: () => dismissDialog(instance)
-            }, instanceVisual(instance), h('b', {}, instance.name), h('small', {}, `${instance.mcVersion}・${instance.loader === 'fabric' ? 'Fabric' : '原版'}`))))),
+            }, instanceVisual(instance), h('b', {}, instance.name), h('small', {}, `${instance.mcVersion}・${loaderLabel(instance)}`))))),
         buttons: [{ label: '取消', value: null }]
     });
 }
@@ -1282,6 +1355,8 @@ export function initMods() {
     });
     $('#store-sort').addEventListener('change', () => search());
     $('#store-side').addEventListener('change', () => search());
+    $('#store-source').addEventListener('change', (e) => setSource(e.target.value));
+    $('#installed-source').addEventListener('change', (e) => setSource(e.target.value));
     $('#btn-more-mods').addEventListener('click', guard(() => search(false)));
     new IntersectionObserver((entries) => {
         if (entries.some((e) => e.isIntersecting) && !$('#btn-more-mods').hidden && !state.loadingMore) search(false);
