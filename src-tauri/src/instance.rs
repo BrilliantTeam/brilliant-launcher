@@ -509,7 +509,7 @@ mod general_tests {
     fn saved_looks_are_validated() {
         let inside = crate::paths::root().join("media").join("images").join("image-1.jpg").to_string_lossy().to_string();
         let escape = crate::paths::root().join("..").join("secret.jpg").to_string_lossy().to_string();
-        let look = |name: &str, code: &str| crate::config::SavedLook { name: name.into(), description: "x".repeat(200), code: code.into(), background: if name == "雨荷" { inside.clone() } else { escape.clone() } };
+        let look = |name: &str, code: &str| crate::config::SavedLook { name: name.into(), description: "x".repeat(200), code: code.into(), background: if name == "雨荷" { inside.clone() } else { escape.clone() }, music: vec![inside.clone(), escape.clone()] };
         let mut s = Settings::default();
         s.saved_looks = vec![look("雨荷", "BRLOOK1:abc"), look("雨荷", "BRLOOK1:dup"), look("壞的", "javascript:alert(1)"), look("", "BRLOOK1:x"), look("換行", "BRLOOK1:a b
 c")];
@@ -519,6 +519,7 @@ c")];
         assert!(s.saved_looks.iter().all(|l| l.description.chars().count() == 80));
         assert_eq!(s.saved_looks[0].background, inside);
         assert!(s.saved_looks[1].background.is_empty(), "paths escaping the launcher folder are dropped");
+        assert_eq!(s.saved_looks[0].music, vec![inside.clone()]);
     }
 
     #[test]

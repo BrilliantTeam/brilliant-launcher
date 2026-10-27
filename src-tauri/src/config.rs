@@ -187,6 +187,7 @@ pub struct SavedLook {
     pub description: String,
     pub code: String,
     pub background: String,
+    pub music: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -519,6 +520,11 @@ impl Settings {
             if !background.starts_with(crate::paths::root()) || background.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
                 look.background.clear();
             }
+            look.music.retain(|track| {
+                let path = std::path::Path::new(track);
+                track.len() <= 1024 && path.starts_with(crate::paths::root()) && !path.components().any(|c| matches!(c, std::path::Component::ParentDir))
+            });
+            look.music.truncate(20);
         }
         self.saved_looks.retain(|l| !l.name.is_empty() && !l.code.is_empty());
         let mut seen = std::collections::HashSet::new();

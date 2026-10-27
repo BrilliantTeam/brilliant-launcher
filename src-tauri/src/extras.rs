@@ -372,26 +372,309 @@ pub async fn save_svg(text: String) -> R<String> {
     Ok(dest.to_string_lossy().to_string())
 }
 
-#[tauri::command]
-pub async fn read_image(path: String) -> R<String> {
-    use base64::Engine;
+const LOOK_MANIFEST: &str = "look.json";
+const LOOK_FORMAT: &str = "brilliant-look";
+const LOOK_JSON_MAX: u64 = 256 << 10;
+const LOOK_BG_MAX: u64 = 500 << 20;
+const LOOK_PREVIEW_MAX: u64 = 20 << 20;
+const LOOK_TRACK_MAX: u64 = 200 << 20;
+const LOOK_TRACKS: usize = 20;
+
+#[derive(Serialize, serde::Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+struct LookManifest {
+    format: String,
+    version: u32,
+    name: String,
+    description: String,
+    look: serde_json::Value,
+    background: String,
+    music: Vec<crate::config::MediaItem>,
+}
+
+fn media_ok(ext: &str, head: &[u8]) -> bool {
+    match ext {
+        "png" => head.starts_with(b"\x89PNG"),
+        "jpg" | "jpeg" => head.starts_with(&[0xFF, 0xD8]),
+        "webp" => head.len() >= 12 && &head[..4] == b"RIFF" && &head[8..12] == b"WEBP",
+        "gif" => head.starts_with(b"GIF8"),
+        "mp4" => head.len() >= 8 && &head[4..8] == b"ftyp",
+        "webm" => head.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]),
+        _ => AUDIO_EXTS.contains(&ext),
+    }
+}
+
+fn is_background_ext(ext: &str) -> bool {
+    IMAGE_EXTS.contains(&ext) || VIDEO_EXTS.contains(&ext)
+}
+
+fn inside_launcher(path: &str) -> R<PathBuf> {
     let dir = paths::root().canonicalize().context("找不到啟動器資料夾")?;
-    let file = PathBuf::from(&path).canonicalize().context("找不到這張圖片")?;
-    let mime = match file.extension().map(|e| e.to_string_lossy().to_lowercase()).as_deref() {
-        Some("png") => "image/png",
-        Some("jpg" | "jpeg") => "image/jpeg",
-        Some("webp") => "image/webp",
-        Some("gif") => "image/gif",
-        _ => bail!("只能讀取 PNG、JPG、WEBP、GIF 圖片"),
+    let file = PathBuf::from(path).canonicalize().with_context(|| format!("找不到檔案：{path}"))?;
+    if !file.starts_with(&dir) || !file.is_file() {
+        bail!("只能匯出啟動器保存的背景與音樂");
+    }
+    Ok(file)
+}
+
+fn ext_of(path: &Path) -> String {
+    path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default()
+}
+
+fn safe_title(text: &str) -> String {
+    let cleaned: String = text.chars().map(|c| if "\\/:*?\"<>|".contains(c) || c.is_control() { '_' } else { c }).collect();
+    let title: String = cleaned.trim().chars().take(40).collect();
+    if title.is_empty() { "未命名".into() } else { title }
+}
+
+fn head_of(path: &Path) -> Vec<u8> {
+    let mut head = vec![0u8; 12];
+    let read = std::fs::File::open(path).and_then(|mut f| std::io::Read::read(&mut f, &mut head)).unwrap_or(0);
+    head.truncate(read);
+    head
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedLook {
+    pub path: String,
+    pub background: String,
+}
+
+#[tauri::command]
+pub async fn export_look(name: String, description: String, look: serde_json::Value, background: String, music: Vec<crate::config::MediaItem>) -> R<ExportedLook> {
+    if !look.is_object() || look.to_string().len() > 64 << 10 {
+        bail!("外觀設定不正確");
+    }
+    if music.len() > LOOK_TRACKS {
+        bail!("背景音樂最多 {LOOK_TRACKS} 首");
+    }
+    let mut manifest = LookManifest { format: LOOK_FORMAT.into(), version: 1, look, ..Default::default() };
+    manifest.name = name.chars().filter(|c| !c.is_control()).take(24).collect::<String>().trim().to_string();
+    manifest.description = description.chars().filter(|c| !c.is_control()).take(80).collect::<String>().trim().to_string();
+    let mut entries: Vec<(String, PathBuf)> = Vec::new();
+    if !background.is_empty() {
+        let file = inside_launcher(&background)?;
+        let ext = ext_of(&file);
+        if !is_background_ext(&ext) || std::fs::metadata(&file)?.len() > LOOK_BG_MAX || !media_ok(&ext, &head_of(&file)) {
+            bail!("背景必須是 500 MB 以內的圖片（PNG、JPG、WEBP、GIF）或影片（MP4、WEBM）");
+        }
+        manifest.background = format!("background.{ext}");
+        entries.push((manifest.background.clone(), file));
+    }
+    for (index, track) in music.iter().enumerate() {
+        let file = inside_launcher(&track.path)?;
+        let ext = ext_of(&file);
+        if !AUDIO_EXTS.contains(&ext.as_str()) || std::fs::metadata(&file)?.len() > LOOK_TRACK_MAX {
+            bail!("背景音樂必須是 200 MB 以內的音訊檔");
+        }
+        let entry = format!("music/{}.{ext}", index + 1);
+        manifest.music.push(crate::config::MediaItem { path: entry.clone(), name: track.name.chars().filter(|c| !c.is_control()).take(60).collect() });
+        entries.push((entry, file));
+    }
+    let dir = dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"));
+    tokio::fs::create_dir_all(&dir).await?;
+    let path = paths::unused(dir.join(format!("輝煌外觀-{}.brlook", safe_title(&manifest.name))));
+    let kept = match entries.first().filter(|(name, _)| name.starts_with("background.")) {
+        Some((name, file)) => {
+            let images = images_dir();
+            std::fs::create_dir_all(&images)?;
+            let copy = images.join(unique_name("look-bg-", name.trim_start_matches("background.")));
+            std::fs::copy(file, &copy).context("保存背景失敗")?;
+            copy.to_string_lossy().to_string()
+        }
+        None => String::new(),
     };
-    if !file.starts_with(&dir) {
-        bail!("只能讀取啟動器保存的圖片");
+    let target = path.clone();
+    let json = serde_json::to_vec_pretty(&manifest)?;
+    let written = tokio::task::spawn_blocking(move || -> R<()> {
+        let mut zip = zip::ZipWriter::new(std::fs::File::create(&target)?);
+        zip.set_comment("Brilliant Launcher look");
+        zip.start_file(LOOK_MANIFEST, zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated))?;
+        std::io::Write::write_all(&mut zip, &json)?;
+        let stored = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored).large_file(true);
+        for (name, file) in entries {
+            zip.start_file(name, stored)?;
+            std::io::copy(&mut std::fs::File::open(&file)?, &mut zip)?;
+        }
+        zip.finish()?;
+        Ok(())
+    })
+    .await
+    .context("匯出外觀中斷")?;
+    if let Err(error) = written {
+        let _ = std::fs::remove_file(&path);
+        return Err(error.0.context("匯出外觀失敗").into());
     }
-    if tokio::fs::metadata(&file).await?.len() > 20 << 20 {
-        bail!("圖片太大了（上限 20 MB）");
+    Ok(ExportedLook { path: path.to_string_lossy().to_string(), background: kept })
+}
+
+fn open_look(path: &str) -> R<(zip::ZipArchive<std::fs::File>, LookManifest)> {
+    let file = std::fs::File::open(path).context("找不到這個外觀檔")?;
+    let mut archive = zip::ZipArchive::new(file).context("這不是輝煌外觀檔")?;
+    let manifest = read_manifest(&mut archive)?;
+    Ok((archive, manifest))
+}
+
+fn read_manifest<T: std::io::Read + std::io::Seek>(archive: &mut zip::ZipArchive<T>) -> R<LookManifest> {
+    let entry = archive.by_name(LOOK_MANIFEST).context("這不是輝煌外觀檔")?;
+    if entry.size() > LOOK_JSON_MAX {
+        bail!("外觀檔內容不正確");
     }
-    let bytes = tokio::fs::read(&file).await.context("讀取圖片失敗")?;
-    Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+    let mut text = String::new();
+    std::io::Read::read_to_string(&mut std::io::Read::take(entry, LOOK_JSON_MAX), &mut text).context("外觀檔內容不正確")?;
+    let manifest: LookManifest = serde_json::from_str(&text).context("外觀檔內容不正確")?;
+    if manifest.format != LOOK_FORMAT || !manifest.look.is_object() {
+        bail!("這不是輝煌外觀檔");
+    }
+    let background_ok = manifest.background.is_empty()
+        || manifest.background.strip_prefix("background.").is_some_and(is_background_ext);
+    let music_ok = manifest.music.len() <= LOOK_TRACKS
+        && manifest.music.iter().enumerate().all(|(i, t)| t.path.strip_prefix(&format!("music/{}.", i + 1)).is_some_and(|ext| AUDIO_EXTS.contains(&ext)));
+    if !background_ok || !music_ok {
+        bail!("外觀檔內容不正確");
+    }
+    Ok(manifest)
+}
+
+fn extract_entry<T: std::io::Read + std::io::Seek>(archive: &mut zip::ZipArchive<T>, name: &str, max: u64, dest: &Path) -> R<()> {
+    let entry = archive.by_name(name).with_context(|| format!("外觀檔缺少 {name}"))?;
+    if entry.size() > max {
+        bail!("外觀檔裡的 {name} 太大了");
+    }
+    let mut out = std::fs::File::create(dest)?;
+    let copied = std::io::copy(&mut std::io::Read::take(entry, max + 1), &mut out)?;
+    drop(out);
+    let ext = name.rsplit('.').next().unwrap_or_default();
+    if copied > max || !media_ok(ext, &head_of(dest)) {
+        let _ = std::fs::remove_file(dest);
+        bail!("外觀檔裡的 {name} 格式不正確");
+    }
+    Ok(())
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LookInfo {
+    pub name: String,
+    pub description: String,
+    pub look: serde_json::Value,
+    pub background: String,
+    pub background_kind: String,
+    pub music: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn inspect_look(path: String) -> R<LookInfo> {
+    tokio::task::spawn_blocking(move || -> R<LookInfo> {
+        use base64::Engine;
+        let (mut archive, manifest) = open_look(&path)?;
+        let ext = manifest.background.rsplit('.').next().unwrap_or_default().to_string();
+        let kind = if manifest.background.is_empty() { "" } else if VIDEO_EXTS.contains(&ext.as_str()) { "video" } else { "image" };
+        let mut preview = String::new();
+        if kind == "image" {
+            if let Ok(entry) = archive.by_name(&manifest.background) {
+                if entry.size() <= LOOK_PREVIEW_MAX {
+                    let mut bytes = Vec::new();
+                    if std::io::Read::read_to_end(&mut std::io::Read::take(entry, LOOK_PREVIEW_MAX), &mut bytes).is_ok() && media_ok(&ext, &bytes) {
+                        let mime = if ext == "jpg" { "jpeg" } else { ext.as_str() };
+                        preview = format!("data:image/{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes));
+                    }
+                }
+            }
+        }
+        Ok(LookInfo {
+            name: manifest.name,
+            description: manifest.description,
+            look: manifest.look,
+            background: preview,
+            background_kind: kind.into(),
+            music: manifest.music.into_iter().map(|t| t.name).collect(),
+        })
+    })
+    .await
+    .context("讀取外觀檔中斷")?
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InstalledLook {
+    pub background: String,
+    pub music: Vec<crate::config::MediaItem>,
+}
+
+#[tauri::command]
+pub async fn install_look(path: String, background: bool, music: bool) -> R<InstalledLook> {
+    tokio::task::spawn_blocking(move || -> R<InstalledLook> {
+        let (mut archive, manifest) = open_look(&path)?;
+        let mut installed = InstalledLook { background: String::new(), music: Vec::new() };
+        if background && !manifest.background.is_empty() {
+            let dir = images_dir();
+            std::fs::create_dir_all(&dir)?;
+            let dest = dir.join(unique_name("look-bg-", manifest.background.rsplit('.').next().unwrap_or("png")));
+            extract_entry(&mut archive, &manifest.background, LOOK_BG_MAX, &dest)?;
+            installed.background = dest.to_string_lossy().to_string();
+        }
+        if music {
+            let dir = paths::root().join("media");
+            std::fs::create_dir_all(&dir)?;
+            for track in &manifest.music {
+                let dest = dir.join(unique_name("music-", track.path.rsplit('.').next().unwrap_or("mp3")));
+                extract_entry(&mut archive, &track.path, LOOK_TRACK_MAX, &dest)?;
+                let name = if track.name.trim().is_empty() { "匯入的音樂".to_string() } else { track.name.clone() };
+                installed.music.push(crate::config::MediaItem { path: dest.to_string_lossy().to_string(), name });
+            }
+        }
+        Ok(installed)
+    })
+    .await
+    .context("匯入外觀中斷")?
+}
+
+#[cfg(test)]
+mod look_file_tests {
+    use super::*;
+
+    fn pack(manifest: &serde_json::Value, files: &[(&str, &[u8])]) -> zip::ZipArchive<std::io::Cursor<Vec<u8>>> {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        zip.start_file(LOOK_MANIFEST, zip::write::SimpleFileOptions::default()).unwrap();
+        std::io::Write::write_all(&mut zip, manifest.to_string().as_bytes()).unwrap();
+        for (name, bytes) in files {
+            zip.start_file(*name, zip::write::SimpleFileOptions::default()).unwrap();
+            std::io::Write::write_all(&mut zip, bytes).unwrap();
+        }
+        zip::ZipArchive::new(zip.finish().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn look_archive_is_validated() {
+        let good = serde_json::json!({ "format": LOOK_FORMAT, "version": 1, "name": "雨荷", "look": { "accent": "#45B5A5" }, "background": "background.mp4", "music": [{ "path": "music/1.ogg", "name": "雨聲" }] });
+        let manifest = read_manifest(&mut pack(&good, &[])).unwrap();
+        assert_eq!((manifest.name.as_str(), manifest.background.as_str(), manifest.music[0].name.as_str()), ("雨荷", "background.mp4", "雨聲"));
+        for bad in [
+            serde_json::json!({ "format": "other", "look": {} }),
+            serde_json::json!({ "format": LOOK_FORMAT, "look": {}, "background": "../../evil.exe" }),
+            serde_json::json!({ "format": LOOK_FORMAT, "look": {}, "music": [{ "path": "music/1.exe", "name": "x" }] }),
+            serde_json::json!({ "format": LOOK_FORMAT, "look": {}, "music": [{ "path": "../music/1.mp3", "name": "x" }] }),
+        ] {
+            assert!(read_manifest(&mut pack(&bad, &[])).is_err(), "{bad}");
+        }
+        assert!(media_ok("mp4", b"\0\0\0\x18ftypisom") && media_ok("webm", &[0x1A, 0x45, 0xDF, 0xA3]) && !media_ok("mp4", b"MZ\0\0\0\0\0\0"));
+    }
+
+    #[test]
+    fn extracted_media_must_match_its_type() {
+        let manifest = serde_json::json!({ "format": LOOK_FORMAT, "look": {}, "background": "background.png" });
+        let dir = std::env::temp_dir().join(format!("brlook-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut fake = pack(&manifest, &[("background.png", b"MZ not an image")]);
+        assert!(extract_entry(&mut fake, "background.png", 1024, &dir.join("a.png")).is_err());
+        assert!(!dir.join("a.png").exists(), "rejected files are removed");
+        let mut real = pack(&manifest, &[("background.png", b"\x89PNG\r\n\x1a\n....")]);
+        extract_entry(&mut real, "background.png", 1024, &dir.join("b.png")).unwrap();
+        assert!(extract_entry(&mut real, "background.png", 4, &dir.join("c.png")).is_err(), "size limit applies");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
 
 #[tauri::command]

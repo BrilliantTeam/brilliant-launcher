@@ -31,7 +31,8 @@ export const FILE_TYPES = {
     mrpack: { name: 'Modrinth 模組包', extensions: ['mrpack'] },
     config: { name: '輝煌啟動器設定', extensions: ['zip'] },
     content: { name: '模組、資源包或光影', extensions: ['jar', 'zip'] },
-    pack: { name: '資源包或光影包', extensions: ['zip'] }
+    pack: { name: '資源包或光影包', extensions: ['zip'] },
+    look: { name: '輝煌外觀', extensions: ['brlook'] }
 };
 
 export const extOf = (path) => (/\.([^.\\/]+)$/.exec(String(path)) || [])[1]?.toLowerCase() ?? '';
