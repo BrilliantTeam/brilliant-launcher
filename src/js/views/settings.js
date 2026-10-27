@@ -132,7 +132,7 @@ const LOOK_DEFAULTS = {
     accent: '', buttonStyle: 'pixel', corners: 'square', cardSize: 'comfy', panelOpacity: 100, bgDim: 0, railLabels: true, showNews: true, uiScale: 100, reduceMotion: false,
     contentWidth: 'standard', density: 'comfy', accentBar: 'thick', bgBlur: 0, bgMotion: false, thinScrollbars: false, cardDetails: true, showBrand: true, homeTagline: '',
     railStyle: 'glass', coverHeight: 'normal', cursorStyle: 'system', bgFilter: 'none', homeLayout: 'standard', showClock: false, clickSound: false,
-    theme: 'auto', darkFrom: 19, darkTo: 7, accentFromBg: false, colorSuccess: '', colorWarning: '', colorLink: '', highContrast: false,
+    theme: 'auto', darkFrom: 19, darkTo: 7, accentFromBg: false, colorSuccess: '', colorWarning: '', colorLink: '', colorOverrides: {}, highContrast: false,
     font: 'pixel', headingStyle: 'game', fontScale: 100, slideSeconds: 15,
     bgSource: 'auto', bgColor: '', bgColor2: '', bgPin: '', bgTransition: 'fade', bgPan: false, weather: 'none',
     shardLayout: 'grid', hiddenShards: [], playSize: 'normal', playText: '', showCredit: true, showSocial: true, showShardStats: true, showLastPlayed: true,
@@ -154,6 +154,12 @@ function cleanLook(raw) {
     for (const [key, value] of Object.entries(raw && typeof raw === 'object' ? raw : {})) {
         const fallback = LOOK_DEFAULTS[key];
         if (fallback === undefined) continue;
+        if (key === 'colorOverrides') {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                look[key] = Object.fromEntries(Object.entries(value).filter(([token, color]) => /^(light|dark)\.[a-z-]+$/.test(token) && typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color)));
+            }
+            continue;
+        }
         if (Array.isArray(fallback) ? Array.isArray(value) && value.every((v) => typeof v === 'string') : typeof value === typeof fallback) look[key] = value;
     }
     return look;
@@ -183,18 +189,161 @@ async function renderCommunityLooks() {
 
 const LOOK_CODE = 'BRLOOK1:';
 
-function exportLook() {
+function currentLook() {
     const settings = store.settings ?? {};
     const look = Object.fromEntries(Object.keys(LOOK_DEFAULTS).filter((key) => !LOOK_LOCAL.includes(key) && settings[key] !== undefined).map((key) => [key, settings[key]]));
-    const bytes = new TextEncoder().encode(JSON.stringify(look));
-    const code = LOOK_CODE + btoa(String.fromCharCode(...bytes));
-    const text = h('textarea', { readonly: true, spellcheck: 'false', class: 'look-code' }, code);
-    navigator.clipboard?.writeText(code).then(() => toast('已複製外觀代碼'), () => {});
-    dialog({
+    look.colorOverrides ??= {};
+    return look;
+}
+
+function encodeLook(look, name, description, background = '') {
+    const bytes = new TextEncoder().encode(JSON.stringify({ ...look, _meta: { name, description }, ...(background ? { _bg: background } : {}) }));
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    return LOOK_CODE + btoa(binary);
+}
+
+function decodeLook(code) {
+    const text = String(code ?? '').replace(/\s/g, '');
+    if (!text.startsWith(LOOK_CODE)) return null;
+    try {
+        const raw = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(text.slice(LOOK_CODE.length)), (c) => c.charCodeAt(0))));
+        const meta = raw && typeof raw._meta === 'object' && raw._meta ? raw._meta : {};
+        const background = typeof raw?._bg === 'string' && /^data:image\/(png|jpeg);base64,/.test(raw._bg) ? raw._bg : '';
+        return { look: cleanLook(raw), name: String(meta.name ?? '').trim().slice(0, 24), description: String(meta.description ?? '').trim().slice(0, 80), background };
+    } catch {
+        return null;
+    }
+}
+
+const isVideo = (path) => /\.(mp4|webm)$/i.test(path ?? '');
+
+async function backgroundData(path) {
+    const img = new Image();
+    img.src = await api.read_image({ path });
+    await img.decode();
+    const scale = Math.min(1, 1920 / img.naturalWidth, 1080 / img.naturalHeight);
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.85);
+}
+
+const PREVIEW_DEFAULTS = {
+    light: { 'content-bg': '#ffffff', 'content-bg-alt': '#f8f9fa', 'content-bg-sunken': '#eaecf0', 'panel-face': '#e6e9ec', text: '#202122', 'text-subtle': '#54595d', 'border-soft': '#c8ccd1', 'chrome-bg': '#f8f9fa', 'chrome-ink': '#202122' },
+    dark: { 'content-bg': '#101418', 'content-bg-alt': '#202122', 'content-bg-sunken': '#27292d', 'panel-face': '#26282c', text: '#eaecf0', 'text-subtle': '#a2a9b1', 'border-soft': '#404244', 'chrome-bg': '#0a0c0e', 'chrome-ink': '#ffffff' }
+};
+
+function lookPreview(look, image = '') {
+    const root = document.documentElement;
+    const current = root.dataset.mode || 'dark';
+    const mode = look.theme === 'light' || look.theme === 'dark' ? look.theme : current;
+    const vars = Object.entries(PREVIEW_DEFAULTS[mode]).map(([token, fallback]) => `--p-${token}:${look.colorOverrides?.[`${mode}.${token}`] || fallback}`);
+    vars.push(`--p-accent:${/^#[0-9a-f]{6}$/i.test(look.accent ?? '') ? look.accent : mode === 'dark' ? '#f6e0a4' : '#8491ff'}`);
+    if (image) vars.push(`--p-image:url("${image.replace(/"/g, '%22')}")`);
+    return h('div', { class: `look-preview ${mode}${image ? ' has-image' : ''}`, style: vars.join(';'), 'aria-hidden': 'true' },
+        h('span', { class: 'lp-rail' }, h('i'), h('i'), h('i')),
+        h('span', { class: 'lp-body' },
+            h('span', { class: 'lp-title' }),
+            h('span', { class: 'lp-card' }, h('span', { class: 'lp-line' }), h('span', { class: 'lp-line short' }), h('span', { class: 'lp-input' })),
+            h('span', { class: 'lp-button' })));
+}
+
+async function rememberLook(entry) {
+    const others = (store.settings?.savedLooks ?? []).filter((item) => item.name !== entry.name);
+    await persist({ savedLooks: [{ name: entry.name, description: entry.description, code: entry.code, background: entry.background ?? '' }, ...others].slice(0, 30) });
+}
+
+async function applySavedLook(entry) {
+    const decoded = decodeLook(entry.code);
+    if (!decoded || !Object.keys(decoded.look).length) return toast('這組外觀的代碼已損毀，無法套用', 'error');
+    await persist({ ...decoded.look, ...(entry.background ? { background: entry.background, bgSource: 'auto' } : {}) });
+    toast(`已切換為「${entry.name}」`);
+}
+
+async function copySavedLook(entry) {
+    const decoded = decodeLook(entry.code);
+    if (!decoded) return toast('這組外觀的代碼已損毀', 'error');
+    let code = entry.code;
+    if (entry.background) {
+        try {
+            code = encodeLook(decoded.look, entry.name, entry.description, await backgroundData(entry.background));
+        } catch {
+            toast('背景圖片讀取失敗，只複製了配色', 'warn');
+        }
+    }
+    navigator.clipboard?.writeText(code).then(() => toast(`已複製「${entry.name}」的外觀代碼${code !== entry.code ? '（含背景圖）' : ''}`), () => {});
+}
+
+function renderSavedLooks() {
+    const box = $('#look-saved');
+    if (!box) return;
+    const saved = store.settings?.savedLooks ?? [];
+    if (!saved.length) {
+        clear(box).append(h('div', { class: 'hint' }, '還沒有存起來的外觀。按「分享我的外觀」或「匯入外觀」就會加進來。'));
+        return;
+    }
+    clear(box).append(...saved.map((entry) => {
+        const decoded = decodeLook(entry.code);
+        return h('div', { class: 'look-preset saved-look', role: 'button', tabindex: '0', title: `切換為「${entry.name}」`,
+            onclick: () => applySavedLook(entry),
+            onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); applySavedLook(entry); } } },
+            decoded ? lookPreview(decoded.look, entry.background ? fileSrc(entry.background) : '') : null,
+            h('b', {}, entry.name),
+            entry.description ? h('small', {}, entry.description) : null,
+            h('span', { class: 'saved-look-actions' },
+                h('button', { type: 'button', class: 'mc icon-btn', title: '複製代碼', 'aria-label': `複製「${entry.name}」的代碼`, onclick: (e) => {
+                    e.stopPropagation();
+                    copySavedLook(entry);
+                } }, icon('copy')),
+                h('button', { type: 'button', class: 'mc icon-btn danger', title: '從清單移除', 'aria-label': `從清單移除「${entry.name}」`, onclick: async (e) => {
+                    e.stopPropagation();
+                    if (!(await confirm(`要從「我的外觀」移除「${entry.name}」嗎？目前的外觀不會改變。`, '移除'))) return;
+                    await persist({ savedLooks: (store.settings?.savedLooks ?? []).filter((item) => item.name !== entry.name) });
+                } }, icon('trash'))));
+    }));
+}
+
+async function exportLook() {
+    const look = currentLook();
+    const settings = store.settings ?? {};
+    const hasImage = !!settings.background && !isVideo(settings.background) && settings.bgSource !== 'color';
+    const name = h('input', { type: 'text', maxlength: '24', placeholder: '例如：雨荷青霖' });
+    const description = h('input', { type: 'text', maxlength: '80', placeholder: '一句話介紹這組外觀（選填）' });
+    const withImage = h('input', { type: 'checkbox', checked: hasImage, disabled: !hasImage });
+    const ok = await dialog({
         title: '分享我的外觀',
-        content: h('div', { class: 'field' },
-            h('label', {}, '外觀代碼（已複製）'), text,
-            h('div', { class: 'hint' }, '把代碼貼給朋友，對方在「匯入外觀」貼上就能套用；也可以分享到輝煌 Discord，精選作品會上架到「社群風格」。背景圖片、音樂與側欄排序不會包含在代碼裡。')),
+        content: h('div', {},
+            h('div', { class: 'field' }, h('label', {}, '預覽'), lookPreview(look, hasImage ? fileSrc(settings.background) : '')),
+            h('div', { class: 'field' }, h('label', {}, '外觀名稱'), name),
+            h('div', { class: 'field' }, h('label', {}, '描述'), description),
+            h('div', { class: 'field' }, h('label', {}, withImage, '包含背景圖片'),
+                h('div', { class: 'hint' }, hasImage ? '背景圖會縮到 1920×1080 以內一起放進代碼，代碼會變得很長；貼到 Discord 時會自動變成 .txt 檔。' : isVideo(settings.background) ? '影片背景無法放進代碼。' : '目前沒有自訂背景圖片。')),
+            h('div', { class: 'hint' }, '產生代碼後會複製到剪貼簿，並存進「我的外觀」。音樂與側欄排序不會包含在代碼裡。')),
+        buttons: [{ label: '取消', value: false }, { label: '產生代碼', value: true }]
+    });
+    if (ok !== true) return;
+    const title = name.value.trim() || '我的外觀';
+    const desc = description.value.trim();
+    let image = '';
+    let saved = '';
+    if (withImage.checked && hasImage) {
+        try {
+            image = await backgroundData(settings.background);
+            saved = await api.save_image({ data: image });
+        } catch (error) {
+            image = '';
+            toast(`背景圖片讀取失敗，只匯出配色（${error?.message ?? error}）`, 'warn');
+        }
+    }
+    const code = encodeLook(look, title, desc, image);
+    await rememberLook({ name: title, description: desc, code: encodeLook(look, title, desc), background: saved });
+    navigator.clipboard?.writeText(code).then(() => toast(`已複製「${title}」的外觀代碼，並存進「我的外觀」`), () => {});
+    const text = h('textarea', { readonly: true, spellcheck: 'false', class: 'look-code' }, code);
+    dialog({
+        title: '外觀代碼',
+        content: h('div', { class: 'field' }, h('label', {}, `「${title}」的代碼（已複製，約 ${Math.max(1, Math.round(code.length / 1024))} KB${image ? '，含背景圖' : ''}）`), text),
         buttons: [{ label: '關閉', value: null }]
     });
     text.select();
@@ -202,24 +351,40 @@ function exportLook() {
 
 async function importLook() {
     const text = h('textarea', { spellcheck: 'false', class: 'look-code', placeholder: `${LOOK_CODE}⋯` });
-    const ok = await dialog({
-        title: '匯入外觀',
-        content: h('div', { class: 'field' }, h('label', {}, '貼上外觀代碼'), text),
-        buttons: [{ label: '取消', value: false }, { label: '套用', value: true }]
+    const empty = '貼上代碼後會在這裡顯示外觀名稱、描述與預覽。';
+    const info = h('div', { class: 'look-import-info' }, h('div', { class: 'hint' }, empty));
+    let decoded = null;
+    text.addEventListener('input', () => {
+        decoded = decodeLook(text.value);
+        clear(info).append(...(decoded
+            ? [lookPreview(decoded.look, decoded.background), h('b', {}, decoded.name || '未命名的外觀'), decoded.description ? h('small', {}, decoded.description) : null,
+                decoded.background ? h('small', {}, '包含背景圖片') : null]
+            : [h('div', { class: 'hint' }, text.value.trim() ? `這不是有效的外觀代碼，代碼應該以「${LOOK_CODE}」開頭` : empty)]));
     });
-    if (ok !== true) return;
-    const code = text.value.trim();
-    let look = null;
-    try {
-        if (!code.startsWith(LOOK_CODE)) throw new Error();
-        const bytes = Uint8Array.from(atob(code.slice(LOOK_CODE.length)), (c) => c.charCodeAt(0));
-        look = cleanLook(JSON.parse(new TextDecoder().decode(bytes)));
-    } catch {
-        return toast(`這不是有效的外觀代碼，代碼應該以「${LOOK_CODE}」開頭`, 'error');
+    const choice = await dialog({
+        title: '匯入外觀',
+        content: h('div', {}, h('div', { class: 'field' }, h('label', {}, '貼上外觀代碼'), text), info),
+        buttons: [{ label: '取消', value: null }, { label: '只存進清單', value: 'save' }, { label: '套用並存進清單', value: 'apply' }]
+    });
+    if (!choice) return;
+    decoded ??= decodeLook(text.value);
+    if (!decoded) return toast(`這不是有效的外觀代碼，代碼應該以「${LOOK_CODE}」開頭`, 'error');
+    if (!Object.keys(decoded.look).length) return toast('代碼裡沒有可以套用的外觀設定', 'warn');
+    const name = decoded.name || '匯入的外觀';
+    let background = '';
+    if (decoded.background) {
+        background = await api.save_image({ data: decoded.background }).catch((error) => {
+            toast(`背景圖片無法保存，只套用配色（${error?.message ?? error}）`, 'warn');
+            return '';
+        });
     }
-    if (!Object.keys(look).length) return toast('代碼裡沒有可以套用的外觀設定', 'warn');
-    await persist(look);
-    toast('已匯入外觀');
+    await rememberLook({ name, description: decoded.description, code: encodeLook(decoded.look, name, decoded.description), background });
+    if (choice === 'apply') {
+        await persist({ ...decoded.look, ...(background ? { background, bgSource: 'auto' } : {}) });
+        toast(`已套用「${name}」並存進「我的外觀」`);
+    } else {
+        toast(`已把「${name}」存進「我的外觀」`);
+    }
 }
 
 const previewFamilies = new Map();
@@ -935,10 +1100,11 @@ export function initSettings() {
     for (const select of $$('.hour-select')) select.append(...Array.from({ length: 24 }, (_, hour) => h('option', { value: String(hour) }, `${String(hour).padStart(2, '0')}:00`)));
     initPages(view);
     renderLookPresets();
+    renderSavedLooks();
     renderCommunityLooks();
     renderBgPins();
     $('#btn-look-reset').addEventListener('click', guard(async () => {
-        if (!(await confirm('要把主題色、按鈕風格、邊角、字體、側欄、動畫等外觀設定全部還原成預設嗎？\n背景圖片與音樂不會被移除。', '還原'))) return;
+        if (!(await confirm('要把主題色、進階配色、按鈕風格、邊角、字體、側欄、動畫等外觀設定全部還原成預設嗎？\n背景圖片與音樂不會被移除。', '還原'))) return;
         await persist(LOOK_DEFAULTS);
         toast('已還原預設外觀');
     }));
@@ -1121,6 +1287,7 @@ export function initSettings() {
     }).catch(() => {});
 
     on('settings', write);
+    on('settings', renderSavedLooks);
     write();
     fillJavaOptions(store.settings?.javaPath);
 

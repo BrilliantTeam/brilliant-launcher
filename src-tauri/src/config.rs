@@ -142,6 +142,7 @@ pub struct Settings {
     pub global_shortcut: String,
     pub rail_links: Vec<RailLink>,
     pub profiles: Vec<Profile>,
+    pub saved_looks: Vec<SavedLook>,
     pub streamer_mode: bool,
     pub instance_order: Vec<String>,
     pub options_sync: bool,
@@ -177,6 +178,15 @@ pub const COLOR_TOKENS: [&str; 12] = ["content-bg", "content-bg-alt", "content-b
 pub struct RailLink {
     pub name: String,
     pub target: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct SavedLook {
+    pub name: String,
+    pub description: String,
+    pub code: String,
+    pub background: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
@@ -363,6 +373,7 @@ impl Default for Settings {
             global_shortcut: String::new(),
             rail_links: Vec::new(),
             profiles: Vec::new(),
+            saved_looks: Vec::new(),
             streamer_mode: false,
             instance_order: Vec::new(),
             options_sync: false,
@@ -496,6 +507,23 @@ impl Settings {
         }
         self.profiles.retain(|p| !p.name.is_empty());
         self.profiles.truncate(10);
+        for look in self.saved_looks.iter_mut() {
+            clean_line(&mut look.name, 24);
+            clean_line(&mut look.description, 80);
+            look.code.retain(|c| !c.is_whitespace());
+            if !look.code.starts_with("BRLOOK1:") || look.code.len() > 16384 {
+                look.code.clear();
+            }
+            clean_line(&mut look.background, 1024);
+            let background = std::path::Path::new(&look.background);
+            if !background.starts_with(crate::paths::root()) || background.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+                look.background.clear();
+            }
+        }
+        self.saved_looks.retain(|l| !l.name.is_empty() && !l.code.is_empty());
+        let mut seen = std::collections::HashSet::new();
+        self.saved_looks.retain(|l| seen.insert(l.name.clone()));
+        self.saved_looks.truncate(30);
         self.instance_order.retain(|id| id.len() <= 128);
         self.instance_order.dedup();
         self.instance_order.truncate(500);

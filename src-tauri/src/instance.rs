@@ -506,6 +506,22 @@ mod general_tests {
     use super::*;
 
     #[test]
+    fn saved_looks_are_validated() {
+        let inside = crate::paths::root().join("media").join("images").join("image-1.jpg").to_string_lossy().to_string();
+        let escape = crate::paths::root().join("..").join("secret.jpg").to_string_lossy().to_string();
+        let look = |name: &str, code: &str| crate::config::SavedLook { name: name.into(), description: "x".repeat(200), code: code.into(), background: if name == "雨荷" { inside.clone() } else { escape.clone() } };
+        let mut s = Settings::default();
+        s.saved_looks = vec![look("雨荷", "BRLOOK1:abc"), look("雨荷", "BRLOOK1:dup"), look("壞的", "javascript:alert(1)"), look("", "BRLOOK1:x"), look("換行", "BRLOOK1:a b
+c")];
+        s.clean();
+        let kept: Vec<(&str, &str)> = s.saved_looks.iter().map(|l| (l.name.as_str(), l.code.as_str())).collect();
+        assert_eq!(kept, vec![("雨荷", "BRLOOK1:abc"), ("換行", "BRLOOK1:abc")]);
+        assert!(s.saved_looks.iter().all(|l| l.description.chars().count() == 80));
+        assert_eq!(s.saved_looks[0].background, inside);
+        assert!(s.saved_looks[1].background.is_empty(), "paths escaping the launcher folder are dropped");
+    }
+
+    #[test]
     fn abnormal_input_is_clamped() {
         let mut s = Settings { width: 1_000_000, height: 2000, memory_mb: 9_999_999, memory_min_mb: 99_999, ui_scale: 5, download_threads: 0, backup_keep: 0, music_volume: 900, ..Default::default() };
         s.theme = "<script>".into();

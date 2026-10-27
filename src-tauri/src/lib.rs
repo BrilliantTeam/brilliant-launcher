@@ -173,6 +173,7 @@ pub fn run() {
             diskuse::clean_disk,
             extras::import_image,
             extras::save_image,
+            extras::read_image,
             extras::read_svg,
             extras::save_svg,
             leftovers::mod_leftovers,

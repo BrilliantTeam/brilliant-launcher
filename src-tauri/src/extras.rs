@@ -373,6 +373,28 @@ pub async fn save_svg(text: String) -> R<String> {
 }
 
 #[tauri::command]
+pub async fn read_image(path: String) -> R<String> {
+    use base64::Engine;
+    let dir = paths::root().canonicalize().context("找不到啟動器資料夾")?;
+    let file = PathBuf::from(&path).canonicalize().context("找不到這張圖片")?;
+    let mime = match file.extension().map(|e| e.to_string_lossy().to_lowercase()).as_deref() {
+        Some("png") => "image/png",
+        Some("jpg" | "jpeg") => "image/jpeg",
+        Some("webp") => "image/webp",
+        Some("gif") => "image/gif",
+        _ => bail!("只能讀取 PNG、JPG、WEBP、GIF 圖片"),
+    };
+    if !file.starts_with(&dir) {
+        bail!("只能讀取啟動器保存的圖片");
+    }
+    if tokio::fs::metadata(&file).await?.len() > 20 << 20 {
+        bail!("圖片太大了（上限 20 MB）");
+    }
+    let bytes = tokio::fs::read(&file).await.context("讀取圖片失敗")?;
+    Ok(format!("data:{mime};base64,{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
+#[tauri::command]
 pub async fn save_image(data: String) -> R<String> {
     use base64::Engine;
     let (ext, body) = if let Some(rest) = data.strip_prefix("data:image/png;base64,") {

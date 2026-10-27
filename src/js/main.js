@@ -65,6 +65,32 @@ const HEX = /^#[0-9a-f]{6}$/i;
 
 export const COLOR_TOKENS = ['content-bg', 'content-bg-alt', 'content-bg-sunken', 'text', 'text-subtle', 'border', 'border-soft', 'panel-face', 'chrome-bg', 'chrome-ink', 'glass-bg', 'glass-ink'];
 
+const TRANSLUCENT = { 'glass-bg': { light: 86, dark: 74 }, 'chrome-bg': { light: 88, dark: 62 } };
+const shade = (color, percent, toward) => `color-mix(in srgb, ${color} ${100 - percent}%, ${toward})`;
+const DERIVED = {
+    'content-bg-sunken': { 'sunken-face': (c) => c },
+    text: { 'btn-ink': (c) => c, 'btn-ink-hover': (c) => c },
+    'panel-face': {
+        'btn-face': (c) => c,
+        'btn-face-hover': (c) => shade(c, 10, '#fff'),
+        'btn-face-down': (c) => shade(c, 15, '#000'),
+        'btn-face-down-hover': (c) => shade(c, 8, '#000'),
+        'btn-corner': (c) => shade(c, 30, '#fff'),
+        'btn-light': (c) => shade(c, 18, '#fff'),
+        'btn-dark': (c) => shade(c, 30, '#000'),
+        'btn-drop': (c) => shade(c, 60, '#000'),
+        'btn-corner-down': (c) => shade(c, 10, '#fff'),
+        'btn-light-down': (c) => c,
+        'btn-dark-down': (c) => shade(c, 40, '#000'),
+        'btn-drop-down': (c) => shade(c, 60, '#000'),
+        'bevel-light': (c) => shade(c, 25, '#fff'),
+        'bevel-dark': (c) => shade(c, 45, '#000')
+    },
+    'glass-bg': { 'glass-bg-hover': (c, mode) => `color-mix(in srgb, ${shade(c, 10, mode === 'dark' ? '#fff' : '#000')} ${TRANSLUCENT['glass-bg'][mode] + 8}%, transparent)` },
+    'glass-ink': { 'glass-line': (c) => shade(c, 85, 'transparent') }
+};
+const OVERRIDABLE = [...new Set([...COLOR_TOKENS, ...Object.values(DERIVED).flatMap((map) => Object.keys(map))])];
+
 function scheduledTheme(look) {
     const hour = new Date().getHours();
     const from = Number(look.darkFrom ?? 19);
@@ -168,10 +194,17 @@ function applyTheme() {
     root.dataset.streamer = look.streamerMode ? 'on' : 'off';
     const mode = root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     root.dataset.mode = mode;
+    const props = {};
     for (const token of COLOR_TOKENS) {
         const value = look.colorOverrides?.[`${mode}.${token}`];
-        if (HEX.test(value ?? '')) root.style.setProperty(`--${token}`, value);
-        else root.style.removeProperty(`--${token}`);
+        if (!HEX.test(value ?? '')) continue;
+        const alpha = TRANSLUCENT[token]?.[mode];
+        props[token] = alpha ? `color-mix(in srgb, ${value} ${alpha}%, transparent)` : value;
+        for (const [name, derive] of Object.entries(DERIVED[token] ?? {})) props[name] = derive(value, mode);
+    }
+    for (const name of OVERRIDABLE) {
+        if (props[name]) root.style.setProperty(`--${name}`, props[name]);
+        else root.style.removeProperty(`--${name}`);
     }
     root.dataset.heading = look.headingStyle === 'modern' ? 'modern' : 'game';
     root.style.setProperty('--fs', String(Math.min(130, Math.max(90, Number(look.fontScale) || 100)) / 100));
