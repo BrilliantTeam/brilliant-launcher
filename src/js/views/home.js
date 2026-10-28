@@ -3,7 +3,7 @@ import { $, clear, confirm, dialog, fail, fmtBytes, h, toast } from '../ui.js';
 import { accountFor, avatarUrl, emit, isRunning, loaderLabel, loadAccounts, loadInstances, modded, on, selectedAccount, selectedInstance, store, saveSettings } from '../store.js';
 import { initNews } from './news.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
-import { addOffline, loginMicrosoft } from './accounts.js';
+import { addOffline, loginMicrosoft, select } from './accounts.js';
 import { createGeneralInstance, quickCreate, upgradeFlow, versionData } from './instances.js';
 import { notifyOnce, ready, upgradeTarget } from '../services.js';
 import { clearRecentLog, recentLog } from './logview.js';
@@ -507,11 +507,8 @@ function toggleAccountMenu(force) {
             onclick: async () => {
                 toggleAccountMenu(false);
                 if (current?.id === account.id) return;
-                await api.select_account({ id: account.id }).catch(fail);
-                store.settings.selectedAccount = account.id;
-                emit('accounts');
-                emit('settings');
                 toast(`已切換為 ${account.name}`);
+                await select(account);
             }
         }, h('img', { src: avatarUrl(account), alt: '' }), account.name, h('span', { class: 'sub' }, account.kind === 'msa' ? '正版' : '離線'))),
         store.accounts.length ? h('hr') : null,

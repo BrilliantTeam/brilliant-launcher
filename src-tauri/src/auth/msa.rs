@@ -17,6 +17,7 @@ const XSTS_URL: &str = "https://xsts.auth.xboxlive.com/xsts/authorize";
 const MC_LOGIN_URL: &str = "https://api.minecraftservices.com/authentication/login_with_xbox";
 const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profile";
 const SCOPE: &str = "XboxLive.signin offline_access";
+pub const RATE_LIMITED: &str = "Mojang 暫時限制了這個網路的登入次數（HTTP 429）";
 
 #[derive(Deserialize)]
 struct MsaToken {
@@ -212,6 +213,8 @@ async fn finish(msa: MsaToken) -> R<Account> {
         if detail.contains("Invalid app registration") {
             anyhow!("輝煌啟動器的正版登入正在等待 Mojang 審核開通，目前暫時無法使用正版帳號。
 請先使用離線帳號；開通後不需要更新啟動器，直接重新登入即可。")
+        } else if detail.contains("429") {
+            anyhow!("{RATE_LIMITED}，啟動器會在約 15 分鐘後自動再試；這段時間反覆登入會讓限制更久。")
         } else {
             anyhow!("Minecraft 服務驗證失敗：{detail}")
         }
@@ -241,7 +244,7 @@ async fn finish(msa: MsaToken) -> R<Account> {
         refresh_token: msa.refresh_token,
         xuid,
         expires_at: now_secs() + mc.expires_in.max(msa.expires_in).max(3600),
-        session_error: String::new(),
+        ..Default::default()
     })
 }
 

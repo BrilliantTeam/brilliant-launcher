@@ -42,8 +42,7 @@ pub fn make_offline(name: &str) -> R<Account> {
         access_token: "0".into(),
         refresh_token: String::new(),
         xuid: String::new(),
-        expires_at: 0,
-        session_error: String::new(),
+        ..Default::default()
     })
 }
 

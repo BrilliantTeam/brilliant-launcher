@@ -675,6 +675,7 @@ pub struct Account {
     pub xuid: String,
     pub expires_at: i64,
     pub session_error: String,
+    pub retry_at: i64,
 }
 
 impl Account {

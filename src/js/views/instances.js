@@ -1588,6 +1588,7 @@ async function launchGroup(name, members) {
     const shared = [...byAccount.values()].filter((list) => list.length > 1);
     if (shared.length && !(await confirm(`${shared.map((list) => `${list.map((i) => `「${i.name}」`).join('、')}都使用 ${accountFor(list[0]).name}`).join('\n')}。\n同一個帳號同時連進伺服器會互相踢下線，可以在實例設定的「使用帳號」各自指定帳號。\n仍要全部啟動嗎？`, '仍要啟動'))) return;
     let started = 0;
+    const limited = [];
     for (const [index, instance] of pending.entries()) {
         toast(`正在啟動「${instance.name}」（${index + 1}/${pending.length}）`);
         try {
@@ -1596,10 +1597,20 @@ async function launchGroup(name, members) {
             started++;
             await loadInstances();
         } catch (error) {
-            fail(error);
+            if (String(error?.message ?? error).includes('HTTP 429')) limited.push(instance);
+            else fail(error);
         }
     }
     toast(`「${name}」已啟動 ${started} 個實例`);
+    if (limited.length) {
+        await dialog({
+            title: `有 ${limited.length} 個實例沒有啟動`,
+            content: h('div', {},
+                h('p', {}, `${limited.map((i) => `「${i.name}」`).join('、')}使用的帳號登入已過期，重新驗證時被 Mojang 暫時限制了登入次數（HTTP 429），所以先跳過，其他實例已照常啟動。`),
+                h('p', { class: 'hint' }, '大約 15 分鐘後再單獨啟動這些實例即可；這段時間反覆登入會讓限制更久。')),
+            buttons: [{ label: '知道了', value: null }]
+        });
+    }
 }
 
 function groupInput(value = '') {

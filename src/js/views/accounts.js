@@ -74,6 +74,7 @@ export async function select(account) {
     store.settings.selectedAccount = account.id;
     emit('accounts');
     emit('settings');
+    await refreshSessions();
 }
 
 async function remove(account) {
@@ -552,6 +553,8 @@ function render() {
 export async function refreshSessions() {
     const results = await api.refresh_sessions().catch(() => []);
     if (results.some((r) => r.refreshed || !r.ok)) await loadAccounts().catch(() => {});
+    const limited = results.find((r) => !r.ok && r.error.includes('HTTP 429'));
+    if (limited) return toast(limited.error, 'warn');
     const broken = results.filter((r) => !r.ok).map((r) => store.accounts.find((a) => a.id === r.id)?.name).filter(Boolean);
     if (broken.length) toast(`${broken.join('、')} 的登入已失效，請到「帳號」頁重新登入。`, 'warn');
 }

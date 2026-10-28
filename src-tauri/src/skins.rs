@@ -10,7 +10,6 @@ use tauri::State;
 
 const API: &str = "https://api.minecraftservices.com/minecraft/profile";
 const TEXTURES: &str = "https://textures.minecraft.net/";
-const REFRESH_AHEAD_SECS: i64 = 3 * 3600;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -77,12 +76,36 @@ async fn store_account(updated: &Account) -> R<()> {
     config::save_accounts(&all).await
 }
 
+static REFRESHING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+const RATE_LIMIT_COOLDOWN_SECS: i64 = 15 * 60;
+const FAILURE_COOLDOWN_SECS: i64 = 5 * 60;
+
+fn waiting(account: &Account, ahead: i64) -> Option<R<Account>> {
+    let now = now_secs();
+    if account.kind != "msa" || account.expires_at > now + ahead {
+        return Some(Ok(account.clone()));
+    }
+    if account.retry_at <= now {
+        return None;
+    }
+    if account.expires_at > now + 60 {
+        return Some(Ok(account.clone()));
+    }
+    let minutes = (account.retry_at - now + 59) / 60;
+    Some(Err(anyhow::anyhow!("{}，約 {minutes} 分鐘後會自動再試；這段時間反覆登入會讓限制更久。", auth::msa::RATE_LIMITED).into()))
+}
+
 pub async fn fresh(account: Account, ahead: i64) -> R<Account> {
-    if account.kind != "msa" || account.expires_at > now_secs() + ahead {
-        return Ok(account);
+    if let Some(done) = waiting(&account, ahead) {
+        return done;
     }
     if account.refresh_token.is_empty() {
         bail!("{} 的登入已過期，請重新登入", account.name);
+    }
+    let _guard = REFRESHING.lock().await;
+    let account = config::load_accounts().await.into_iter().find(|a| a.id == account.id).unwrap_or(account);
+    if let Some(done) = waiting(&account, ahead) {
+        return done;
     }
     match auth::msa::refresh(config::MSA_CLIENT_ID, &account.refresh_token).await {
         Ok(refreshed) => {
@@ -91,8 +114,14 @@ pub async fn fresh(account: Account, ahead: i64) -> R<Account> {
         }
         Err(e) if crate::net::is_offline(&e.0) => Ok(account),
         Err(e) => {
+            let detail = format!("{:#}", e.0);
             let mut marked = account.clone();
-            marked.session_error = format!("{:#}", e.0);
+            marked.retry_at = now_secs() + if detail.contains(auth::msa::RATE_LIMITED) { RATE_LIMIT_COOLDOWN_SECS } else { FAILURE_COOLDOWN_SECS };
+            if marked.expires_at > now_secs() + 60 {
+                store_account(&marked).await?;
+                return Ok(marked);
+            }
+            marked.session_error = detail;
             store_account(&marked).await?;
             Err(e)
         }
@@ -334,10 +363,13 @@ pub struct SessionStatus {
 pub async fn refresh_sessions(state: State<'_, AppState>) -> R<Vec<SessionStatus>> {
     let _guard = state.accounts_lock.lock().await;
     let mut out = Vec::new();
-    for account in config::load_accounts().await.into_iter().filter(|a| a.kind == "msa") {
+    let selected = config::load_settings().await.selected_account;
+    let accounts = config::load_accounts().await;
+    let current = accounts.iter().find(|a| a.id == selected).or_else(|| accounts.first()).cloned();
+    for account in current.into_iter().filter(|a| a.kind == "msa") {
         let before = account.expires_at;
         let id = account.id.clone();
-        out.push(match fresh(account, REFRESH_AHEAD_SECS).await {
+        out.push(match fresh(account, 60).await {
             Ok(a) => {
                 if !a.session_error.is_empty() {
                     let mut cleared = a.clone();
@@ -409,6 +441,19 @@ pub async fn share_screenshot(id: String, file: String, description: String) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_waits_out_cooldown() {
+        let now = now_secs();
+        let msa = |expires_at, retry_at| Account { kind: "msa".into(), expires_at, retry_at, refresh_token: "r".into(), ..Default::default() };
+        assert!(matches!(waiting(&msa(now + 30, now + 600), 3600), Some(Err(_))));
+        assert!(matches!(waiting(&msa(now + 7200, now + 600), 3 * 3600), Some(Ok(_))));
+        let blocked = waiting(&msa(now - 10, now + 600), 60).unwrap().err().unwrap();
+        assert!(format!("{:#}", blocked.0).contains("10 分鐘") && !format!("{:#}", blocked.0).contains("重新登入"));
+        assert!(waiting(&msa(now - 10, now - 1), 60).is_none());
+        assert!(waiting(&msa(now + 7200, 0), 3 * 3600).is_none());
+        assert!(matches!(waiting(&msa(now + 7200, 0), 60), Some(Ok(_))));
+    }
 
     #[test]
     fn skin_png_checks() {

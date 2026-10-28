@@ -205,7 +205,6 @@ export function startServices() {
         checkUpgrade().catch(() => {});
     });
     refreshSessions();
-    setInterval(refreshSessions, 30 * 60 * 1000);
     applyMusic();
     on('settings', applyMusic);
     on('instances', applyMusic);
