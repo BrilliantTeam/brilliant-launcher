@@ -650,6 +650,42 @@ pub async fn resolve_pack(refs: &[(u64, u64)]) -> R<(Vec<PackFile>, Vec<Blocked>
 mod tests {
     use super::*;
 
+    fn allowed_by_csp(url: &str) -> bool {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let csp = conf["app"]["security"]["csp"].as_str().unwrap();
+        let img = csp.split(';').find(|p| p.trim_start().starts_with("img-src")).unwrap();
+        img.split_whitespace().skip(1).any(|src| src.starts_with("https://") && url.starts_with(&format!("{src}/")))
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_proxy_end_to_end() {
+        for (kind, loader) in [(Kind::Mod, "fabric"), (Kind::Mod, "forge"), (Kind::Mod, "neoforge"), (Kind::ResourcePack, ""), (Kind::Shader, "")] {
+            let found = search(kind, loader, "", "1.21.1", "", "relevance", 0).await.unwrap();
+            assert!(!found.hits.is_empty(), "{kind:?} {loader} 沒有結果");
+            for hit in &found.hits {
+                let icon = hit.icon_url.as_deref().unwrap_or_default();
+                assert!(icon.is_empty() || allowed_by_csp(icon), "圖示被 CSP 擋住：{icon}");
+            }
+        }
+        let jei = search(Kind::Mod, "neoforge", "jei", "1.21.1", "", "relevance", 0).await.unwrap();
+        assert!(jei.hits.iter().any(|h| h.project_id == "cf-238222"));
+        assert!(!categories(Kind::Mod).await.unwrap().is_empty());
+        let detail = detail("cf-238222", Some(Kind::Mod), Some("1.21.1"), "neoforge").await.unwrap();
+        assert!(detail.title.contains("Just Enough Items"));
+        assert!(detail.gallery.iter().all(|g| allowed_by_csp(&g.url)), "畫廊圖片被 CSP 擋住");
+        let list = versions(Kind::Mod, "neoforge", "cf-238222", Some("1.21.1")).await.unwrap();
+        let file = list.iter().find_map(|v| v.file.clone()).expect("沒有可下載的版本");
+        assert!(cdn(&file.url));
+        let bytes = net::get_bytes(&file.url, false).await.unwrap();
+        assert_eq!(net::sha1_hex(&bytes), file.sha1);
+        let print = fingerprint(&bytes);
+        let (mod_id, file_id) = *match_files(&[print]).await.get(&print).expect("指紋比對不到");
+        assert_eq!(mod_id, 238222);
+        let (out, blocked, skipped) = resolve_pack(&[(mod_id, file_id)]).await.unwrap();
+        assert!(blocked.is_empty() && skipped.is_empty() && out.len() == 1 && out[0].path.starts_with("mods/"));
+    }
+
     #[test]
     fn murmur2_matches_reference_verification() {
         let key: Vec<u8> = (0..=255u8).collect();

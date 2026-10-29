@@ -2,7 +2,7 @@ import { api } from './api.js';
 import { dialog, fail, h, toast } from './ui.js';
 import { loadInstances } from './store.js';
 import { isIntegratedGpu } from './services.js';
-import { PRESETS } from './views/mods.js';
+import { PRESETS, presetSources } from './views/mods.js';
 
 const LABELS = {
     renderDistance: '顯示距離',
@@ -88,8 +88,12 @@ export async function perfCheck(instance) {
     } else if (value === 'sodium') {
         toast('正在安裝效能優化包⋯');
         const failed = [];
-        for (const [kind, project, title] of PRESETS[0].items) {
-            await api.content_install({ id: instance.id, kind, project }).catch(() => failed.push(title));
+        for (const item of PRESETS[0].items) {
+            let ok = false;
+            for (const project of presetSources(item, instance)) {
+                if ((ok = await api.content_install({ id: instance.id, kind: item[0], project }).then(() => true, () => false))) break;
+            }
+            if (!ok) failed.push(item[2]);
         }
         toast(failed.length ? `效能優化包已安裝，${failed.join('、')} 暫時沒有支援這個版本` : '效能優化包安裝完成', failed.length ? 'warn' : '');
     }

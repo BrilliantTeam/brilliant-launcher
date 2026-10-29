@@ -54,33 +54,33 @@ export const PRESETS = [
         title: '效能優化包',
         desc: '參考 Fabulously Optimized 與 Additive 的核心組合：提升 FPS、降低記憶體與卡頓，畫面和玩法都跟原版一樣。',
         items: [
-            ['mod', 'AANobbMI', 'Sodium'], ['mod', 'PtjYWJkn', 'Sodium Extra'], ['mod', 'Bh37bMuy', "Reese's Sodium Options"],
-            ['mod', 'gvQqBUqZ', 'Lithium'], ['mod', 'uXXizFIs', 'FerriteCore'], ['mod', 'NNAgCjsB', 'Entity Culling'],
-            ['mod', '5ZwdcRci', 'ImmediatelyFast'], ['mod', '51shyZVL', 'More Culling'], ['mod', 'LQ3K71Q1', 'Dynamic FPS'],
-            ['mod', 'TjSm1wrD', 'ModernFix'], ['mod', 'mOgUt4GM', 'Mod Menu']
+            ['mod', 'AANobbMI', 'Sodium', 394468], ['mod', 'PtjYWJkn', 'Sodium Extra', 447673], ['mod', 'Bh37bMuy', "Reese's Sodium Options", 511319],
+            ['mod', 'gvQqBUqZ', 'Lithium', 360438], ['mod', 'uXXizFIs', 'FerriteCore', 459857], ['mod', 'NNAgCjsB', 'Entity Culling', null],
+            ['mod', '5ZwdcRci', 'ImmediatelyFast', 686911], ['mod', '51shyZVL', 'More Culling', 630104], ['mod', 'LQ3K71Q1', 'Dynamic FPS', 335493],
+            ['mod', 'TjSm1wrD', 'ModernFix', 1367508], ['mod', 'mOgUt4GM', 'Mod Menu', 308702]
         ]
     },
     {
         title: '畫質增強包',
         desc: '在效能包之上補回 OptiFine 的畫面功能：連接材質、實體自訂材質與模型、手持光源，資源包效果更完整。',
         items: [
-            ['mod', 'AANobbMI', 'Sodium'], ['mod', '1IjD5062', 'Continuity'], ['mod', 'BVzZfTc1', 'Entity Texture Features'],
-            ['mod', '4I1XuqiY', 'Entity Model Features'], ['mod', 'yBW8D80W', 'LambDynamicLights'], ['mod', 'aXf2OSFU', 'Ok Zoomer']
+            ['mod', 'AANobbMI', 'Sodium', 394468], ['mod', '1IjD5062', 'Continuity', 531351], ['mod', 'BVzZfTc1', 'Entity Texture Features', 568563],
+            ['mod', '4I1XuqiY', 'Entity Model Features', 844662], ['mod', 'yBW8D80W', 'LambDynamicLights', 393442], ['mod', 'aXf2OSFU', 'Ok Zoomer', 354047]
         ]
     },
     {
         title: '輔助模組包',
         desc: '必裝的 BetterF3 加上常用的小幫手：看得懂的 F3、飽食度、方塊資訊、聊天頭像、按鍵搜尋，只改介面不改玩法。',
         items: [
-            ['mod', '8shC1gFX', 'BetterF3'], ['mod', 'EsAfCjCV', 'AppleSkin'], ['mod', 'nvQzSEkH', 'Jade'],
-            ['mod', 'aC3cM3Vq', 'Mouse Tweaks'], ['mod', 'xv94TkTM', 'Controlling'], ['mod', '2M01OLQq', 'Shulker Box Tooltip'],
-            ['mod', 'Wb5oqrBJ', 'Chat Heads'], ['mod', 'smUP7V3r', 'Durability Tooltip']
+            ['mod', '8shC1gFX', 'BetterF3', 401648], ['mod', 'EsAfCjCV', 'AppleSkin', 248787], ['mod', 'nvQzSEkH', 'Jade', 324717],
+            ['mod', 'aC3cM3Vq', 'Mouse Tweaks', 60089], ['mod', 'xv94TkTM', 'Controlling', 250398], ['mod', '2M01OLQq', 'Shulker Box Tooltip', 315811],
+            ['mod', 'Wb5oqrBJ', 'Chat Heads', 407206], ['mod', 'smUP7V3r', 'Durability Tooltip', 511040]
         ]
     },
     {
         title: '光影包',
         desc: 'Sodium + Iris 光影載入器，附 Complementary 光影，進遊戲在「視訊設定 → 光影包」開啟。建議搭配獨立顯示卡。',
-        items: [['mod', 'AANobbMI', 'Sodium'], ['mod', 'YL57xq9U', 'Iris Shaders'], ['shader', 'HVnmMxH1', 'Complementary Reimagined']]
+        items: [['mod', 'AANobbMI', 'Sodium', 394468], ['mod', 'YL57xq9U', 'Iris Shaders', 455508], ['shader', 'HVnmMxH1', 'Complementary Reimagined', 627557]]
     }
 ];
 
@@ -360,15 +360,26 @@ function resultCard(hit) {
         actionButton(kind, hit.project_id, hit.title));
 }
 
+export function presetSources([, id, , cf], instance = selectedInstance()) {
+    if (!cf) return [id];
+    return instance?.contentSource === 'curseforge' ? [`cf-${cf}`, id] : [id, `cf-${cf}`];
+}
+
+const presetEntry = (item) => presetSources(item).map((project) => installedEntry(item[0], project)).find(Boolean) ?? null;
+
 function presetState(preset) {
-    const missing = preset.items.filter(([kind, id]) => !installedEntry(kind, id));
-    return { missing, running: preset.items.some(([kind, id]) => busy.has(`${kind}:${id}`)) };
+    const missing = preset.items.filter((item) => !presetEntry(item));
+    return { missing, running: preset.items.some((item) => presetSources(item).some((project) => busy.has(`${item[0]}:${project}`))) };
 }
 
 async function installItems(preset, items) {
     const failed = [];
-    for (const [kind, id, title] of items) {
-        if (!(await install(kind, id, title, true))) failed.push(title);
+    for (const item of items) {
+        let ok = false;
+        for (const project of presetSources(item)) {
+            if ((ok = await install(item[0], project, item[2], true))) break;
+        }
+        if (!ok) failed.push(item[2]);
     }
     const ok = items.length - failed.length;
     if (!failed.length) toast(`「${preset.title}」安裝完成（${ok} 個）`);
@@ -381,8 +392,8 @@ async function installPreset(preset) {
 
 async function customizePreset(preset) {
     const rows = preset.items.map((item) => {
-        const [kind, id, title] = item;
-        const have = !!installedEntry(kind, id);
+        const title = item[2];
+        const have = !!presetEntry(item);
         const input = h('input', { type: 'checkbox', checked: !have, disabled: have });
         const el = h('label', { class: `pick-row ${have ? 'have' : ''}` }, input, h('span', { class: 'grow' }, title), have ? h('span', { class: 'pick-tag' }, icon('check'), '已安裝') : null);
         return { item, have, input, el };
@@ -425,8 +436,8 @@ function renderPresets() {
         return h('div', { class: `preset ${done ? 'done' : ''}` },
             h('div', { class: 'preset-title' }, preset.title),
             h('div', { class: 'preset-desc' }, preset.desc),
-            h('div', { class: 'preset-items' }, ...preset.items.map(([kind, id, title]) =>
-                h('span', { class: installedEntry(kind, id) ? 'have' : '' }, installedEntry(kind, id) ? icon('check') : '', title))),
+            h('div', { class: 'preset-items' }, ...preset.items.map((item) =>
+                h('span', { class: presetEntry(item) ? 'have' : '' }, presetEntry(item) ? icon('check') : '', item[2]))),
             h('div', { class: 'preset-actions' },
                 h('button', {
                     type: 'button',
