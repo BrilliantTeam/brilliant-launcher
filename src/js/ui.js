@@ -195,6 +195,27 @@ export function toast(message, kind = '') {
     }, kind === 'error' ? Math.max(ms * 2, 8000) : ms);
 }
 
+export function progressToast(title) {
+    const fill = h('div', { class: 'fill' });
+    const label = h('span', {}, '準備中⋯');
+    const count = h('span', {});
+    const box = h('div', { class: 'toast task', role: 'status' }, h('b', {}, title), h('div', { class: 'track' }, fill), h('div', { class: 'caption' }, label, count));
+    $('#toasts').append(box);
+    return {
+        set({ label: text, doneFiles = 0, totalFiles = 0, doneBytes = 0, totalBytes = 0 }) {
+            const ratio = totalBytes > 0 ? doneBytes / totalBytes : totalFiles > 0 ? doneFiles / totalFiles : 0;
+            box.classList.toggle('busy', !totalFiles);
+            fill.style.width = `${Math.min(100, ratio * 100).toFixed(1)}%`;
+            label.textContent = text || '處理中⋯';
+            count.textContent = totalFiles ? `${doneFiles} / ${totalFiles}${totalBytes ? `　${fmtBytes(doneBytes)} / ${fmtBytes(totalBytes)}` : ''}` : '';
+        },
+        close() {
+            box.classList.add('out');
+            setTimeout(() => box.remove(), 250);
+        }
+    };
+}
+
 export function fail(error) {
     console.error(error);
     toast(typeof error === 'string' ? error : (error?.message ?? String(error)), 'error');

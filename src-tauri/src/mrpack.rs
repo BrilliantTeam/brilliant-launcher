@@ -296,6 +296,7 @@ pub fn part_of(rel: &Path) -> &'static str {
 #[tauri::command]
 pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: String, target: Option<String>, parts: Option<Vec<String>>) -> R<Imported> {
     let source = PathBuf::from(&path);
+    net::emit_stage(&app, "import", "讀取模組包");
     let (mut index, refs, mut overrides) = tokio::task::spawn_blocking(move || read_pack(&source)).await.context("讀取模組包中斷")??;
     let wanted = |rel: &Path| parts.as_ref().is_none_or(|p| p.iter().any(|x| x == part_of(rel)));
     overrides.retain(|(rel, _)| wanted(rel));
@@ -308,6 +309,7 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
         if index.dependencies.contains_key("quilt-loader") {
             bail!("這是 Quilt 模組包，輝煌啟動器只支援 Fabric、Forge 與 NeoForge");
         }
+        net::emit_stage(&app, "import", &format!("向 CurseForge 查詢 {} 個檔案", refs.len()));
         let (files, stopped, missing) = crate::curseforge::resolve_pack(&refs).await.map_err(|e| e.0.context("向 CurseForge 查詢模組包內容失敗"))?;
         blocked = stopped;
         skipped = missing;
@@ -403,6 +405,7 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
 
 async fn write_pack(app: &AppHandle, game: &Path, jobs: Vec<DlFile>, overrides: Vec<(PathBuf, Vec<u8>)>, mods: &mut Vec<String>, existing: Option<&str>) -> R<()> {
     if let Some(pack) = existing {
+        net::emit_stage(app, "import", "比對實例裡已有的檔案");
         let mut replaced: Vec<(PathBuf, String)> = Vec::new();
         for job in &jobs {
             let differs = std::fs::read(&job.path).is_ok_and(|b| job.sha1.as_deref().is_some_and(|want| !net::sha1_hex(&b).eq_ignore_ascii_case(want)));
@@ -422,7 +425,11 @@ async fn write_pack(app: &AppHandle, game: &Path, jobs: Vec<DlFile>, overrides: 
         }
     }
     if !jobs.is_empty() {
-        net::download_all(app, "mods", jobs, false).await?;
+        net::emit_stage(app, "import", &format!("檢查 {} 個檔案", jobs.len()));
+        net::download_all(app, "import", jobs, false).await?;
+    }
+    if !overrides.is_empty() {
+        net::emit_stage(app, "import", &format!("寫入設定檔與其他檔案（{} 個）", overrides.len()));
     }
     for (rel, bytes) in overrides {
         if rel.starts_with("mods") {

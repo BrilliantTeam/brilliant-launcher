@@ -378,6 +378,16 @@ pub(crate) fn encode(text: &str) -> String {
         .collect()
 }
 
+pub async fn icons(ids: &[String]) -> HashMap<String, String> {
+    let ids: Vec<&String> = ids.iter().filter(|id| valid_id(id)).take(100).collect();
+    if ids.is_empty() {
+        return HashMap::new();
+    }
+    let url = format!("{API}/projects?ids={}", encode(&serde_json::to_string(&ids).unwrap_or_default()));
+    let found: Vec<ProjectInfo> = net::get_json(&url, false).await.unwrap_or_default();
+    found.into_iter().filter_map(|p| Some((p.id, p.icon_url?))).collect()
+}
+
 pub fn valid_id(id: &str) -> bool {
     (2..=64).contains(&id.len()) && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }

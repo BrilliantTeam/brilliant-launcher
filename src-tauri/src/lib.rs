@@ -129,6 +129,7 @@ pub fn run() {
             commands::content_list,
             commands::content_versions,
             commands::content_categories,
+            commands::content_icons,
             commands::set_content_source,
             commands::content_pin,
             commands::set_mod_profiles,

@@ -254,6 +254,7 @@ pub struct CategoryInfo {
 pub struct Blocked {
     pub name: String,
     pub url: String,
+    pub icon_url: Option<String>,
 }
 
 pub struct PackFile {
@@ -287,6 +288,11 @@ async fn mods_by_id(ids: &[u64]) -> HashMap<u64, Mod> {
     }
     let found: R<Envelope<Vec<Mod>>> = net::post_json(&format!("{PROXY}/mods"), &json!({ "modIds": ids })).await;
     found.map(|e| e.data.into_iter().map(|m| (m.id, m)).collect()).unwrap_or_default()
+}
+
+pub async fn icons(projects: &[String]) -> HashMap<String, String> {
+    let ids: Vec<u64> = projects.iter().filter_map(|p| parse_id(p).ok()).take(100).collect();
+    mods_by_id(&ids).await.into_iter().filter_map(|(id, m)| Some((tag(id), m.logo.and_then(|l| l.thumbnail_url.or(l.url))?))).collect()
 }
 
 async fn files_by_id(ids: &[u64]) -> R<Vec<File>> {
@@ -639,7 +645,11 @@ pub async fn resolve_pack(refs: &[(u64, u64)]) -> R<(Vec<PackFile>, Vec<Blocked>
         };
         match file.update(kind) {
             Some(u) => out.push(PackFile { path: format!("{folder}/{}", u.filename), url: u.url, sha1: u.sha1, size: u.size }),
-            None if file.download_url.is_none() && safe_file(&file.file_name, kind) => blocked.push(Blocked { name: label, url: m.map(Mod::web_url).unwrap_or_default() }),
+            None if file.download_url.is_none() && safe_file(&file.file_name, kind) => blocked.push(Blocked {
+                name: label,
+                url: m.map(Mod::web_url).unwrap_or_default(),
+                icon_url: m.and_then(|m| m.logo.as_ref()).and_then(|l| l.thumbnail_url.clone().or(l.url.clone())),
+            }),
             None => skipped.push(label),
         }
     }
@@ -684,6 +694,10 @@ mod tests {
         assert_eq!(mod_id, 238222);
         let (out, blocked, skipped) = resolve_pack(&[(mod_id, file_id)]).await.unwrap();
         assert!(blocked.is_empty() && skipped.is_empty() && out.len() == 1 && out[0].path.starts_with("mods/"));
+        let cf = icons(&["cf-238222".into(), "cf-459857".into()]).await;
+        assert!(cf.len() == 2 && cf.values().all(|u| allowed_by_csp(u)), "CurseForge 圖示查詢：{cf:?}");
+        let mr = crate::modrinth::icons(&["AANobbMI".into(), "gvQqBUqZ".into()]).await;
+        assert!(mr.len() == 2 && mr.values().all(|u| allowed_by_csp(u)), "Modrinth 圖示查詢：{mr:?}");
     }
 
     #[test]

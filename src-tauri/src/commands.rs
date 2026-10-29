@@ -432,6 +432,14 @@ pub async fn content_categories(kind: String) -> R<Vec<curseforge::CategoryInfo>
 }
 
 #[tauri::command]
+pub async fn content_icons(projects: Vec<String>) -> R<std::collections::HashMap<String, String>> {
+    let (cf, mr): (Vec<String>, Vec<String>) = projects.into_iter().take(200).partition(|p| curseforge::is_cf(p));
+    let (mut found, more) = tokio::join!(modrinth::icons(&mr), curseforge::icons(&cf));
+    found.extend(more);
+    Ok(found)
+}
+
+#[tauri::command]
 pub async fn content_install(app: AppHandle, id: String, kind: String, project: String) -> R<Vec<String>> {
     let settings = config::load_settings().await;
     let instance = instance::get(&id).await?;

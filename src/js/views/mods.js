@@ -1,5 +1,5 @@
 import { api, fileSrc, isType, listen, openUrl, pickFile, typeLabel, watchFolders } from '../api.js';
-import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtBytes, fmtDuration, h, modalOpen, toast, guard } from '../ui.js';
+import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtBytes, fmtDuration, h, modalOpen, progressToast, toast, guard } from '../ui.js';
 import { emit, isRunning, loaderLabel, loadInstances, modded, on, selectedInstance, store } from '../store.js';
 import { icon, iconOf, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
 import { accentStyle, editInstance, moreMenu, playInstance, selectInstance, shareNotice } from './instances.js';
@@ -101,6 +101,29 @@ function instanceProblem(kind = state.kind) {
 
 function installedEntry(kind, projectId) {
     return installed[kind]?.find((item) => item.project_id === projectId) ?? null;
+}
+
+const projectIcons = new Map();
+
+async function wantIcons(ids) {
+    const need = [...new Set(ids)].filter((id) => id && !projectIcons.has(id));
+    if (!need.length) return;
+    for (const id of need) projectIcons.set(id, null);
+    const found = (await api.content_icons({ projects: need }).catch(() => null)) ?? {};
+    for (const [id, url] of Object.entries(found)) projectIcons.set(id, url);
+    for (const slot of document.querySelectorAll('[data-icon-for]')) {
+        const url = projectIcons.get(slot.dataset.iconFor);
+        if (url) slot.replaceChildren(h('img', { src: url, alt: '', loading: 'lazy' }));
+    }
+}
+
+function iconSlot(kind, id, url = null) {
+    const src = url || (id && (installedEntry(kind, id)?.icon_url || projectIcons.get(id)));
+    return h('span', { class: 'pchip-icon', ...(src ? {} : { 'data-icon-for': id || '' }) }, src ? h('img', { src, alt: '', loading: 'lazy' }) : icon(KIND_ICON[kind]));
+}
+
+function projectChip(kind, id, title, cls = '') {
+    return h('span', { class: `pchip ${cls}` }, iconSlot(kind, id), title);
 }
 
 async function loadInstalled(kind) {
@@ -265,11 +288,13 @@ function compatBox(kind, detail) {
     const required = names('required');
     const optional = names('optional');
     const incompatible = names('incompatible');
+    wantIcons(c.deps.map((d) => d.project_id));
+    const chips = (list, note = () => '') => h('span', { class: 'pchips' }, ...list.map((d) => projectChip('mod', d.project_id, `${d.title}${note(d)}`)));
     return h('div', { class: 'compat' },
         h('div', {}, icon('check'), `支援 Minecraft ${c.mc}：最新版本 ${c.version_number}${c.version_type !== 'release' ? `（${VERSION_TYPE[c.version_type]?.[0] ?? c.version_type}）` : ''}，${dateText(c.date_published)} 發佈`),
-        kind === 'mod' && required.length ? h('div', {}, icon('download'), `需要前置：${required.map((d) => d.title).join('、')}（安裝時會自動一起裝好）`) : null,
-        optional.length ? h('div', {}, icon('plus'), `可搭配：${optional.map((d) => d.title).join('、')}`) : null,
-        incompatible.length ? h('div', { class: 'bad' }, icon('warning-box'), `不相容：${incompatible.map((d) => `${d.title}${installedEntry(kind, d.project_id) ? '（這個實例已安裝，請擇一使用）' : ''}`).join('、')}`) : null);
+        kind === 'mod' && required.length ? h('div', {}, icon('download'), '需要前置（安裝時會自動一起裝好）：', chips(required)) : null,
+        optional.length ? h('div', {}, icon('plus'), '可搭配：', chips(optional)) : null,
+        incompatible.length ? h('div', { class: 'bad' }, icon('warning-box'), '不相容：', chips(incompatible, (d) => (installedEntry(kind, d.project_id) ? '（這個實例已安裝，請擇一使用）' : ''))) : null);
 }
 
 async function showDetail(kind, hit) {
@@ -393,9 +418,10 @@ async function installPreset(preset) {
 async function customizePreset(preset) {
     const rows = preset.items.map((item) => {
         const title = item[2];
-        const have = !!presetEntry(item);
+        const entry = presetEntry(item);
+        const have = !!entry;
         const input = h('input', { type: 'checkbox', checked: !have, disabled: have });
-        const el = h('label', { class: `pick-row ${have ? 'have' : ''}` }, input, h('span', { class: 'grow' }, title), have ? h('span', { class: 'pick-tag' }, icon('check'), '已安裝') : null);
+        const el = h('label', { class: `pick-row ${have ? 'have' : ''}` }, input, iconSlot(item[0], item[1], entry?.icon_url), h('span', { class: 'grow' }, title), have ? h('span', { class: 'pick-tag' }, icon('check'), '已安裝') : null);
         return { item, have, input, el };
     });
     const count = h('span', { class: 'pick-count' });
@@ -430,14 +456,17 @@ function renderPresets() {
     const box = clear($('#presets'));
     box.hidden = state.kind !== 'mod' || selectedInstance()?.loader !== 'fabric';
     if (box.hidden) return;
+    wantIcons(PRESETS.flatMap((preset) => preset.items.map((item) => item[1])));
     box.append(...PRESETS.map((preset) => {
         const { missing, running } = presetState(preset);
         const done = !missing.length;
         return h('div', { class: `preset ${done ? 'done' : ''}` },
             h('div', { class: 'preset-title' }, preset.title),
             h('div', { class: 'preset-desc' }, preset.desc),
-            h('div', { class: 'preset-items' }, ...preset.items.map((item) =>
-                h('span', { class: presetEntry(item) ? 'have' : '' }, presetEntry(item) ? icon('check') : '', item[2]))),
+            h('div', { class: 'preset-items' }, ...preset.items.map((item) => {
+                const have = presetEntry(item);
+                return h('span', { class: `pchip ${have ? 'have' : ''}` }, iconSlot(item[0], item[1], have?.icon_url), item[2], have ? icon('check') : '');
+            })),
             h('div', { class: 'preset-actions' },
                 h('button', {
                     type: 'button',
@@ -664,6 +693,7 @@ async function showBlocked(list, instanceId) {
         content: h('div', {},
             h('p', {}, `下面 ${list.length} 個項目的作者不允許第三方啟動器下載，請到 CurseForge 網頁下載後，放進實例的 mods（資源包放 resourcepacks、光影放 shaderpacks）資料夾。`),
             h('div', { class: 'rows' }, ...list.map((b) => h('div', { class: 'row' },
+                b.icon_url ? h('img', { class: 'row-icon', src: b.icon_url, alt: '' }) : h('div', { class: 'row-icon' }, icon(KIND_ICON.mod)),
                 h('div', { class: 'grow' }, h('div', { class: 'name' }, b.name)),
                 /^https:\/\//.test(b.url) ? h('button', { type: 'button', class: 'mc', onclick: () => openUrl(b.url) }, icon('external-link'), '開啟網頁') : null)))),
         buttons: [{ label: '開啟 mods 資料夾', value: 'folder' }, { label: '知道了', value: null }]
@@ -698,12 +728,16 @@ export async function importPack(targetId = null, dropped = null) {
         parts = boxes.map((b) => b.querySelector('input')).filter((i) => i.checked).map((i) => i.value);
         if (!parts.length) return toast('沒有勾選任何內容', 'warn');
     }
-    toast(target ? '正在讀取模組包並下載檔案⋯' : '正在讀取模組包並建立新實例⋯');
+    const task = progressToast(`匯入「${path.split(/[\\/]/).pop()}」`);
+    const stop = await listen('launcher://progress', (p) => { if (p.stage === 'import') task.set(p); });
     let result;
     try {
         result = await api.mrpack_import({ path, target, parts });
     } catch (error) {
         return fail(error);
+    } finally {
+        stop();
+        task.close();
     }
     if (result.skipped.length) toast(`有 ${result.skipped.length} 個檔案來源不受信任或格式不正確，已略過：${result.skipped.slice(0, 3).join('、')}`, 'warn');
     if (result.blocked?.length) await showBlocked(result.blocked, result.instanceId);
@@ -982,11 +1016,12 @@ function depBanner(list) {
     }
     const needs = new Map();
     for (const entry of missing) for (const dep of entry.missing) needs.set(dep.project_id, dep);
+    wantIcons([...needs.keys()]);
     const fixing = busy.has('deps');
     return h('div', { class: 'dep-check bad' },
         h('div', { class: 'grow' },
             h('b', {}, icon('warning-box'), missing.length ? `${missing.length} 個模組缺少前置` : '有模組互相衝突'),
-            ...missing.map((e) => h('div', {}, `${e.name} 需要 ${e.missing.map((d) => `${d.title}${d.disabled ? '（已停用）' : ''}`).join('、')}`)),
+            ...missing.map((e) => h('div', {}, `${e.name} 需要`, h('span', { class: 'pchips' }, ...e.missing.map((d) => projectChip('mod', d.project_id, `${d.title}${d.disabled ? '（已停用）' : ''}`))))),
             ...conflicts.map((e) => h('div', {}, `${e.name} 與 ${e.conflicts.join('、')} 衝突，建議停用其中一個`))),
         needs.size ? h('button', {
             type: 'button',
