@@ -1009,7 +1009,35 @@ function depBanner(list) {
     if (state.kind !== 'mod' || !list?.length) return null;
     const missing = list.filter((e) => e.missing?.length);
     const conflicts = list.filter((e) => e.conflicts?.length);
+    const oldLoader = list.filter((e) => e.loader_needed);
     const unknown = list.filter((e) => !e.project_id && !e.managed).length;
+    if (oldLoader.length) {
+        const instance = selectedInstance();
+        const updating = busy.has('loader');
+        return h('div', { class: 'dep-check bad' },
+            h('div', { class: 'grow' },
+                h('b', {}, icon('warning-box'), `${oldLoader.length} 個模組需要較新的 Fabric Loader（目前是 ${instance?.loaderVersion || '未知'}），這樣會無法開始遊戲`),
+                ...oldLoader.map((e) => h('div', {}, `${e.name} 需要 Fabric Loader ${e.loader_needed}`))),
+            h('button', {
+                type: 'button',
+                class: 'mc primary',
+                disabled: updating,
+                onclick: async () => {
+                    busy.add('loader');
+                    renderAll();
+                    try {
+                        await api.update_instance({ updated: { ...instance, loaderVersion: '' } });
+                        await loadInstances();
+                        toast(`已把 Fabric Loader 更新到 ${selectedInstance()?.loaderVersion ?? '最新穩定版'}`);
+                    } catch (error) {
+                        fail(error);
+                    }
+                    busy.delete('loader');
+                    await loadInstalled('mod');
+                    renderAll();
+                }
+            }, updating ? '更新中⋯' : '更新 Fabric Loader'));
+    }
     if (!missing.length && !conflicts.length) {
         return h('div', { class: 'dep-check ok' }, icon('check'),
             `前置檢查通過：${list.filter((e) => e.enabled).length} 個啟用中的模組依賴都齊全${unknown ? `（${unknown} 個不在 Modrinth 或 CurseForge 上，無法檢查）` : ''}`);
@@ -1084,7 +1112,7 @@ function installedRow(entry) {
     const kind = state.kind;
     const updating = busy.has(`file:${entry.file}`);
     const missing = missingOf(kind, entry);
-    const problems = (missing.length ? 1 : 0) + (entry.conflicts?.length ? 1 : 0);
+    const problems = (missing.length ? 1 : 0) + (entry.conflicts?.length ? 1 : 0) + (entry.loader_needed ? 1 : 0);
     return h('div', { class: `row ${entry.enabled ? '' : 'off'} ${problems ? 'has-problem' : ''}` },
         entry.icon_url ? h('img', { class: 'row-icon', src: entry.icon_url, alt: '' }) : h('div', { class: 'row-icon' }, icon(KIND_ICON[kind])),
         h('div', entry.project_id && !entry.managed ? { class: 'grow clickable', title: '查看詳細介紹', onclick: () => showDetail(kind, { project_id: entry.project_id, title: entry.name }) } : { class: 'grow' },
@@ -1094,6 +1122,7 @@ function installedRow(entry) {
                 !entry.enabled ? h('span', { class: 'badge grey' }, '已停用') : null,
                 entry.pinned ? h('span', { class: 'badge grey' }, '已鎖定版本') : null,
                 missing.length ? h('span', { class: 'badge warn' }, `缺少 ${missing.map((d) => d.title).join('、')}`) : null,
+                entry.loader_needed ? h('span', { class: 'badge warn' }, `需要 Fabric Loader ${entry.loader_needed}`) : null,
                 entry.conflicts?.length ? h('span', { class: 'badge warn' }, `與 ${entry.conflicts.join('、')} 衝突`) : null,
                 entry.update && !entry.pinned ? h('span', { class: 'badge warn' }, `可更新 ${entry.update.version}`) : null),
             h('div', { class: 'meta' }, [entry.version, fmtBytes(entry.size), entry.dependents?.length ? `被 ${listNames(entry.dependents)} 需要` : entry.file].filter(Boolean).join('｜'))),

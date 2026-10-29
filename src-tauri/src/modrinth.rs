@@ -19,6 +19,68 @@ pub struct Digest {
     pub size: u64,
     pub icon: Option<String>,
     pub print: u32,
+    pub loader_req: Option<String>,
+}
+
+fn fabric_loader_req(bytes: &[u8]) -> Option<String> {
+    use std::io::Read;
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    let mut raw = String::new();
+    zip.by_name("fabric.mod.json").ok()?.take(1 << 20).read_to_string(&mut raw).ok()?;
+    let clean: String = raw.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
+    let meta: serde_json::Value = serde_json::from_str(&clean).ok()?;
+    match meta.get("depends")?.get("fabricloader")? {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Array(list) => Some(list.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>().join(" || ")),
+        _ => None,
+    }
+}
+
+fn version_parts(text: &str) -> Option<Vec<u64>> {
+    text.trim().split(['-', '+']).next()?.split('.').map(|p| p.parse().ok()).collect()
+}
+
+fn version_cmp(a: &[u64], b: &[u64]) -> std::cmp::Ordering {
+    (0..a.len().max(b.len())).map(|i| a.get(i).unwrap_or(&0).cmp(b.get(i).unwrap_or(&0))).find(|o| o.is_ne()).unwrap_or(std::cmp::Ordering::Equal)
+}
+
+fn predicate_ok(predicate: &str, have: &[u64]) -> Option<bool> {
+    use std::cmp::Ordering::*;
+    let p = predicate.trim();
+    if p.is_empty() || p == "*" {
+        return Some(true);
+    }
+    let (op, rest) = [">=", "<=", ">", "<", "=", "^", "~"].iter().find_map(|o| p.strip_prefix(o).map(|r| (*o, r.trim()))).unwrap_or(("=", p));
+    if rest.contains(['x', 'X', '*']) {
+        let prefix: Vec<u64> = rest.split('.').map_while(|s| s.parse().ok()).collect();
+        return (op == "=").then(|| have.len() >= prefix.len() && have[..prefix.len()] == prefix[..]);
+    }
+    let want = version_parts(rest)?;
+    let order = version_cmp(have, &want);
+    let head = |n: usize| have.iter().chain(std::iter::repeat(&0)).take(n).eq(want.iter().chain(std::iter::repeat(&0)).take(n));
+    Some(match op {
+        ">=" => order != Less,
+        "<=" => order != Greater,
+        ">" => order == Greater,
+        "<" => order == Less,
+        "^" => order != Less && head(1),
+        "~" => order != Less && head(2),
+        _ => order == Equal,
+    })
+}
+
+pub fn loader_satisfies(requirement: &str, version: &str) -> Option<bool> {
+    let have = version_parts(version)?;
+    let mut unknown = false;
+    for alternative in requirement.split("||") {
+        let results: Option<Vec<bool>> = alternative.split_whitespace().map(|p| predicate_ok(p, &have)).collect();
+        match results {
+            Some(r) if r.iter().all(|ok| *ok) => return Some(true),
+            Some(_) => {}
+            None => unknown = true,
+        }
+    }
+    if unknown { None } else { Some(false) }
 }
 
 pub fn embedded_icon(bytes: &[u8], is_mod: bool) -> Option<String> {
@@ -74,7 +136,8 @@ pub async fn digest(path: &Path) -> Option<Digest> {
         let is_mod = name.ends_with(".jar") || name.ends_with(".jar.disabled");
         let nested = if is_mod { nested_jars(&bytes) } else { Vec::new() };
         let icon = if is_mod || name.ends_with(".zip") || name.ends_with(".zip.disabled") { embedded_icon(&bytes, is_mod) } else { None };
-        Some(Digest { sha1: sha1_hex(&bytes), nested, size: bytes.len() as u64, icon, print: crate::curseforge::fingerprint(&bytes) })
+        let loader_req = if is_mod { fabric_loader_req(&bytes) } else { None };
+        Some(Digest { sha1: sha1_hex(&bytes), nested, size: bytes.len() as u64, icon, print: crate::curseforge::fingerprint(&bytes), loader_req })
     })
     .await
     .ok()??;
@@ -367,6 +430,7 @@ pub struct Installed {
     pub missing: Vec<DepRef>,
     pub conflicts: Vec<String>,
     pub dependents: Vec<String>,
+    pub loader_needed: Option<String>,
 }
 
 pub(crate) fn encode(text: &str) -> String {
@@ -593,6 +657,7 @@ fn managed_name(file: &str) -> Option<&'static str> {
 #[derive(Clone, Copy)]
 pub struct Scope<'a> {
     pub loader: &'a str,
+    pub loader_version: &'a str,
     pub mc: &'a str,
     pub pinned: &'a [String],
     pub auto_api: bool,
@@ -602,7 +667,7 @@ pub struct Scope<'a> {
 }
 
 pub async fn installed(instance_id: &str, kind: Kind, scope: &Scope<'_>) -> R<Vec<Installed>> {
-    let Scope { loader, mc, pinned, auto_api, channel, frozen, curseforge_first } = *scope;
+    let Scope { loader, loader_version, mc, pinned, auto_api, channel, frozen, curseforge_first } = *scope;
     let dir = kind.dir(instance_id);
     let mut out = Vec::new();
     let mut hashes = Vec::new();
@@ -622,6 +687,9 @@ pub async fn installed(instance_id: &str, kind: Kind, scope: &Scope<'_>) -> R<Ve
             local_icons.push(found.icon);
             let enabled = !file.ends_with(DISABLED_SUFFIX);
             let stem = file.trim_end_matches(DISABLED_SUFFIX).trim_end_matches(kind.extension()).to_string();
+            let loader_needed = found
+                .loader_req
+                .filter(|req| enabled && loader == "fabric" && loader_satisfies(req, loader_version) == Some(false));
             out.push(Installed {
                 name: managed_name(&file).map(str::to_string).unwrap_or(stem),
                 managed: kind == Kind::Mod && crate::modinject::is_managed(&file),
@@ -638,6 +706,7 @@ pub async fn installed(instance_id: &str, kind: Kind, scope: &Scope<'_>) -> R<Ve
                 missing: Vec::new(),
                 conflicts: Vec::new(),
                 dependents: Vec::new(),
+                loader_needed,
             });
         }
     }
@@ -896,7 +965,7 @@ mod tests {
                 std::fs::copy(entry.path(), dir.join(entry.file_name())).unwrap();
             }
         }
-        let scope = Scope { loader: "fabric", mc: &mc, pinned: &[], auto_api: false, channel: "release", frozen: false, curseforge_first: false };
+        let scope = Scope { loader: "fabric", loader_version: "", mc: &mc, pinned: &[], auto_api: false, channel: "release", frozen: false, curseforge_first: false };
         let list = installed("real", Kind::Mod, &scope).await.unwrap();
         let known = list.iter().filter(|e| e.project_id.is_some()).count();
         println!("共 {} 個，Modrinth 認得 {} 個", list.len(), known);
@@ -944,6 +1013,27 @@ mod tests {
         if let Some(real) = std::env::var_os("BRILLIANT_MOD_JAR") {
             assert!(embedded_icon(&std::fs::read(real).unwrap(), true).is_some(), "輝煌模組要讀得到圖示");
         }
+    }
+
+    #[test]
+    fn fabric_loader_requirements() {
+        assert_eq!(loader_satisfies(">=0.20.1", "0.19.5"), Some(false));
+        assert_eq!(loader_satisfies(">=0.20.1", "0.20.1"), Some(true));
+        assert_eq!(loader_satisfies(">=0.16 <0.17", "0.16.9"), Some(true));
+        assert_eq!(loader_satisfies(">=0.16 <0.17", "0.17.0"), Some(false));
+        assert_eq!(loader_satisfies("^0.15.0", "0.19.5"), Some(true));
+        assert_eq!(loader_satisfies("~0.15.3", "0.16.0"), Some(false));
+        assert_eq!(loader_satisfies("0.15.x", "0.15.11"), Some(true));
+        assert_eq!(loader_satisfies("*", "0.19.5"), Some(true));
+        assert_eq!(loader_satisfies(">=0.21 || <0.16", "0.19.5"), Some(false));
+        assert_eq!(loader_satisfies(">=0.21 || <0.20", "0.19.5"), Some(true));
+        assert_eq!(loader_satisfies(">=0.20.0-beta.3", "0.19.5"), Some(false));
+        assert_eq!(loader_satisfies(">=abc", "0.19.5"), None);
+        assert_eq!(loader_satisfies(">=0.20.1", ""), None);
+        let mut jar = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        jar.start_file("fabric.mod.json", zip::write::SimpleFileOptions::default()).unwrap();
+        std::io::Write::write_all(&mut jar, br#"{"id":"x","depends":{"fabricloader":">=0.20.1","minecraft":"26.3"}}"#).unwrap();
+        assert_eq!(fabric_loader_req(&jar.finish().unwrap().into_inner()).as_deref(), Some(">=0.20.1"));
     }
 
     #[tokio::test]

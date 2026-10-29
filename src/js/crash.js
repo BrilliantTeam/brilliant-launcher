@@ -97,6 +97,19 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
             else if (how.startsWith('which') && !byId(dep)) add({ kind: 'install', target: dep, label: `安裝缺少的前置模組 ${dep}` });
             else update(byId(dep));
         }
+        const zh = /模[組组] '[^']*' \(([\w-]+)\)[^\n]*?需要[^\n]*?模[組组] '[^']*' \(([\w-]+)\)(.*)/.exec(line);
+        if (zh) {
+            const [, owner, dep, rest] = zh;
+            if (dep === 'fabricloader') loader();
+            else if (NO_INSTALL.has(dep)) update(byId(owner));
+            else if (!/錯誤|错误/.test(rest) && !byId(dep)) add({ kind: 'install', target: dep, label: `安裝缺少的前置模組 ${dep}` });
+            else update(byId(dep));
+        }
+        const zhReplace = /^\s*-\s*(?:將|将) 模[組组] '[^']*' \(([\w-]+)\)/.exec(line);
+        if (zhReplace) {
+            if (zhReplace[1] === 'fabricloader') loader();
+            else update(byId(zhReplace[1]));
+        }
         const install = /^\s*-\s*Install ([\w-]+),/.exec(line);
         if (install?.[1] === 'fabricloader') loader();
         if (install && !NO_INSTALL.has(install[1]) && !byId(install[1])) add({ kind: 'install', target: install[1], label: `安裝缺少的前置模組 ${install[1]}` });

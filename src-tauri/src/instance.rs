@@ -150,6 +150,7 @@ impl Instance {
     pub fn scope<'a>(&'a self, s: &'a Settings, mc: &'a str, frozen: bool) -> crate::modrinth::Scope<'a> {
         crate::modrinth::Scope {
             loader: &self.loader,
+            loader_version: &self.loader_version,
             mc,
             pinned: &self.pinned,
             auto_api: self.wants_rich_presence(s),
