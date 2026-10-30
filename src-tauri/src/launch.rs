@@ -77,6 +77,61 @@ fn split_host(target: &str) -> (String, u16) {
     }
 }
 
+const LOG_FILE_LIMIT: u64 = 100 * 1024 * 1024;
+const MAX_CYCLE: usize = 8;
+
+#[derive(Default)]
+struct Repeats {
+    history: std::collections::VecDeque<String>,
+    period: Option<usize>,
+    skipped: u64,
+}
+
+impl Repeats {
+    fn push(&mut self, line: String) -> Vec<String> {
+        let mut out = Vec::new();
+        if let Some(p) = self.period {
+            if self.history.len() >= p && self.history[self.history.len() - p] == line {
+                self.skipped += 1;
+                self.remember(line);
+                return out;
+            }
+            out.extend(self.finish());
+        }
+        self.remember(line.clone());
+        out.push(line);
+        let n = self.history.len();
+        self.period = (1..=MAX_CYCLE).find(|&p| n >= 2 * p && self.history.range(n - p..).eq(self.history.range(n - 2 * p..n - p)));
+        out
+    }
+
+    fn remember(&mut self, line: String) {
+        if self.history.len() == 2 * MAX_CYCLE {
+            self.history.pop_front();
+        }
+        self.history.push_back(line);
+    }
+
+    fn finish(&mut self) -> Option<String> {
+        let (period, skipped) = (self.period.take()?, std::mem::take(&mut self.skipped));
+        (skipped > 0).then(|| match period {
+            1 => format!("[輝煌啟動器] 上一行又重複了 {skipped} 次"),
+            p => format!("[輝煌啟動器] 上面 {p} 行的內容又循環重複了 {skipped} 行"),
+        })
+    }
+}
+
+fn capped(written: &std::sync::atomic::AtomicU64, text: String) -> Option<String> {
+    let before = written.fetch_add(text.len() as u64, std::sync::atomic::Ordering::Relaxed);
+    if before + text.len() as u64 <= LOG_FILE_LIMIT {
+        Some(text)
+    } else if before <= LOG_FILE_LIMIT {
+        Some(format!("[輝煌啟動器] 這次的遊戲紀錄已超過 {} MB，之後的內容不再寫入這個檔案（遊戲裡的 logs/latest.log 仍有完整紀錄）\n", LOG_FILE_LIMIT >> 20))
+    } else {
+        None
+    }
+}
+
 async fn open_log(file: &Path) -> Option<tokio::fs::File> {
     tokio::fs::OpenOptions::new().create(true).append(true).open(file).await.ok()
 }
@@ -472,6 +527,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
 
     let stdout = child.stdout.take().context("取不到遊戲輸出")?;
     let stderr = child.stderr.take().context("取不到遊戲錯誤輸出")?;
+    let written = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
     for (reader, is_err) in [
         (Box::new(stdout) as Box<dyn tokio::io::AsyncRead + Unpin + Send>, false),
         (Box::new(stderr), true),
@@ -479,25 +535,30 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         let app = app.clone();
         let id = instance_id.to_string();
         let log_file = log_file.clone();
+        let written = written.clone();
         tokio::spawn(async move {
             use tokio::io::AsyncWriteExt;
             let mut reader = BufReader::new(reader);
             let mut out = open_log(&log_file).await;
+            let mut repeats = Repeats::default();
             let mut raw = Vec::new();
             loop {
                 raw.clear();
-                match reader.read_until(b'\n', &mut raw).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(_) => {}
+                let ended = matches!(reader.read_until(b'\n', &mut raw).await, Ok(0) | Err(_));
+                let lines = if ended {
+                    repeats.finish().into_iter().collect()
+                } else {
+                    repeats.push(String::from_utf8_lossy(&raw).trim_end_matches(['\r', '\n']).to_string())
+                };
+                for line in lines {
+                    if let (Some(f), Some(text)) = (out.as_mut(), capped(&written, format!("{line}\n"))) {
+                        let _ = f.write_all(text.as_bytes()).await;
+                    }
+                    let _ = app.emit("launcher://log", LogLine { instance: id.clone(), line, stderr: is_err });
                 }
-                let line = String::from_utf8_lossy(&raw).trim_end_matches(['\r', '\n']).to_string();
-                if let Some(f) = out.as_mut() {
-                    let _ = f.write_all(format!("{line}\n").as_bytes()).await;
+                if ended {
+                    break;
                 }
-                let _ = app.emit(
-                    "launcher://log",
-                    LogLine { instance: id.clone(), line, stderr: is_err },
-                );
             }
             if let Some(f) = out.as_mut() {
                 let _ = f.flush().await;
@@ -792,5 +853,41 @@ mod adopt_tests {
         assert_eq!(code, 7);
         let _ = child.wait();
         assert!(proc::open(pid, now_secs(), "").is_none(), "結束後不能再認領");
+    }
+}
+
+#[cfg(test)]
+mod log_tests {
+    use super::*;
+
+    fn feed(lines: &[&str]) -> Vec<String> {
+        let mut r = Repeats::default();
+        let mut out: Vec<String> = lines.iter().flat_map(|l| r.push(l.to_string())).collect();
+        out.extend(r.finish());
+        out
+    }
+
+    #[test]
+    fn repeated_lines_are_merged() {
+        let spam: Vec<&str> = std::iter::repeat_n(["minecart 64", "hopper_minecart 60", "cherry_hanging_sign 42"], 1000).flatten().collect();
+        let mut lines = vec!["start"];
+        lines.extend(spam);
+        lines.push("done");
+        let out = feed(&lines);
+        assert_eq!(out.len(), 9, "{out:?}");
+        assert_eq!(out[7], "[輝煌啟動器] 上面 3 行的內容又循環重複了 2994 行");
+        assert_eq!(out[8], "done");
+        assert_eq!(feed(&["a", "a", "a", "a", "b"]), ["a", "a", "[輝煌啟動器] 上一行又重複了 2 次", "b"]);
+        assert_eq!(feed(&["a", "b", "a", "c"]), ["a", "b", "a", "c"]);
+        assert_eq!(feed(&["x", "x"]), ["x", "x"]);
+    }
+
+    #[test]
+    fn log_file_is_capped() {
+        let written = std::sync::atomic::AtomicU64::new(LOG_FILE_LIMIT - 10);
+        assert_eq!(capped(&written, "12345\n".into()).as_deref(), Some("12345\n"));
+        assert!(capped(&written, "1234567890\n".into()).unwrap().contains("100 MB"));
+        assert!(capped(&written, "later\n".into()).is_none());
+        assert!(capped(&written, "later\n".into()).is_none());
     }
 }
