@@ -105,7 +105,7 @@ jobs:
         run: node .github/sign-release.mjs release "SIGNATURES-${{ runner.os }}.json"
 
       - name: 發佈 Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: 輝煌啟動器 v${{ steps.version.outputs.version }}
