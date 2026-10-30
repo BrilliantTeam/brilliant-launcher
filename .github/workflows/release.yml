@@ -113,5 +113,5 @@ jobs:
           draft: false
           prerelease: ${{ steps.channel.outputs.prerelease }}
           fail_on_unmatched_files: true
-          overwrite_files: false
+          overwrite_files: true
           files: release/*
