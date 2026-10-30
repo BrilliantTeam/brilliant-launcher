@@ -8,7 +8,7 @@ const isSvg = (path) => /\.svg$/i.test(path || '');
 import { importPicture } from '../crop.js';
 import { importPack, openStore } from './mods.js';
 import { isPreparing, repairInstance } from './home.js';
-import { jvmPresetButtons, SHARE_INFO, SHARE_LABELS } from './settings.js';
+import { jvmPresetButtons, SHARE_INFO, SHARE_LABELS, SYNC_LABELS } from './settings.js';
 import { perfCheck } from '../perf.js';
 
 export async function versionData() {
@@ -1073,7 +1073,7 @@ function groupList() {
 }
 
 const newKey = () => [...crypto.getRandomValues(new Uint8Array(8))].map((b) => b.toString(16).padStart(2, '0')).join('');
-const cleanGroups = (groups) => groups.map(({ name, icon: ico, note, key, shared }) => ({ name, icon: ico || '', note: note || '', key: key || newKey(), shared: shared || [] }));
+const cleanGroups = (groups) => groups.map(({ name, icon: ico, note, key, shared, optionsSync, optionsSource }) => ({ name, icon: ico || '', note: note || '', key: key || newKey(), shared: shared || [], optionsSync: optionsSync || [], optionsSource: optionsSource || '' }));
 const saveGroups = (groups) => saveSettings({ instanceGroups: cleanGroups(groups) });
 const sharedNames = (group) => (group?.shared ?? []).map((f) => SHARE_LABELS.find(([v]) => v === f)?.[1]).filter(Boolean);
 
@@ -1090,6 +1090,7 @@ async function refreshShare() {
     render();
 }
 
+const syncSource = (group, members) => (group?.optionsSync?.length ? members.find((i) => i.id === group.optionsSource) : null);
 const folderLabel = (f) => SHARE_LABELS.find(([v]) => v === f)?.[1] ?? f;
 
 function shareTags(instance) {
@@ -1336,6 +1337,7 @@ function groupHeader(group, members, closed) {
         icon('chevron-down', 'ico fold'), iconOf(group.name ? group.icon || 'folder' : 'folder'), h('b', {}, group.name || '未分組'),
         pinned ? h('span', { class: 'badge' }, '置頂') : null,
         sharedNames(group).length ? h('span', { class: 'badge share-badge', title: '這個分組的實例共用這些資料夾；後面的數字是已經套用的實例數' }, `共用 ${sharedNames(group).join('、')}${members.length ? `・${members.filter((m) => !shareState.get(m.id)?.pending.length).length}/${members.length} 已套用` : ''}`) : null,
+        syncSource(group, members) ? h('span', { class: 'badge', title: '啟動這個分組的其他實例時，會先套用來源實例的遊戲選項' }, `同步選項：以「${syncSource(group, members).name}」為準`) : null,
         h('span', { class: 'hint' }, `${members.length} 個實例${running ? `・${running} 個執行中` : ''}`),
         group.note ? h('span', { class: 'inst-group-note', title: group.note }, group.note) : null),
     group.name && group.shared?.length && group.key ? h('button', {
@@ -1397,7 +1399,7 @@ async function groupDialog(existing = null) {
     const icons = iconPick.el;
     const name = h('input', { type: 'text', value: existing?.name ?? '', maxlength: '24', placeholder: '例如：輝煌、建築、朋友的伺服器' });
     const note = h('input', { type: 'text', value: existing?.note ?? '', maxlength: '120', placeholder: '選填，會顯示在分組標題旁' });
-    const picks = store.instances.map((instance) => ({ instance, input: h('input', { type: 'checkbox', checked: !!existing && instance.group === existing.name, onchange: () => warnShare() }) }));
+    const picks = store.instances.map((instance) => ({ instance, input: h('input', { type: 'checkbox', checked: !!existing && instance.group === existing.name, onchange: () => { warnShare(); fillSource(); } }) }));
     const key = existing?.key || newKey();
     const sharing = new Set(existing?.shared ?? []);
     const shareCards = SHARE_LABELS.map(([value, label]) => {
@@ -1411,6 +1413,16 @@ async function groupDialog(existing = null) {
         shareWarn.textContent = `注意：這個分組有不同 Minecraft 版本的實例（${[...versions].join('、')}），共用存檔可能讓舊版本打不開被升級過的世界。`;
     };
     warnShare();
+    const syncing = new Set(existing?.optionsSync ?? []);
+    const syncChecks = SYNC_LABELS.map(([value, label]) => h('label', {}, h('input', { type: 'checkbox', checked: syncing.has(value), onchange: (e) => { e.target.checked ? syncing.add(value) : syncing.delete(value); } }), label));
+    const source = h('select', {});
+    const fillSource = () => {
+        const keep = source.value || existing?.optionsSource || '';
+        const members = picks.filter((p) => p.input.checked).map((p) => p.instance);
+        clear(source).append(h('option', { value: '' }, members.length ? '選擇來源實例' : '先在上方勾選加入的實例'), ...members.map((i) => h('option', { value: i.id }, i.name)));
+        source.value = members.some((i) => i.id === keep) ? keep : '';
+    };
+    fillSource();
     const location = h('code', {}, existing?.key ? '讀取中⋯' : '建立分組後才會產生');
     if (existing?.key) api.shared_folder_path({ key }).then((path) => { location.textContent = path; }).catch(() => {});
     const ok = await dialog({
@@ -1426,7 +1438,11 @@ async function groupDialog(existing = null) {
                 h('div', { class: 'hint' }, '勾選的資料夾由這個分組的實例共用一份，其他分組不受影響。加入共用時，實例原本的內容會搬進分組的共用資料夾（同名會自動改名，不會覆蓋）；實例離開分組或取消共用時，會把共用內容複製一份回實例。'),
                 h('div', { class: 'share-cards' }, ...shareCards),
                 shareWarn,
-                h('div', { class: 'share-location' }, location, existing?.key ? h('button', { type: 'button', class: 'mc', onclick: async () => api.open_path({ path: await api.shared_folder_path({ key }) }).catch(fail) }, icon('folder'), '開啟') : null))),
+                h('div', { class: 'share-location' }, location, existing?.key ? h('button', { type: 'button', class: 'mc', onclick: async () => api.open_path({ path: await api.shared_folder_path({ key }) }).catch(fail) }, icon('folder'), '開啟') : null)),
+            h('div', { class: 'field' }, h('label', {}, '同步遊戲選項'),
+                h('div', { class: 'hint' }, '啟動這個分組的實例時，會把勾選的選項從來源實例複製過去；來源實例本身不會被改動，其他分組也不受影響。語言、資源包等其他選項不會同步。'),
+                h('div', { class: 'check-row', id: 'sync-cats' }, ...syncChecks),
+                h('div', { class: 'toolbar' }, h('span', { class: 'toolbar-label' }, '來源實例'), source))),
         buttons: [{ label: '取消', value: false }, { label: existing ? '儲存並套用' : '建立', value: true }]
     });
     if (ok !== true) return;
@@ -1434,7 +1450,8 @@ async function groupDialog(existing = null) {
     if (!title) return toast('請輸入分組名稱', 'error');
     const groups = groupList();
     if (groups.some((g) => g.name === title && g.name !== existing?.name)) return toast(`已經有叫「${title}」的分組`, 'error');
-    const entry = { name: title, icon: iconPick.value, note: note.value.trim().slice(0, 120), key, shared: SHARE_LABELS.map(([v]) => v).filter((v) => sharing.has(v)) };
+    if (syncing.size && !source.value) return toast('同步遊戲選項需要選擇一個來源實例', 'error');
+    const entry = { name: title, icon: iconPick.value, note: note.value.trim().slice(0, 120), key, shared: SHARE_LABELS.map(([v]) => v).filter((v) => sharing.has(v)), optionsSync: SYNC_LABELS.map(([v]) => v).filter((v) => syncing.has(v)), optionsSource: syncing.size ? source.value : '' };
     const shareChanged = (existing?.shared ?? []).join() !== entry.shared.join();
     const next = existing ? groups.map((g) => (g.name === existing.name ? entry : g)) : [...groups, entry];
     const patch = { instanceGroups: cleanGroups(next) };

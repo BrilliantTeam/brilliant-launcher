@@ -146,8 +146,6 @@ pub struct Settings {
     pub saved_looks: Vec<SavedLook>,
     pub streamer_mode: bool,
     pub instance_order: Vec<String>,
-    pub options_sync: bool,
-    pub options_sync_groups: Vec<String>,
     pub window_mode: String,
     pub window_monitor: String,
     pub remember_window: bool,
@@ -236,6 +234,8 @@ pub struct InstanceGroup {
     pub note: String,
     pub key: String,
     pub shared: Vec<String>,
+    pub options_sync: Vec<String>,
+    pub options_source: String,
 }
 
 impl Default for Settings {
@@ -379,8 +379,6 @@ impl Default for Settings {
             saved_looks: Vec::new(),
             streamer_mode: false,
             instance_order: Vec::new(),
-            options_sync: false,
-            options_sync_groups: crate::gameopts::GROUPS.iter().map(|g| g.to_string()).collect(),
             window_mode: "normal".into(),
             window_monitor: String::new(),
             remember_window: false,
@@ -535,7 +533,6 @@ impl Settings {
         self.instance_order.retain(|id| id.len() <= 128);
         self.instance_order.dedup();
         self.instance_order.truncate(500);
-        clean_list(&mut self.options_sync_groups, &crate::gameopts::GROUPS);
         clean_choice(&mut self.window_mode, &["normal", "borderless"], "normal");
         clean_line(&mut self.window_monitor, 64);
         let mut seen = std::collections::HashSet::new();
@@ -641,6 +638,9 @@ impl Settings {
             group.shared.retain(|f| crate::advanced::SHAREABLE.contains(&f.as_str()));
             group.shared.sort();
             group.shared.dedup();
+            clean_list(&mut group.options_sync, &crate::gameopts::GROUPS);
+            group.options_source.retain(|c| c.is_ascii_alphanumeric() || c == '-');
+            group.options_source.truncate(128);
         }
         let mut seen = std::collections::HashSet::new();
         self.instance_groups.retain(|g| !g.name.is_empty() && seen.insert(g.name.clone()));

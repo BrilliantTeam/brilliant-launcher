@@ -168,8 +168,6 @@ pub fn run() {
             templates::save_template,
             templates::create_from_template,
             templates::delete_template,
-            gameopts::options_sync_capture,
-            gameopts::options_sync_count,
             gamewin::list_screens,
             gamewin::forget_window,
             snapshots::list_mod_snapshots,

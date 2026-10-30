@@ -514,9 +514,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         .stdin(std::process::Stdio::null());
     java::hide_console(&mut cmd);
 
-    let sync_dir = game_dir.clone();
-    let sync_settings = settings.clone();
-    let _ = tokio::task::spawn_blocking(move || crate::gameopts::apply(&sync_dir, &sync_settings)).await;
+    crate::gameopts::apply(&instance, &settings).await;
 
     let mut child = cmd
         .spawn()
@@ -609,9 +607,6 @@ async fn finish_game(app: &AppHandle, instance: &Instance, started: i64, code: i
         let _ = crate::instance::save(&inst).await;
     }
     crate::insight::record_session(crate::insight::Session { instance: id.clone(), name: instance.name.clone(), start: started, seconds, code }).await;
-    let sync_dir = crate::paths::game_dir(&id);
-    let sync_settings = settings.clone();
-    let _ = tokio::task::spawn_blocking(move || crate::gameopts::capture(&sync_dir, &sync_settings)).await;
     if code != 0 && !asked_to_stop && settings.notifications {
         crate::boost::notify(app, "遊戲異常結束", &format!("「{}」結束代碼 {code}，打開啟動器查看可能的原因。", instance.name));
     }

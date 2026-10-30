@@ -115,7 +115,6 @@ const FIELDS = {
     windowMode: '#set-window-mode',
     windowMonitor: '#set-window-monitor',
     rememberWindow: '#set-remember-window',
-    optionsSync: '#set-options-sync',
     modSnapshots: '#set-mod-snapshots',
     countdownTitle: '#set-countdown-title',
     language: '#set-language'
@@ -573,14 +572,6 @@ async function renderScreens() {
     select.disabled = !screens.length;
 }
 
-function renderSync() {
-    const groups = store.settings?.optionsSyncGroups ?? ['keys', 'video', 'audio', 'controls'];
-    for (const box of $$('#sync-groups [data-sync]')) {
-        box.checked = groups.includes(box.dataset.sync);
-    }
-    api.options_sync_count().then((n) => { $('#sync-state').textContent = n ? `已記下 ${n} 項選項` : '還沒有記下任何選項，玩一次遊戲或按左邊按鈕'; }, () => {});
-}
-
 const DISK_COLORS = ['#ffab19', '#4c97ff', '#59c059', '#9966ff', '#ff6680', '#40bf9f', '#cf63cf', '#ff8c1a', '#5cb1d6', '#8c8c8c', '#b3b300', '#e64d4d'];
 
 async function scanDisk() {
@@ -796,6 +787,7 @@ export function jvmPresetButtons(target, onPick) {
 }
 
 const PROXY_PATTERN = /^https?:\/\/([^\s@/]+@)?[A-Za-z0-9.\-[\]:_]+:\d{1,5}\/?$/;
+export const SYNC_LABELS = [['keys', '按鍵設定'], ['video', '畫面（FOV、視野距離、亮度、介面大小⋯）'], ['audio', '音量'], ['controls', '滑鼠與聊天']];
 export const SHARE_LABELS = [['saves', '存檔'], ['resourcepacks', '資源包'], ['shaderpacks', '光影'], ['screenshots', '截圖']];
 export const SHARE_INFO = {
     saves: ['map', '在任一實例建立或下載的單人世界，其他實例也看得到。只建議同一個 Minecraft 版本的實例共用，高版本開過的世界會被升級。'],
@@ -932,7 +924,6 @@ function write() {
     renderShortcuts();
     renderRailLinks();
     renderProfiles();
-    renderSync();
     renderColorEditor();
     renderCountdownPick();
     $('#btn-forget-window').disabled = !settings.rememberWindow;
@@ -1166,21 +1157,6 @@ export function initSettings() {
         $('#rail-link-target').value = '';
     }));
     renderScreens();
-    $('#sync-groups').addEventListener('change', (e) => {
-        const groups = $$('#sync-groups [data-sync]').filter((b) => b.checked).map((b) => b.dataset.sync);
-        persist({ optionsSyncGroups: groups });
-    });
-    $('#btn-sync-capture').addEventListener('click', guard(async () => {
-        const instance = store.instances.find((i) => i.id === store.settings?.selectedInstance) ?? store.instances[0];
-        if (!instance) return toast('還沒有任何實例', 'warn');
-        try {
-            const n = await api.options_sync_capture({ id: instance.id });
-            toast(n ? `已從「${instance.name}」記下 ${n} 項選項，下次開其他實例會自動套用` : `「${instance.name}」還沒有遊戲選項檔，先玩一次再試`);
-            renderSync();
-        } catch (error) {
-            fail(error);
-        }
-    }));
     $('#btn-forget-window').addEventListener('click', guard(async () => {
         await api.forget_window().catch(fail);
         toast('已忘記記住的遊戲視窗位置');

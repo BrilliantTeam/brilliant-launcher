@@ -1412,7 +1412,7 @@ dialog::backdrop { cursor: move; }
 .share-inst small { color: var(--text-faint); }
 .share-warn { margin-top: 8px; padding: 8px 10px; font-size: calc(13px * var(--fs, 1)); color: var(--warning); border-left: 4px solid var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); }
 .share-warn[hidden] { display: none; }
-.share-location { display: flex; align-items: center; gap: 8px; }
+.share-location { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .share-location code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 8px; font-size: calc(12px * var(--fs, 1)); background: var(--content-bg-sunken); }
 .share-result { margin: 0; padding-left: 18px; font-size: calc(13px * var(--fs, 1)); line-height: 1.7; }
 
@@ -1870,7 +1870,7 @@ body.home-editing .social { pointer-events: auto; }
 :root[lang="en"] .rail a { width: 68px; }
 :root[lang="en"] .rail a span { font-size: calc(10px * var(--fs, 1)); white-space: nowrap; }
 .shortcut-list + .toolbar, .media-list + .toolbar, .media-list + .link-add, .rail-editor + .hint { margin-top: 10px; }
-#sync-groups { margin: 8px 0 10px 28px; gap: 8px 22px; }
+#sync-cats { margin: 4px 0 10px; gap: 8px 22px; }
 .check-row label { gap: 8px; }
 :root[data-streamer="on"] :is(#chip-avatar, .name-face, .profile-avatar, .account-menu img, #account-list img) { filter: blur(6px); }
 :root[data-streamer="on"] :is(#set-pre, #set-post, #set-wrapper, #set-env, #set-proxy, #rail-link-target, #set-java) { filter: blur(5px); }
