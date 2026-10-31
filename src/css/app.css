@@ -1911,3 +1911,6 @@ body.home-editing .social { pointer-events: auto; }
 .look-import-info small { color: var(--text-subtle); }
 .look-preview.has-image .lp-body { background: linear-gradient(color-mix(in srgb, var(--p-content-bg-alt) 55%, transparent), color-mix(in srgb, var(--p-content-bg-alt) 55%, transparent)), var(--p-image) center / cover no-repeat; }
 .auto-locked { opacity: 0.45; filter: grayscale(0.4); cursor: not-allowed; }
+.device-row { display: flex; justify-content: center; margin: 14px 0 10px; }
+.device-code { font-size: calc(30px * var(--fs, 1)); letter-spacing: 6px; padding: 10px 18px; background: var(--content-bg-sunken); user-select: all; }
+.device-actions { justify-content: center; margin-bottom: 8px; }

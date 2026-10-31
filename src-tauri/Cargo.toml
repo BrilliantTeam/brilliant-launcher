@@ -1,6 +1,6 @@
 [package]
 name = "brilliant-launcher"
-version = "1.2.14"
+version = "1.2.15"
 description = "輝煌伺服器 Minecraft 啟動器"
 authors = ["RiceChen_"]
 publish = false
@@ -40,7 +40,7 @@ ring = "0.17"
 tauri-plugin-global-shortcut = "2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation", "Win32_System_Threading", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
+windows-sys = { version = "0.61", features = ["Win32_System_SystemInformation", "Win32_System_Threading", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi", "Win32_Security_Cryptography"] }
 
 [profile.release]
 opt-level = "s"

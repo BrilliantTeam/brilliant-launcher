@@ -177,6 +177,32 @@ pub async fn login_microsoft(app: AppHandle, state: State<'_, AppState>, browser
     Ok(Account { access_token: String::new(), refresh_token: String::new(), ..account })
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct DeviceCodeInfo {
+    user_code: String,
+    verification_uri: String,
+    expires_in: u64,
+}
+
+#[tauri::command]
+pub async fn login_device(app: AppHandle, state: State<'_, AppState>) -> R<Account> {
+    let code = auth::msa::device_start(config::MSA_CLIENT_ID).await?;
+    let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
+    if let Ok(mut slot) = LOGIN_CANCEL.lock() {
+        if let Some(previous) = slot.replace(cancel_tx) {
+            let _ = previous.send(());
+        }
+    }
+    let _ = app.emit("launcher://device-code", DeviceCodeInfo { user_code: code.user_code.clone(), verification_uri: code.verification_uri.clone(), expires_in: code.expires_in });
+    let account = tokio::select! {
+        result = auth::msa::device_finish(config::MSA_CLIENT_ID, &code) => result?,
+        _ = cancel_rx => bail!("已取消登入"),
+    };
+    upsert_account(&state, account.clone()).await?;
+    Ok(Account { access_token: String::new(), refresh_token: String::new(), ..account })
+}
+
 #[tauri::command]
 pub async fn add_offline_account(state: State<'_, AppState>, name: String) -> R<Account> {
     let account = auth::make_offline(&name)?;

@@ -735,9 +735,85 @@ pub async fn save_settings(s: &Settings) -> R<()> {
 }
 
 pub async fn load_accounts() -> Vec<Account> {
-    read_json(&paths::accounts_file()).await
+    let mut accounts: Vec<Account> = read_json(&paths::accounts_file()).await;
+    for account in accounts.iter_mut() {
+        open_tokens(account);
+    }
+    accounts
+}
+
+fn open_tokens(account: &mut Account) {
+    match (crate::secret::open(&account.access_token), crate::secret::open(&account.refresh_token)) {
+        (Some(access), Some(refresh)) => {
+            account.access_token = access;
+            account.refresh_token = refresh;
+        }
+        _ => {
+            account.access_token.clear();
+            account.refresh_token.clear();
+            account.expires_at = 0;
+            account.session_error = "這台電腦讀不到這個帳號的登入資料（可能是從別台電腦複製過來的），請重新登入".into();
+        }
+    }
 }
 
 pub async fn save_accounts(a: &[Account]) -> R<()> {
-    write_json(&paths::accounts_file(), &a).await
+    let sealed: Vec<Account> = a
+        .iter()
+        .map(|account| {
+            let mut account = account.clone();
+            if account.kind == "msa" {
+                account.access_token = crate::secret::seal(&account.access_token);
+                account.refresh_token = crate::secret::seal(&account.refresh_token);
+            }
+            account
+        })
+        .collect();
+    let file = paths::accounts_file();
+    write_json(&file, &sealed).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = tokio::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o600)).await;
+    }
+    Ok(())
+}
+
+pub async fn seal_stored_accounts() {
+    let raw: Vec<Account> = read_json(&paths::accounts_file()).await;
+    if raw.iter().any(|a| a.kind == "msa" && (crate::secret::needs_seal(&a.access_token) || crate::secret::needs_seal(&a.refresh_token))) {
+        let _ = save_accounts(&load_accounts().await).await;
+    }
+}
+
+#[cfg(test)]
+mod account_tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "改動 BRILLIANT_LAUNCHER_HOME，需單獨執行：cargo test --lib stored_tokens_are_sealed -- --ignored"]
+    fn stored_tokens_are_sealed() {
+        let root = std::env::temp_dir().join(format!("brilliant-seal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        std::env::set_var("BRILLIANT_LAUNCHER_HOME", &root);
+        let msa = Account { id: "m".into(), kind: "msa".into(), name: "Rice".into(), access_token: "eyJ.fake.jwt".into(), refresh_token: "M.fake-refresh".into(), expires_at: 99, ..Default::default() };
+        let offline = Account { id: "o".into(), kind: "offline".into(), name: "Off".into(), access_token: "0".into(), ..Default::default() };
+        std::fs::write(paths::accounts_file(), serde_json::to_vec(&vec![msa.clone(), offline.clone()]).unwrap()).unwrap();
+        tauri::async_runtime::block_on(async {
+            seal_stored_accounts().await;
+            let raw = std::fs::read_to_string(paths::accounts_file()).unwrap();
+            if cfg!(windows) {
+                assert!(!raw.contains("eyJ.fake.jwt") && !raw.contains("M.fake-refresh") && raw.matches("dpapi:").count() == 2);
+            }
+            let loaded = load_accounts().await;
+            assert_eq!((loaded[0].access_token.as_str(), loaded[0].refresh_token.as_str(), loaded[0].expires_at), ("eyJ.fake.jwt", "M.fake-refresh", 99));
+            assert_eq!(loaded[1].access_token, "0");
+            let moved = raw.replacen("dpapi:", "dpapi:AAAA", 1);
+            std::fs::write(paths::accounts_file(), moved).unwrap();
+            let broken = load_accounts().await;
+            assert!(broken[0].refresh_token.is_empty() && broken[0].expires_at == 0 && !broken[0].session_error.is_empty());
+        });
+        std::fs::remove_dir_all(&root).unwrap();
+    }
 }

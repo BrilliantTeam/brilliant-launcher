@@ -30,6 +30,7 @@ pub mod gameopts;
 pub mod gamewin;
 pub mod snapshots;
 pub mod diskuse;
+pub mod secret;
 
 use tauri::{Listener, Manager};
 
@@ -68,6 +69,7 @@ pub fn run() {
         .manage(state::AppState::default())
         .setup(|app| {
             let startup = tauri::async_runtime::block_on(config::load_settings());
+            tauri::async_runtime::block_on(config::seal_stored_accounts());
             net::set_concurrency(startup.download_threads);
             if let Err(e) = net::set_proxy(&startup.proxy) {
                 eprintln!("[setup] 代理設定無效，改用直接連線：{:#}", e.0);
@@ -101,6 +103,7 @@ pub fn run() {
             commands::list_accounts,
             commands::login_microsoft,
             commands::cancel_login,
+            commands::login_device,
             commands::add_offline_account,
             commands::remove_account,
             commands::select_account,

@@ -1,4 +1,4 @@
-import { api, fileSrc, pickFile } from '../api.js';
+import { api, fileSrc, listen, openUrl, pickFile } from '../api.js';
 import { $, acceptFiles, clear, confirm, dialog, dismissDialog, fail, h, toast, guard, RECYCLE_NOTE } from '../ui.js';
 import { icon } from '../icons.js';
 import { avatarUrl, emit, loadAccounts, loadInstances, on, refreshAvatar, selectedAccount, store } from '../store.js';
@@ -11,33 +11,86 @@ export async function loginMicrosoft(mode) {
         toast('目前沒有網路連線，連上網路後才能登入微軟帳號', 'warn');
         return;
     }
+    if (mode === 'device') return loginDevice();
     const browser = mode !== false;
     let account;
     let waiting = browser;
-    let switchToWindow = false;
+    let switchTo = '';
     if (browser) {
         dialog({
             title: '在瀏覽器登入微軟帳號',
             content: h('div', {},
                 h('p', {}, '已經用你的預設瀏覽器打開微軟登入頁。瀏覽器若已登入過微軟帳號，點一下帳號就好；也可以用密碼、手機驗證、指紋、Windows Hello 或通行金鑰登入。'),
                 h('p', { class: 'hint' }, '完成後會自動回到啟動器，不用複製任何東西。沒看到瀏覽器跳出來的話，可以改用內嵌視窗登入。')),
-            buttons: [{ label: '取消', value: 'cancel' }, { label: '改用內嵌視窗登入', value: 'window' }]
+            buttons: [{ label: '取消', value: 'cancel' }, { label: '改用代碼登入', value: 'device' }, { label: '改用內嵌視窗登入', value: 'window' }]
         }).then((value) => {
             if (!waiting) return;
             waiting = false;
-            switchToWindow = value === 'window';
+            switchTo = value;
             api.cancel_login().catch(() => {});
         });
     }
     try {
         account = await api.login_microsoft({ browser });
     } catch (error) {
-        if (switchToWindow) return loginMicrosoft(false);
+        if (switchTo === 'window') return loginMicrosoft(false);
+        if (switchTo === 'device') return loginDevice();
         if (waiting) {
             waiting = false;
             dismissDialog(null);
         }
         return String(error?.message ?? error).includes('已取消登入') ? toast('已取消登入', 'warn') : fail(error);
+    }
+    if (waiting) {
+        waiting = false;
+        dismissDialog(null);
+    }
+    await loadAccounts();
+    emit('settings');
+    toast(`已登入：${account.name}`);
+    return account;
+}
+
+async function loginDevice() {
+    if (store.online === false) {
+        toast('目前沒有網路連線，連上網路後才能登入微軟帳號', 'warn');
+        return;
+    }
+    let waiting = true;
+    let link = 'https://www.microsoft.com/link';
+    const code = h('code', { class: 'device-code' }, '取得代碼中⋯');
+    const copy = h('button', { type: 'button', class: 'mc', disabled: true, onclick: () => navigator.clipboard.writeText(code.textContent).then(() => toast('已複製代碼'), fail) }, icon('copy'), '複製代碼');
+    const open = h('button', { type: 'button', class: 'mc primary', disabled: true, onclick: () => openUrl(link) }, icon('external-link'), '開啟 microsoft.com/link');
+    const stop = await listen('launcher://device-code', (info) => {
+        code.textContent = info.userCode;
+        link = info.verificationUri || link;
+        copy.disabled = false;
+        open.disabled = false;
+    });
+    dialog({
+        title: '用代碼登入微軟帳號',
+        content: h('div', {},
+            h('p', {}, '在手機或任何一台電腦打開 microsoft.com/link，輸入下面的代碼，再登入你的微軟帳號。'),
+            h('div', { class: 'device-row' }, code),
+            h('div', { class: 'toolbar device-actions' }, copy, open),
+            h('p', { class: 'hint' }, '代碼 15 分鐘內有效。完成後啟動器會自動接續，不用回來按任何按鈕。')),
+        buttons: [{ label: '取消', value: 'cancel' }]
+    }).then(() => {
+        if (!waiting) return;
+        waiting = false;
+        api.cancel_login().catch(() => {});
+    });
+    let account;
+    try {
+        account = await api.login_device();
+    } catch (error) {
+        if (waiting) {
+            waiting = false;
+            dismissDialog(null);
+        }
+        return String(error?.message ?? error).includes('已取消登入') ? toast('已取消登入', 'warn') : fail(error);
+    } finally {
+        stop();
     }
     if (waiting) {
         waiting = false;

@@ -77,26 +77,47 @@ async fn store_account(updated: &Account) -> R<()> {
 }
 
 static REFRESHING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-const RATE_LIMIT_COOLDOWN_SECS: i64 = 15 * 60;
+static LAST_ATTEMPT: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+const RATE_LIMIT_COOLDOWN_SECS: i64 = 60 * 60;
 const FAILURE_COOLDOWN_SECS: i64 = 5 * 60;
+const ATTEMPT_GAP: std::time::Duration = std::time::Duration::from_secs(5);
 
-fn waiting(account: &Account, ahead: i64) -> Option<R<Account>> {
+fn cooldown_file() -> std::path::PathBuf {
+    crate::paths::root().join("auth-cooldown")
+}
+
+pub fn shared_cooldown() -> i64 {
+    std::fs::read_to_string(cooldown_file()).ok().and_then(|t| t.trim().parse().ok()).unwrap_or(0)
+}
+
+fn waiting(account: &Account, ahead: i64, shared: i64) -> Option<R<Account>> {
     let now = now_secs();
     if account.kind != "msa" || account.expires_at > now + ahead {
         return Some(Ok(account.clone()));
     }
-    if account.retry_at <= now {
+    let until = account.retry_at.max(shared);
+    if until <= now {
         return None;
     }
     if account.expires_at > now + 60 {
         return Some(Ok(account.clone()));
     }
-    let minutes = (account.retry_at - now + 59) / 60;
+    let minutes = (until - now + 59) / 60;
     Some(Err(anyhow::anyhow!("{}，約 {minutes} 分鐘後會自動再試；這段時間反覆登入會讓限制更久。", auth::msa::RATE_LIMITED).into()))
 }
 
+async fn space_attempts() {
+    let wait = LAST_ATTEMPT.lock().ok().and_then(|last| last.map(|t| ATTEMPT_GAP.saturating_sub(t.elapsed())));
+    if let Some(wait) = wait.filter(|w| !w.is_zero()) {
+        tokio::time::sleep(wait).await;
+    }
+    if let Ok(mut last) = LAST_ATTEMPT.lock() {
+        *last = Some(std::time::Instant::now());
+    }
+}
+
 pub async fn fresh(account: Account, ahead: i64) -> R<Account> {
-    if let Some(done) = waiting(&account, ahead) {
+    if let Some(done) = waiting(&account, ahead, shared_cooldown()) {
         return done;
     }
     if account.refresh_token.is_empty() {
@@ -104,9 +125,10 @@ pub async fn fresh(account: Account, ahead: i64) -> R<Account> {
     }
     let _guard = REFRESHING.lock().await;
     let account = config::load_accounts().await.into_iter().find(|a| a.id == account.id).unwrap_or(account);
-    if let Some(done) = waiting(&account, ahead) {
+    if let Some(done) = waiting(&account, ahead, shared_cooldown()) {
         return done;
     }
+    space_attempts().await;
     match auth::msa::refresh(config::MSA_CLIENT_ID, &account.refresh_token).await {
         Ok(refreshed) => {
             store_account(&refreshed).await?;
@@ -115,8 +137,12 @@ pub async fn fresh(account: Account, ahead: i64) -> R<Account> {
         Err(e) if crate::net::is_offline(&e.0) => Ok(account),
         Err(e) => {
             let detail = format!("{:#}", e.0);
+            let limited = detail.contains(auth::msa::RATE_LIMITED);
+            if limited {
+                let _ = crate::net::write_file(&cooldown_file(), (now_secs() + RATE_LIMIT_COOLDOWN_SECS).to_string().as_bytes(), false).await;
+            }
             let mut marked = account.clone();
-            marked.retry_at = now_secs() + if detail.contains(auth::msa::RATE_LIMITED) { RATE_LIMIT_COOLDOWN_SECS } else { FAILURE_COOLDOWN_SECS };
+            marked.retry_at = now_secs() + if limited { RATE_LIMIT_COOLDOWN_SECS } else { FAILURE_COOLDOWN_SECS };
             if marked.expires_at > now_secs() + 60 {
                 store_account(&marked).await?;
                 return Ok(marked);
@@ -446,13 +472,17 @@ mod tests {
     fn refresh_waits_out_cooldown() {
         let now = now_secs();
         let msa = |expires_at, retry_at| Account { kind: "msa".into(), expires_at, retry_at, refresh_token: "r".into(), ..Default::default() };
-        assert!(matches!(waiting(&msa(now + 30, now + 600), 3600), Some(Err(_))));
-        assert!(matches!(waiting(&msa(now + 7200, now + 600), 3 * 3600), Some(Ok(_))));
-        let blocked = waiting(&msa(now - 10, now + 600), 60).unwrap().err().unwrap();
+        assert!(matches!(waiting(&msa(now + 30, now + 600), 3600, 0), Some(Err(_))));
+        assert!(matches!(waiting(&msa(now + 7200, now + 600), 3 * 3600, 0), Some(Ok(_))));
+        let blocked = waiting(&msa(now - 10, now + 600), 60, 0).unwrap().err().unwrap();
         assert!(format!("{:#}", blocked.0).contains("10 分鐘") && !format!("{:#}", blocked.0).contains("重新登入"));
-        assert!(waiting(&msa(now - 10, now - 1), 60).is_none());
-        assert!(waiting(&msa(now + 7200, 0), 3 * 3600).is_none());
-        assert!(matches!(waiting(&msa(now + 7200, 0), 60), Some(Ok(_))));
+        assert!(waiting(&msa(now - 10, now - 1), 60, 0).is_none());
+        assert!(waiting(&msa(now + 7200, 0), 3 * 3600, 0).is_none());
+        assert!(matches!(waiting(&msa(now + 7200, 0), 60, 0), Some(Ok(_))));
+        let shared = waiting(&msa(now - 10, 0), 60, now + 3000).unwrap().err().unwrap();
+        assert!(format!("{:#}", shared.0).contains("50 分鐘"));
+        assert!(matches!(waiting(&msa(now + 7200, 0), 3 * 3600, now + 3000), Some(Ok(_))));
+        assert!(waiting(&msa(now - 10, 0), 60, now - 5).is_none());
     }
 
     #[test]

@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 const AUTHORIZE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize";
 pub const REDIRECT_URI: &str = "https://login.microsoftonline.com/common/oauth2/nativeclient";
 const TOKEN_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/token";
+const DEVICE_URL: &str = "https://login.microsoftonline.com/consumers/oauth2/v2.0/devicecode";
 const XBL_URL: &str = "https://user.auth.xboxlive.com/user/authenticate";
 const XSTS_URL: &str = "https://xsts.auth.xboxlive.com/xsts/authorize";
 const MC_LOGIN_URL: &str = "https://api.minecraftservices.com/authentication/login_with_xbox";
@@ -143,6 +144,64 @@ fn random_hex(bytes: usize) -> String {
     hex::encode(buf)
 }
 
+#[derive(Deserialize)]
+pub struct DeviceCode {
+    device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub expires_in: u64,
+    interval: u64,
+}
+
+pub async fn device_start(client_id: &str) -> R<DeviceCode> {
+    let res = net::client().post(DEVICE_URL).form(&[("client_id", client_id), ("scope", SCOPE)]).send().await?;
+    let status = res.status();
+    let text = res.text().await?;
+    if !status.is_success() {
+        bail!("無法取得登入代碼（HTTP {status}）：{text}");
+    }
+    Ok(serde_json::from_str(&text).context("解析登入代碼失敗")?)
+}
+
+#[derive(Deserialize)]
+struct OAuthError {
+    #[serde(default)]
+    error: String,
+}
+
+pub async fn device_finish(client_id: &str, code: &DeviceCode) -> R<Account> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(code.expires_in);
+    let mut interval = code.interval.max(1);
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(interval)).await;
+        if std::time::Instant::now() > deadline {
+            bail!("登入代碼已過期，請重新取得一組");
+        }
+        let res = net::client()
+            .post(TOKEN_URL)
+            .form(&[
+                ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
+                ("client_id", client_id),
+                ("device_code", code.device_code.as_str()),
+            ])
+            .send()
+            .await?;
+        let status = res.status();
+        let text = res.text().await?;
+        if status.is_success() {
+            let token: MsaToken = serde_json::from_str(&text).context("解析登入回應失敗")?;
+            return finish(token).await;
+        }
+        match serde_json::from_str::<OAuthError>(&text).map(|e| e.error).unwrap_or_default().as_str() {
+            "authorization_pending" => {}
+            "slow_down" => interval += 5,
+            "authorization_declined" => bail!("已在微軟頁面拒絕登入"),
+            "expired_token" => bail!("登入代碼已過期，請重新取得一組"),
+            _ => bail!("代碼登入失敗（HTTP {status}）：{text}"),
+        }
+    }
+}
+
 pub async fn refresh(client_id: &str, refresh_token: &str) -> R<Account> {
     let res = net::client()
         .post(TOKEN_URL)
@@ -213,8 +272,10 @@ async fn finish(msa: MsaToken) -> R<Account> {
         if detail.contains("Invalid app registration") {
             anyhow!("輝煌啟動器的正版登入正在等待 Mojang 審核開通，目前暫時無法使用正版帳號。
 請先使用離線帳號；開通後不需要更新啟動器，直接重新登入即可。")
+        } else if detail.contains("ACCOUNT_SUSPENDED") {
+            anyhow!("這個 Microsoft 帳號已被停權，無法登入 Minecraft。請到 https://enforcement.xbox.com 用同一個帳號登入查看原因或提出申訴；若懷疑帳號被盜，請先到 https://account.microsoft.com 檢查安全性")
         } else if detail.contains("429") {
-            anyhow!("{RATE_LIMITED}，啟動器會在約 15 分鐘後自動再試；這段時間反覆登入會讓限制更久。")
+            anyhow!("{RATE_LIMITED}，啟動器會在約 60 分鐘後自動再試；這段時間反覆登入會讓限制更久。")
         } else {
             anyhow!("Minecraft 服務驗證失敗：{detail}")
         }
@@ -249,12 +310,16 @@ async fn finish(msa: MsaToken) -> R<Account> {
 }
 
 fn xsts_hint(raw: &str) -> String {
-    let hint = if raw.contains("2148916233") {
+    let hint = if raw.contains("2148916227") {
+        "這個微軟帳號已被 Xbox 封鎖，無法登入 Minecraft。請到 https://enforcement.xbox.com 查看原因或提出申訴"
+    } else if raw.contains("2148916233") {
         "這個微軟帳號沒有 Xbox 個人資料，請先到 xbox.com 建立後再登入"
     } else if raw.contains("2148916238") {
         "未成年帳號需要先加入家庭群組才能登入"
     } else if raw.contains("2148916235") {
         "你所在的地區未提供 Xbox Live 服務"
+    } else if raw.contains("2148916236") || raw.contains("2148916237") {
+        "這個帳號需要先完成 Xbox 成人驗證，請到 https://account.xbox.com 登入一次並依指示驗證"
     } else {
         "XSTS 授權失敗"
     };
@@ -264,6 +329,14 @@ fn xsts_hint(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn known_xbox_errors_get_plain_hints() {
+        assert!(xsts_hint("XErr 2148916227").contains("封鎖"));
+        assert!(xsts_hint("XErr 2148916237").contains("成人驗證"));
+        assert!(xsts_hint("XErr 2148916233").contains("Xbox 個人資料"));
+        assert!(xsts_hint("XErr 1").starts_with("XSTS 授權失敗"));
+    }
 
     #[test]
     fn redirect_is_parsed_and_state_checked() {
