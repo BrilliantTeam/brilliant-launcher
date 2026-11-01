@@ -340,26 +340,30 @@ pub async fn identify_pack(bytes: &[u8], name: &str) -> Option<crate::modpack::S
     })
 }
 
-pub async fn pack_latest(project: &str) -> R<Option<crate::modpack::Release>> {
+pub async fn pack_versions(project: &str) -> R<Vec<crate::modpack::Candidate>> {
     let mod_id = parse_id(project)?;
     let page: Page<File> = net::get_json(&format!("{PROXY}/mods/{mod_id}/files?pageSize=50"), false).await?;
     let mut files: Vec<File> = page.data.into_iter().filter(|f| f.is_available != Some(false)).collect();
     files.sort_by_key(|f| std::cmp::Reverse(f.id));
-    let pick = files.iter().position(|f| f.release_type == 1).unwrap_or(0);
-    if files.is_empty() {
-        return Ok(None);
-    }
-    let file = files.swap_remove(pick);
     let page_url = mods_by_id(&[mod_id]).await.remove(&mod_id).map(|m| m.web_url()).unwrap_or_default();
-    Ok(Some(crate::modpack::Release {
-        version_id: file.id.to_string(),
-        version: file.display_name.clone(),
-        url: file.download_url.clone().filter(|u| cdn(u)).unwrap_or_default(),
-        sha1: file.sha1().unwrap_or_default(),
-        size: file.file_length,
-        changelog: String::new(),
-        page: page_url,
-    }))
+    Ok(files
+        .into_iter()
+        .map(|file| crate::modpack::Candidate {
+            mc: file.game_versions.iter().filter(|v| v.starts_with(|c: char| c.is_ascii_digit())).cloned().collect(),
+            loaders: file.game_versions.iter().filter(|v| !v.starts_with(|c: char| c.is_ascii_digit())).map(|v| v.to_lowercase()).collect(),
+            stable: file.release_type == 1,
+            release: crate::modpack::Release {
+                version_id: file.id.to_string(),
+                version: file.display_name.clone(),
+                url: file.download_url.clone().filter(|u| cdn(u)).unwrap_or_default(),
+                sha1: file.sha1().unwrap_or_default(),
+                size: file.file_length,
+                changelog: String::new(),
+                page: page_url.clone(),
+                mc: String::new(),
+            },
+        })
+        .collect())
 }
 
 pub async fn match_files(prints: &[u32]) -> HashMap<u32, (u64, u64)> {

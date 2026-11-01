@@ -1921,3 +1921,7 @@ body.home-editing .social { pointer-events: auto; }
 .badge.pack .ico { width: 11px; height: 11px; flex: none; }
 .pack-changelog { max-height: 220px; overflow: auto; white-space: pre-wrap; padding: 8px 10px; font-size: calc(12px * var(--fs, 1)); background: var(--content-bg-sunken); }
 .pack-line { margin: 6px 0; }
+.pack-choices { display: grid; gap: 6px; margin: 10px 0; }
+.pack-choice { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin: 0; cursor: pointer; background: var(--content-bg-sunken); }
+.pack-choice small { display: block; color: var(--text-faint); }
+.warn-text { color: var(--warning); }

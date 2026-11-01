@@ -706,20 +706,20 @@ async function showBlocked(list, instanceId) {
     }
 }
 
-const pack = { id: '', info: null, release: null, checked: '' };
+const pack = { id: '', info: null, choices: [], page: '', checked: '' };
 
 async function loadPack() {
     const id = selectedInstance()?.id || '';
-    if (pack.id !== id) Object.assign(pack, { id, info: null, release: null, checked: '' });
+    if (pack.id !== id) Object.assign(pack, { id, info: null, choices: [], page: '', checked: '' });
     if (!id) return;
     const info = await api.pack_info({ id }).catch(() => null);
     if (pack.id !== id) return;
     pack.info = info;
     if (!info?.platform || pack.checked === `${id}|${info.versionId}`) return;
     pack.checked = `${id}|${info.versionId}`;
-    api.pack_check({ id }).then((release) => {
+    api.pack_check({ id }).then((check) => {
         if (pack.id !== id) return;
-        pack.release = release;
+        Object.assign(pack, { choices: check.choices || [], page: check.page });
         renderAll();
     }, () => {});
 }
@@ -728,18 +728,44 @@ function packBar() {
     const info = pack.info;
     if (!info || pack.id !== selectedInstance()?.id) return null;
     const updating = busy.has('pack');
-    const release = pack.release;
+    const mc = selectedInstance()?.mcVersion;
+    const release = pack.choices.find((c) => c.mc === mc);
+    const upgrades = release ? [] : pack.choices.filter((c) => c.mc !== mc);
     const where = { modrinth: 'Modrinth', curseforge: 'CurseForge' }[info.platform] || '本機檔案';
     return h('div', { class: 'pack-bar' },
         info.icon ? h('img', { class: 'row-icon', src: info.icon, alt: '' }) : h('div', { class: 'row-icon' }, icon('briefcase')),
         h('div', { class: 'grow' },
-            h('div', { class: 'name' }, `模組包：${info.name || '未命名'}`, release ? h('span', { class: 'badge warn' }, `可更新 ${release.version}`) : null),
+            h('div', { class: 'name' }, `模組包：${info.name || '未命名'}`,
+                release ? h('span', { class: 'badge warn' }, `可更新 ${release.version}`) : null,
+                upgrades.length ? h('span', { class: 'badge warn', title: '新版只支援較新的 Minecraft，更新時需要自己選擇版本' }, `有新版（Minecraft ${upgrades[0].mc}）`) : null),
             h('div', { class: 'meta' }, [info.version && `目前 ${info.version}`, `來源 ${where}`, `管理 ${info.files} 個檔案`].filter(Boolean).join('｜'))),
         release ? h('button', { type: 'button', class: 'mc primary', disabled: updating, onclick: () => updatePack(release) }, updating ? '更新中⋯' : '更新模組包') : null,
+        upgrades.length ? h('button', { type: 'button', class: 'mc primary', disabled: updating, onclick: () => pickUpgrade(upgrades) }, updating ? '更新中⋯' : '選擇版本更新⋯') : null,
         h('button', { type: 'button', class: 'mc', disabled: updating, title: '選擇新版的模組包檔案（.mrpack 或 CurseForge 的 .zip）來更新', onclick: () => updatePack(null) }, '從檔案更新⋯'));
 }
 
-async function updatePack(release) {
+async function pickUpgrade(upgrades) {
+    const info = pack.info;
+    const current = selectedInstance()?.mcVersion || '';
+    let chosen = null;
+    const options = upgrades.map((r) => h('label', { class: 'pack-choice' },
+        h('input', { type: 'radio', name: 'pack-version', onchange: () => { chosen = r; } }),
+        h('span', { class: 'grow' }, h('b', {}, r.version), h('small', {}, `Minecraft ${current} → ${r.mc}`))));
+    const value = await dialog({
+        title: `選擇「${info.name}」要更新到的版本`,
+        content: h('div', {},
+            h('p', {}, `模組包已經有新版，但沒有適用 Minecraft ${current} 的版本。下面的版本都會把這個實例的 Minecraft 一起升級，請自己選擇：`),
+            h('div', { class: 'pack-choices' }, ...options),
+            h('p', { class: 'hint warn-text' }, '升級 Minecraft 後，存檔會被轉換成新版格式，之後無法再用舊版開啟。建議先備份世界，或到模組包頁面下載後匯入成新的實例。'),
+            pack.page ? h('div', { class: 'toolbar' }, h('button', { type: 'button', class: 'mc', onclick: () => openUrl(pack.page) }, icon('external-link'), '查看模組包頁面')) : null),
+        buttons: [{ label: '取消', value: null }, { label: '下一步', value: 'go' }]
+    });
+    if (value !== 'go') return;
+    if (!chosen) return toast('請先選擇一個版本', 'warn');
+    return updatePack(chosen, true);
+}
+
+async function updatePack(release, upgrade = false) {
     const instance = selectedInstance();
     const info = pack.info;
     if (!instance || !info) return;
@@ -752,6 +778,7 @@ async function updatePack(release) {
         title: release ? `更新模組包到 ${release.version}` : `用檔案更新「${info.name}」`,
         content: h('div', {},
             h('p', {}, release ? `「${info.name}」${info.version || ''} → ${release.version}` : `要用「${path.split(/[\\/]/).pop()}」更新「${info.name}」嗎？`),
+            upgrade ? h('p', { class: 'warn-text' }, `這次更新會把 Minecraft 從 ${instance.mcVersion} 升級到 ${release.mc}。`) : null,
             release?.changelog ? h('pre', { class: 'pack-changelog' }, release.changelog) : null,
             release?.page ? h('div', { class: 'toolbar' }, h('button', { type: 'button', class: 'mc', onclick: () => openUrl(release.page) }, icon('external-link'), '查看模組包頁面')) : null,
             h('p', { class: 'hint' }, '只會更動模組包自己的檔案：你自己加的模組不會動，你改過的設定檔會保留。被取代或移除的舊檔案會移到回收資料夾，更新前也會先拍一份模組快照。')),
@@ -764,7 +791,7 @@ async function updatePack(release) {
     const stop = await listen('launcher://progress', (p) => { if (p.stage === 'import') task.set(p); });
     let result;
     try {
-        result = await api.pack_update({ id: instance.id, path });
+        result = await api.pack_update({ id: instance.id, path, version: release?.versionId ?? null });
     } catch (error) {
         return fail(error);
     } finally {
@@ -773,7 +800,7 @@ async function updatePack(release) {
         busy.delete('pack');
         renderAll();
     }
-    Object.assign(pack, { release: null, checked: '' });
+    Object.assign(pack, { choices: [], checked: '' });
     if (result.gameChanged) await loadInstances().catch(() => {});
     await Promise.all(['mod', 'resourcepack', 'shader'].map(loadInstalled));
     await loadPack();

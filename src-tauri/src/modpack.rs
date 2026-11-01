@@ -51,6 +51,53 @@ pub struct Release {
     pub size: u64,
     pub changelog: String,
     pub page: String,
+    pub mc: String,
+}
+
+pub struct Candidate {
+    pub mc: Vec<String>,
+    pub loaders: Vec<String>,
+    pub stable: bool,
+    pub release: Release,
+}
+
+#[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Check {
+    pub choices: Vec<Release>,
+    pub page: String,
+}
+
+fn mc_key(version: &str) -> Option<Vec<u32>> {
+    version.split('.').map(|p| p.parse().ok()).collect()
+}
+
+pub fn choose(newest_first: Vec<Candidate>, current: &str, mc: &str, loader: &str) -> Check {
+    let loader_ok = |c: &Candidate| loader.is_empty() || loader == "vanilla" || c.loaders.is_empty() || c.loaders.iter().any(|l| l.eq_ignore_ascii_case(loader));
+    let mine = mc_key(mc);
+    let page = newest_first.first().map(|c| c.release.page.clone()).unwrap_or_default();
+    let on_stable = newest_first.iter().find(|c| c.release.version_id == current).is_none_or(|c| c.stable);
+    let mut choices = Vec::new();
+    let same: Vec<&Candidate> = newest_first
+        .iter()
+        .take_while(|c| c.release.version_id != current)
+        .filter(|c| loader_ok(c) && c.mc.iter().any(|v| v == mc) && (c.stable || !on_stable))
+        .collect();
+    if let Some(pick) = same.iter().find(|c| c.stable).or(same.first()) {
+        choices.push(Release { mc: mc.to_string(), ..pick.release.clone() });
+    }
+    let mut lines: Vec<(Vec<u32>, String, Release)> = Vec::new();
+    for candidate in newest_first.iter().filter(|c| c.stable && loader_ok(c)) {
+        for version in &candidate.mc {
+            let Some(key) = mc_key(version) else { continue };
+            if mine.as_ref().is_some_and(|m| &key > m) && !lines.iter().any(|(_, v, _)| v == version) {
+                lines.push((key, version.clone(), Release { mc: version.clone(), ..candidate.release.clone() }));
+            }
+        }
+    }
+    lines.sort_by(|a, b| b.0.cmp(&a.0));
+    choices.extend(lines.into_iter().take(3).map(|(_, _, r)| r));
+    Check { choices, page }
 }
 
 pub enum Content {
@@ -227,33 +274,43 @@ pub async fn identify(bytes: &[u8], name: &str) -> Option<Source> {
     crate::curseforge::identify_pack(bytes, name).await
 }
 
-async fn modrinth_latest(project: &str) -> R<Option<Release>> {
+async fn modrinth_versions(project: &str) -> R<Vec<Candidate>> {
     if !crate::modrinth::valid_id(project) {
         bail!("模組包編號不正確");
     }
     let versions: Vec<Value> = net::get_json(&format!("{MODRINTH}/project/{project}/version"), false).await?;
-    let pick = versions.iter().find(|v| v.get("version_type").and_then(Value::as_str) == Some("release")).or(versions.first());
-    Ok(pick.map(|v| {
-        let files = v.get("files").and_then(Value::as_array).cloned().unwrap_or_default();
-        let file = files.iter().find(|f| f.get("primary").and_then(Value::as_bool) == Some(true)).or(files.first()).cloned().unwrap_or_default();
-        Release {
-            version_id: v.get("id").and_then(Value::as_str).unwrap_or_default().to_string(),
-            version: v.get("version_number").and_then(Value::as_str).unwrap_or_default().to_string(),
-            url: file.get("url").and_then(Value::as_str).filter(|u| crate::mrpack::allowed_url(u)).unwrap_or_default().to_string(),
-            sha1: file.pointer("/hashes/sha1").and_then(Value::as_str).unwrap_or_default().to_string(),
-            size: file.get("size").and_then(Value::as_u64).unwrap_or_default(),
-            changelog: v.get("changelog").and_then(Value::as_str).unwrap_or_default().chars().take(4000).collect(),
-            page: format!("https://modrinth.com/modpack/{project}"),
-        }
-    }))
+    let strings = |v: &Value, key: &str| v.get(key).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+    Ok(versions
+        .iter()
+        .map(|v| {
+            let files = v.get("files").and_then(Value::as_array).cloned().unwrap_or_default();
+            let file = files.iter().find(|f| f.get("primary").and_then(Value::as_bool) == Some(true)).or(files.first()).cloned().unwrap_or_default();
+            Candidate {
+                mc: strings(v, "game_versions"),
+                loaders: strings(v, "loaders"),
+                stable: v.get("version_type").and_then(Value::as_str) == Some("release"),
+                release: Release {
+                    version_id: v.get("id").and_then(Value::as_str).unwrap_or_default().to_string(),
+                    version: v.get("version_number").and_then(Value::as_str).unwrap_or_default().to_string(),
+                    url: file.get("url").and_then(Value::as_str).filter(|u| crate::mrpack::allowed_url(u)).unwrap_or_default().to_string(),
+                    sha1: file.pointer("/hashes/sha1").and_then(Value::as_str).unwrap_or_default().to_string(),
+                    size: file.get("size").and_then(Value::as_u64).unwrap_or_default(),
+                    changelog: v.get("changelog").and_then(Value::as_str).unwrap_or_default().chars().take(4000).collect(),
+                    page: format!("https://modrinth.com/modpack/{project}"),
+                    mc: String::new(),
+                },
+            }
+        })
+        .collect())
 }
 
-async fn latest(source: &Source) -> R<Option<Release>> {
-    match source.platform.as_str() {
-        "modrinth" => modrinth_latest(&source.project).await,
-        "curseforge" => crate::curseforge::pack_latest(&source.project).await,
-        _ => Ok(None),
-    }
+async fn check(source: &Source, mc: &str, loader: &str) -> R<Check> {
+    let candidates = match source.platform.as_str() {
+        "modrinth" => modrinth_versions(&source.project).await?,
+        "curseforge" => crate::curseforge::pack_versions(&source.project).await?,
+        _ => return Ok(Check::default()),
+    };
+    Ok(choose(candidates, &source.version_id, mc, loader))
 }
 
 pub fn mods_from_pack(link: &Link, dir: &str) -> HashSet<String> {
@@ -295,20 +352,26 @@ pub async fn pack_info(id: String) -> Option<PackInfo> {
 }
 
 #[tauri::command]
-pub async fn pack_check(id: String) -> R<Option<Release>> {
+pub async fn pack_check(id: String) -> R<Check> {
     let link = load(&id).await.context("這個實例沒有記錄來自哪個模組包")?;
-    Ok(latest(&link.source).await?.filter(|r| r.version_id != link.source.version_id))
+    let inst = instance::get(&id).await?;
+    check(&link.source, &inst.mc_version, &inst.loader).await
 }
 
 #[tauri::command]
-pub async fn pack_update(app: AppHandle, state: State<'_, AppState>, id: String, path: Option<String>) -> R<Outcome> {
+pub async fn pack_update(app: AppHandle, state: State<'_, AppState>, id: String, path: Option<String>, version: Option<String>) -> R<Outcome> {
     state.ensure_idle(&id).await?;
     let link = load(&id).await.unwrap_or_default();
     let temp = std::env::temp_dir().join(format!("brilliant-pack-{}.zip", rand::random::<u32>()));
     let (pack_path, release) = match path {
         Some(path) => (PathBuf::from(path), None),
         None => {
-            let release = latest(&link.source).await?.context("找不到這個模組包的新版本")?;
+            let inst = instance::get(&id).await?;
+            let choices = check(&link.source, &inst.mc_version, &inst.loader).await?.choices;
+            let release = match version {
+                Some(want) => choices.into_iter().find(|r| r.version_id == want).context("找不到選擇的模組包版本，請重新檢查更新")?,
+                None => choices.into_iter().find(|r| r.mc == inst.mc_version).context("這個模組包沒有適用目前 Minecraft 版本的新版本")?,
+            };
             if release.url.is_empty() {
                 bail!("這個模組包的作者不允許第三方啟動器直接下載，請到 {} 下載新版的檔案，再用「從檔案更新」", if release.page.is_empty() { "模組包頁面".to_string() } else { release.page.clone() });
             }
@@ -412,25 +475,55 @@ mod tests {
 }
 
 #[cfg(test)]
+mod choose_tests {
+    use super::*;
+
+    fn c(id: &str, mc: &str, stable: bool) -> Candidate {
+        Candidate { mc: vec![mc.into()], loaders: vec!["fabric".into()], stable, release: Release { version_id: id.into(), version: id.into(), ..Default::default() } }
+    }
+
+    fn ids(check: &Check) -> Vec<(String, String)> {
+        check.choices.iter().map(|r| (r.version_id.clone(), r.mc.clone())).collect()
+    }
+
+    #[test]
+    fn offers_same_line_first_then_newer_minecraft_lines() {
+        let list = || vec![c("15b", "26.3", false), c("14.1", "26.2", true), c("14.0", "26.2", true), c("13.6", "26.1.2", true), c("12.3", "1.21.11", true), c("12.2", "1.21.11", true), c("12.1", "1.21.11", true)];
+        let old = choose(list(), "12.1", "1.21.11", "fabric");
+        assert_eq!(ids(&old), vec![("12.3".into(), "1.21.11".into()), ("14.1".into(), "26.2".into()), ("13.6".into(), "26.1.2".into())]);
+        let latest_on_line = choose(list(), "12.3", "1.21.11", "fabric");
+        assert_eq!(ids(&latest_on_line), vec![("14.1".into(), "26.2".into()), ("13.6".into(), "26.1.2".into())]);
+        assert!(choose(list(), "14.1", "26.2", "fabric").choices.is_empty());
+        assert!(choose(list(), "12.1", "1.21.11", "neoforge").choices.is_empty());
+        assert!(choose(vec![c("2b", "26.3", false), c("1", "26.3", true)], "1", "26.3", "fabric").choices.is_empty());
+        assert_eq!(ids(&choose(vec![c("3b", "26.3", false), c("2b", "26.3", false)], "2b", "26.3", "fabric")), vec![("3b".into(), "26.3".into())]);
+        assert_eq!(ids(&choose(vec![c("3", "26.3", true), c("2b", "26.3", false)], "2b", "26.3", "fabric")), vec![("3".into(), "26.3".into())]);
+        assert_eq!(ids(&choose(vec![c("3b", "26.3", false), c("2", "26.3", true), c("1", "26.3", true)], "1", "26.3", "fabric")), vec![("2".into(), "26.3".into())]);
+    }
+}
+
+#[cfg(test)]
 mod live {
     use super::*;
 
     #[tokio::test]
     #[ignore = "連線測試：cargo test --lib real_packs_are_identified -- --ignored --nocapture"]
     async fn real_packs_are_identified() {
-        let mr = modrinth_latest("1KVo5zza").await.unwrap().unwrap();
-        println!("Modrinth 最新：{} url={} sha1={}", mr.version, !mr.url.is_empty(), mr.sha1.len());
+        for (platform, project) in [("modrinth", "1KVo5zza"), ("curseforge", "cf-396246")] {
+            let source = Source { platform: platform.into(), project: project.into(), version_id: "none".into(), ..Default::default() };
+            for mc in ["1.21.11", "26.2", "26.3"] {
+                let found = check(&source, mc, "fabric").await.unwrap();
+                println!("{platform} {mc}：{:?}", found.choices.iter().map(|r| (&r.version, &r.mc, !r.url.is_empty())).collect::<Vec<_>>());
+            }
+        }
+        let mr = check(&Source { platform: "modrinth".into(), project: "1KVo5zza".into(), version_id: "none".into(), ..Default::default() }, "26.2", "fabric").await.unwrap().choices.remove(0);
         let bytes = net::client().get(&mr.url).send().await.unwrap().bytes().await.unwrap();
         let found = identify(&bytes, "Fabulously Optimized").await.unwrap();
-        println!("Modrinth 辨識：{} / {} / {} / {}", found.platform, found.project, found.name, found.version);
-        assert_eq!((found.platform.as_str(), found.project.as_str(), found.version_id.as_str()), ("modrinth", "1KVo5zza", mr.version_id.as_str()));
-        let cf = crate::curseforge::pack_latest("cf-396246").await.unwrap().unwrap();
-        println!("CurseForge 最新：{} url={} page={}", cf.version, !cf.url.is_empty(), cf.page);
-        if !cf.url.is_empty() {
-            let bytes = net::client().get(&cf.url).send().await.unwrap().bytes().await.unwrap();
-            let found = identify(&bytes, "Fabulously Optimized").await.unwrap();
-            println!("CurseForge 辨識：{} / {} / {} / {}", found.platform, found.project, found.name, found.version);
-            assert_eq!((found.platform.as_str(), found.project.as_str(), found.version_id.as_str()), ("curseforge", "cf-396246", cf.version_id.as_str()));
-        }
+        assert_eq!((found.platform.as_str(), found.version_id.as_str()), ("modrinth", mr.version_id.as_str()));
+        let cf = check(&Source { platform: "curseforge".into(), project: "cf-396246".into(), version_id: "none".into(), ..Default::default() }, "26.2", "fabric").await.unwrap().choices.remove(0);
+        let bytes = net::client().get(&cf.url).send().await.unwrap().bytes().await.unwrap();
+        let found = identify(&bytes, "Fabulously Optimized").await.unwrap();
+        assert_eq!((found.platform.as_str(), found.version_id.as_str()), ("curseforge", cf.version_id.as_str()));
+        println!("兩個平台的 26.2 版本都能辨識回來");
     }
 }
