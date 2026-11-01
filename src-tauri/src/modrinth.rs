@@ -166,7 +166,7 @@ impl Kind {
         })
     }
 
-    fn folder(self) -> &'static str {
+    pub fn folder(self) -> &'static str {
         match self {
             Kind::Mod => "mods",
             Kind::ResourcePack => "resourcepacks",
@@ -431,6 +431,7 @@ pub struct Installed {
     pub conflicts: Vec<String>,
     pub dependents: Vec<String>,
     pub loader_needed: Option<String>,
+    pub from_pack: bool,
 }
 
 pub(crate) fn encode(text: &str) -> String {
@@ -707,6 +708,7 @@ pub async fn installed(instance_id: &str, kind: Kind, scope: &Scope<'_>) -> R<Ve
                 conflicts: Vec::new(),
                 dependents: Vec::new(),
                 loader_needed,
+                from_pack: false,
             });
         }
     }

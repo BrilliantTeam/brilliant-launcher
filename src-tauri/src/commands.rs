@@ -484,7 +484,15 @@ pub async fn content_list(id: String, kind: String, mc: Option<String>) -> R<Vec
     let instance = instance::get(&id).await?;
     let mc = mc.filter(|m| !m.is_empty() && m.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')).unwrap_or_else(|| instance.mc_version.clone());
     let settings = config::load_settings().await;
-    modrinth::installed(&id, modrinth::Kind::parse(&kind)?, &instance.scope(&settings, &mc, instance.freeze_mods)).await
+    let kind = modrinth::Kind::parse(&kind)?;
+    let mut list = modrinth::installed(&id, kind, &instance.scope(&settings, &mc, instance.freeze_mods)).await?;
+    if let Some(link) = crate::modpack::load(&id).await {
+        let owned = crate::modpack::mods_from_pack(&link, kind.folder());
+        for item in list.iter_mut() {
+            item.from_pack = owned.contains(item.file.trim_end_matches(instance::DISABLED_SUFFIX));
+        }
+    }
+    Ok(list)
 }
 
 #[tauri::command]
@@ -532,13 +540,19 @@ pub async fn content_update(app: AppHandle, state: State<'_, AppState>, id: Stri
     if kind == modrinth::Kind::Mod {
         crate::snapshots::take(&id).await;
     }
-    modrinth::replace(&app, &id, kind, &file, update).await
+    let sha1 = update.sha1.clone();
+    let target = modrinth::replace(&app, &id, kind, &file, update).await?;
+    crate::modpack::note_replaced(&id, kind.folder(), &file, &target, &sha1).await;
+    Ok(target)
 }
 
 #[tauri::command]
 pub async fn content_remove(state: State<'_, AppState>, id: String, kind: String, file: String) -> R<()> {
     state.ensure_idle(&id).await?;
-    modrinth::remove(&id, modrinth::Kind::parse(&kind)?, &file).await
+    let kind = modrinth::Kind::parse(&kind)?;
+    modrinth::remove(&id, kind, &file).await?;
+    crate::modpack::note_removed(&id, kind.folder(), &file).await;
+    Ok(())
 }
 
 #[tauri::command]

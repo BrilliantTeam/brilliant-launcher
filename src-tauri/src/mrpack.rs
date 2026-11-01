@@ -1,5 +1,6 @@
 use crate::err::R;
 use crate::instance::{self, Instance};
+use crate::modpack::{rel_key, Content, Entry, Link, NewFile};
 use crate::net::{self, DlFile};
 use crate::state::AppState;
 use crate::{bail, paths};
@@ -293,13 +294,20 @@ pub fn part_of(rel: &Path) -> &'static str {
     }
 }
 
-#[tauri::command]
-pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: String, target: Option<String>, parts: Option<Vec<String>>) -> R<Imported> {
-    let source = PathBuf::from(&path);
-    net::emit_stage(&app, "import", "讀取模組包");
-    let (mut index, refs, mut overrides) = tokio::task::spawn_blocking(move || read_pack(&source)).await.context("讀取模組包中斷")??;
-    let wanted = |rel: &Path| parts.as_ref().is_none_or(|p| p.iter().any(|x| x == part_of(rel)));
-    overrides.retain(|(rel, _)| wanted(rel));
+pub struct Prepared {
+    pub name: String,
+    pub mc: String,
+    pub loader: String,
+    pub loader_version: String,
+    pub files: Vec<NewFile>,
+    pub skipped: Vec<String>,
+    pub blocked: Vec<crate::curseforge::Blocked>,
+}
+
+pub async fn prepare(app: &AppHandle, path: &Path, parts: Option<&[String]>) -> R<Prepared> {
+    let source = path.to_path_buf();
+    net::emit_stage(app, "import", "讀取模組包");
+    let (mut index, refs, overrides) = tokio::task::spawn_blocking(move || read_pack(&source)).await.context("讀取模組包中斷")??;
     if refs.len() > MAX_FILES {
         bail!("模組包的檔案太多了（超過 {MAX_FILES} 個）");
     }
@@ -309,7 +317,7 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
         if index.dependencies.contains_key("quilt-loader") {
             bail!("這是 Quilt 模組包，輝煌啟動器只支援 Fabric、Forge 與 NeoForge");
         }
-        net::emit_stage(&app, "import", &format!("向 CurseForge 查詢 {} 個檔案", refs.len()));
+        net::emit_stage(app, "import", &format!("向 CurseForge 查詢 {} 個檔案", refs.len()));
         let (files, stopped, missing) = crate::curseforge::resolve_pack(&refs).await.map_err(|e| e.0.context("向 CurseForge 查詢模組包內容失敗"))?;
         blocked = stopped;
         skipped = missing;
@@ -332,38 +340,8 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
         .iter()
         .find_map(|(key, name)| Some((name.to_string(), index.dependencies.get(*key)?.clone())))
         .unwrap_or_else(|| ("vanilla".into(), String::new()));
-
-    let target_was_new = target.is_none();
-    let inst: Instance = match target {
-        Some(id) => {
-            let inst = instance::get(&id).await?;
-            state.ensure_idle(&id).await?;
-            if inst.mc_version != mc {
-                bail!("這個模組包是給 Minecraft {mc} 的，目前實例是 {}，請改用「建立新實例」", inst.mc_version);
-            }
-            if inst.loader != loader && loader != "vanilla" {
-                bail!("這個模組包要用 {}，目前實例是 {}，請改用「建立新實例」", crate::forge::display(&loader), crate::forge::display(&inst.loader));
-            }
-            inst
-        }
-        None => {
-            let base: String = if index.name.trim().is_empty() { format!("模組包 {mc}") } else { index.name.chars().take(36).collect() };
-            let draft = Instance {
-                name: crate::instance::unique_name(&base).await,
-                icon: "briefcase".into(),
-                mc_version: mc.clone(),
-                loader: loader.clone(),
-                loader_version: loader_version.clone(),
-                ..Default::default()
-            };
-            crate::commands::create_instance(draft).await?
-        }
-    };
-
-    let created = target_was_new;
-    let game = paths::game_dir(&inst.id);
-    let mut jobs = Vec::new();
-    let mut mods = Vec::new();
+    let wanted = |rel: &Path| parts.is_none_or(|p| p.iter().any(|x| x == part_of(rel)));
+    let mut files = Vec::new();
     for file in &index.files {
         if file.env.as_ref().and_then(|e| e.get("client")).is_some_and(|c| c == "unsupported") {
             continue;
@@ -383,14 +361,70 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
             skipped.push(file.path.clone());
             continue;
         };
-        if rel.starts_with("mods") {
-            if let Some(n) = rel.file_name() {
-                mods.push(n.to_string_lossy().to_string());
-            }
-        }
-        jobs.push(DlFile::new(url.clone(), game.join(&rel)).sha1(Some(sha1.clone())).size(file.file_size));
+        files.push(NewFile { rel: rel_key(&rel), sha1: sha1.to_lowercase(), content: Content::Download { url: url.clone(), size: file.file_size } });
     }
-    let written = write_pack(&app, &game, jobs, overrides, &mut mods, if created { None } else { Some(index.name.as_str()) }).await;
+    for (rel, bytes) in overrides {
+        if !wanted(&rel) {
+            continue;
+        }
+        let key = rel_key(&rel);
+        files.retain(|f| f.rel != key);
+        files.push(NewFile { rel: key, sha1: net::sha1_hex(&bytes), content: Content::Bytes(bytes) });
+    }
+    Ok(Prepared { name: index.name, mc, loader, loader_version, files, skipped, blocked })
+}
+
+#[tauri::command]
+pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: String, target: Option<String>, parts: Option<Vec<String>>) -> R<Imported> {
+    let Prepared { name, mc, loader, loader_version, files, skipped, blocked } = prepare(&app, Path::new(&path), parts.as_deref()).await?;
+    let target_was_new = target.is_none();
+    let inst: Instance = match target {
+        Some(id) => {
+            let inst = instance::get(&id).await?;
+            state.ensure_idle(&id).await?;
+            if inst.mc_version != mc {
+                bail!("這個模組包是給 Minecraft {mc} 的，目前實例是 {}，請改用「建立新實例」", inst.mc_version);
+            }
+            if inst.loader != loader && loader != "vanilla" {
+                bail!("這個模組包要用 {}，目前實例是 {}，請改用「建立新實例」", crate::forge::display(&loader), crate::forge::display(&inst.loader));
+            }
+            inst
+        }
+        None => {
+            let base: String = if name.trim().is_empty() { format!("模組包 {mc}") } else { name.chars().take(36).collect() };
+            let draft = Instance {
+                name: crate::instance::unique_name(&base).await,
+                icon: "briefcase".into(),
+                mc_version: mc.clone(),
+                loader: loader.clone(),
+                loader_version: loader_version.clone(),
+                ..Default::default()
+            };
+            crate::commands::create_instance(draft).await?
+        }
+    };
+
+    let created = target_was_new;
+    let game = paths::game_dir(&inst.id);
+    let entries: Vec<Entry> = files.iter().map(|f| Entry { path: f.rel.clone(), sha1: f.sha1.clone(), removed: false }).collect();
+    let mut jobs = Vec::new();
+    let mut overrides = Vec::new();
+    let mut mods = Vec::new();
+    for file in files {
+        let Some(rel) = safe_relative(&file.rel) else { continue };
+        match file.content {
+            Content::Download { url, size } => {
+                if rel.starts_with("mods") {
+                    if let Some(n) = rel.file_name() {
+                        mods.push(n.to_string_lossy().to_string());
+                    }
+                }
+                jobs.push(DlFile::new(url, game.join(&rel)).sha1(Some(file.sha1)).size(size));
+            }
+            Content::Bytes(bytes) => overrides.push((rel, bytes)),
+        }
+    }
+    let written = write_pack(&app, &game, jobs, overrides, &mut mods, if created { None } else { Some(name.as_str()) }).await;
     if let Err(error) = written {
         if created {
             let _ = tokio::fs::remove_dir_all(paths::instance_dir(&inst.id)).await;
@@ -398,9 +432,16 @@ pub async fn mrpack_import(app: AppHandle, state: State<'_, AppState>, path: Str
         }
         return Err(error);
     }
+    net::emit_stage(&app, "import", "辨識模組包來源");
+    let bytes = tokio::fs::read(&path).await.unwrap_or_default();
+    let mut source = crate::modpack::identify(&bytes, &name).await.unwrap_or_default();
+    if source.name.is_empty() {
+        source.name = name.clone();
+    }
+    let _ = crate::modpack::save(&inst.id, &Link { source, parts: parts.unwrap_or_default(), files: entries }).await;
     mods.sort();
     mods.dedup();
-    Ok(Imported { instance_id: inst.id, name: index.name, mods, skipped, blocked })
+    Ok(Imported { instance_id: inst.id, name, mods, skipped, blocked })
 }
 
 async fn write_pack(app: &AppHandle, game: &Path, jobs: Vec<DlFile>, overrides: Vec<(PathBuf, Vec<u8>)>, mods: &mut Vec<String>, existing: Option<&str>) -> R<()> {

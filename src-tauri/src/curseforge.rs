@@ -313,6 +313,55 @@ async fn identify(prints: &[u32]) -> HashMap<u32, File> {
         .unwrap_or_default()
 }
 
+pub async fn identify_pack(bytes: &[u8], name: &str) -> Option<crate::modpack::Source> {
+    let name = name.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let print = u64::from(fingerprint(bytes));
+    let found: Page<Mod> = net::get_json(&format!("{PROXY}/mods/search?gameId=432&classId=4471&searchFilter={}&sortField=2&sortOrder=desc&pageSize=5", encode(name)), false).await.ok()?;
+    let mut hit = None;
+    for candidate in found.data {
+        let files: R<Page<File>> = net::get_json(&format!("{PROXY}/mods/{}/files?pageSize=50", candidate.id), false).await;
+        if let Some(file) = files.ok().and_then(|p| p.data.into_iter().find(|f| f.file_fingerprint == print)) {
+            hit = Some((file, candidate));
+            break;
+        }
+    }
+    let (file, project) = hit?;
+    let project = Some(project);
+    Some(crate::modpack::Source {
+        platform: "curseforge".into(),
+        project: tag(file.mod_id),
+        version_id: file.id.to_string(),
+        version: file.display_name.clone(),
+        name: project.as_ref().map(|m| m.name.clone()).unwrap_or_default(),
+        icon: project.and_then(|m| m.logo.and_then(|l| l.thumbnail_url.or(l.url))).unwrap_or_default(),
+    })
+}
+
+pub async fn pack_latest(project: &str) -> R<Option<crate::modpack::Release>> {
+    let mod_id = parse_id(project)?;
+    let page: Page<File> = net::get_json(&format!("{PROXY}/mods/{mod_id}/files?pageSize=50"), false).await?;
+    let mut files: Vec<File> = page.data.into_iter().filter(|f| f.is_available != Some(false)).collect();
+    files.sort_by_key(|f| std::cmp::Reverse(f.id));
+    let pick = files.iter().position(|f| f.release_type == 1).unwrap_or(0);
+    if files.is_empty() {
+        return Ok(None);
+    }
+    let file = files.swap_remove(pick);
+    let page_url = mods_by_id(&[mod_id]).await.remove(&mod_id).map(|m| m.web_url()).unwrap_or_default();
+    Ok(Some(crate::modpack::Release {
+        version_id: file.id.to_string(),
+        version: file.display_name.clone(),
+        url: file.download_url.clone().filter(|u| cdn(u)).unwrap_or_default(),
+        sha1: file.sha1().unwrap_or_default(),
+        size: file.file_length,
+        changelog: String::new(),
+        page: page_url,
+    }))
+}
+
 pub async fn match_files(prints: &[u32]) -> HashMap<u32, (u64, u64)> {
     identify(prints).await.into_iter().map(|(print, f)| (print, (f.mod_id, f.id))).collect()
 }

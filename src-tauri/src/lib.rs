@@ -31,6 +31,7 @@ pub mod gamewin;
 pub mod snapshots;
 pub mod diskuse;
 pub mod secret;
+pub mod modpack;
 
 use tauri::{Listener, Manager};
 
@@ -138,6 +139,9 @@ pub fn run() {
             commands::set_mod_profiles,
             mrpack::profile_export,
             mrpack::mrpack_import,
+            modpack::pack_info,
+            modpack::pack_check,
+            modpack::pack_update,
             worlds::list_worlds,
             worlds::world_export,
             worlds::world_copy,

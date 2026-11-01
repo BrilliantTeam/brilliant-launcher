@@ -706,6 +706,93 @@ async function showBlocked(list, instanceId) {
     }
 }
 
+const pack = { id: '', info: null, release: null, checked: '' };
+
+async function loadPack() {
+    const id = selectedInstance()?.id || '';
+    if (pack.id !== id) Object.assign(pack, { id, info: null, release: null, checked: '' });
+    if (!id) return;
+    const info = await api.pack_info({ id }).catch(() => null);
+    if (pack.id !== id) return;
+    pack.info = info;
+    if (!info?.platform || pack.checked === `${id}|${info.versionId}`) return;
+    pack.checked = `${id}|${info.versionId}`;
+    api.pack_check({ id }).then((release) => {
+        if (pack.id !== id) return;
+        pack.release = release;
+        renderAll();
+    }, () => {});
+}
+
+function packBar() {
+    const info = pack.info;
+    if (!info || pack.id !== selectedInstance()?.id) return null;
+    const updating = busy.has('pack');
+    const release = pack.release;
+    const where = { modrinth: 'Modrinth', curseforge: 'CurseForge' }[info.platform] || '本機檔案';
+    return h('div', { class: 'pack-bar' },
+        info.icon ? h('img', { class: 'row-icon', src: info.icon, alt: '' }) : h('div', { class: 'row-icon' }, icon('briefcase')),
+        h('div', { class: 'grow' },
+            h('div', { class: 'name' }, `模組包：${info.name || '未命名'}`, release ? h('span', { class: 'badge warn' }, `可更新 ${release.version}`) : null),
+            h('div', { class: 'meta' }, [info.version && `目前 ${info.version}`, `來源 ${where}`, `管理 ${info.files} 個檔案`].filter(Boolean).join('｜'))),
+        release ? h('button', { type: 'button', class: 'mc primary', disabled: updating, onclick: () => updatePack(release) }, updating ? '更新中⋯' : '更新模組包') : null,
+        h('button', { type: 'button', class: 'mc', disabled: updating, title: '選擇新版的模組包檔案（.mrpack 或 CurseForge 的 .zip）來更新', onclick: () => updatePack(null) }, '從檔案更新⋯'));
+}
+
+async function updatePack(release) {
+    const instance = selectedInstance();
+    const info = pack.info;
+    if (!instance || !info) return;
+    let path = null;
+    if (!release) {
+        path = await pickFile('modpack').catch(fail);
+        if (!path) return;
+    }
+    const ok = await dialog({
+        title: release ? `更新模組包到 ${release.version}` : `用檔案更新「${info.name}」`,
+        content: h('div', {},
+            h('p', {}, release ? `「${info.name}」${info.version || ''} → ${release.version}` : `要用「${path.split(/[\\/]/).pop()}」更新「${info.name}」嗎？`),
+            release?.changelog ? h('pre', { class: 'pack-changelog' }, release.changelog) : null,
+            release?.page ? h('div', { class: 'toolbar' }, h('button', { type: 'button', class: 'mc', onclick: () => openUrl(release.page) }, icon('external-link'), '查看模組包頁面')) : null,
+            h('p', { class: 'hint' }, '只會更動模組包自己的檔案：你自己加的模組不會動，你改過的設定檔會保留。被取代或移除的舊檔案會移到回收資料夾，更新前也會先拍一份模組快照。')),
+        buttons: [{ label: '取消', value: false }, { label: '開始更新', value: true }]
+    });
+    if (ok !== true) return;
+    busy.add('pack');
+    renderAll();
+    const task = progressToast(`更新模組包「${info.name}」`);
+    const stop = await listen('launcher://progress', (p) => { if (p.stage === 'import') task.set(p); });
+    let result;
+    try {
+        result = await api.pack_update({ id: instance.id, path });
+    } catch (error) {
+        return fail(error);
+    } finally {
+        stop();
+        task.close();
+        busy.delete('pack');
+        renderAll();
+    }
+    Object.assign(pack, { release: null, checked: '' });
+    if (result.gameChanged) await loadInstances().catch(() => {});
+    await Promise.all(['mod', 'resourcepack', 'shader'].map(loadInstalled));
+    await loadPack();
+    renderAll();
+    if (result.blocked?.length) await showBlocked(result.blocked, instance.id);
+    const short = (rel) => rel.split('/').pop();
+    const line = (label, list) => (list.length ? h('div', { class: 'pack-line' }, h('b', {}, `${label} ${list.length} 個`), h('div', { class: 'hint' }, list.slice(0, 12).map(short).join('、') + (list.length > 12 ? '⋯' : ''))) : null);
+    const unchanged = !result.added.length && !result.updated.length && !result.removed.length;
+    await dialog({
+        title: `模組包已更新${result.version ? `到 ${result.version}` : ''}`,
+        content: h('div', {},
+            result.gameChanged ? h('p', {}, `遊戲版本改為 ${result.gameChanged}，下次開始遊戲時會自動下載。`) : null,
+            line('新增', result.added), line('更新', result.updated), line('移除', result.removed), line('保留你改過的', result.kept),
+            unchanged ? h('p', {}, '檔案都已經是最新的。') : null,
+            result.skipped.length ? h('p', { class: 'hint' }, `有 ${result.skipped.length} 個檔案來源不受信任或格式不正確，已略過。`) : null),
+        buttons: [{ label: '知道了', value: null }]
+    });
+}
+
 const PACK_PARTS = [['mods', '模組'], ['resourcepacks', '資源包'], ['shaderpacks', '光影'], ['other', '設定檔與其他檔案（config 等）']];
 
 export async function importPack(targetId = null, dropped = null) {
@@ -1119,6 +1206,7 @@ function installedRow(entry) {
             h('div', { class: 'name' },
                 entry.name,
                 entry.managed ? h('span', { class: 'badge' }, '啟動器管理') : null,
+                entry.from_pack && pack.info ? h('span', { class: 'badge pack', title: `由模組包「${pack.info.name}」安裝，更新模組包時會一併更新` }, icon('briefcase'), pack.info.name) : null,
                 !entry.enabled ? h('span', { class: 'badge grey' }, '已停用') : null,
                 entry.pinned ? h('span', { class: 'badge grey' }, '已鎖定版本') : null,
                 missing.length ? h('span', { class: 'badge warn' }, `缺少 ${missing.map((d) => d.title).join('、')}`) : null,
@@ -1173,7 +1261,7 @@ function renderInstalled() {
             : [h('div', { class: 'empty-state' }, `已安裝的${KIND_LABEL[state.kind]}裡沒有「${state.filter.trim()}」。`,
                 h('button', { type: 'button', class: 'mc primary', onclick: () => { $('#mod-search').value = state.filter.trim(); state.filter = ''; $('#installed-search').value = ''; selectTab('explore'); search(); } }, `到 ${SOURCE_NAME[state.source]} 搜尋`))]));
     }
-    box.append(...[profileBar(list), packPanel(), depBanner(list), ...list.map(installedRow)].filter(Boolean));
+    box.append(...[packBar(), profileBar(list), packPanel(), depBanner(list), ...list.map(installedRow)].filter(Boolean));
 }
 
 function toggleTargetMenu(force) {
@@ -1281,7 +1369,7 @@ function selectTab(tab) {
 async function reloadInstalled() {
     const seq = ++state.listSeq;
     const kinds = state.kind === 'mod' ? ['mod', 'shader'] : [state.kind, 'mod'];
-    await Promise.all(kinds.map(loadInstalled));
+    await Promise.all([...kinds.map(loadInstalled), loadPack()]);
     if (seq === state.listSeq) renderAll();
 }
 

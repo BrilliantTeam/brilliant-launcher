@@ -1914,3 +1914,10 @@ body.home-editing .social { pointer-events: auto; }
 .device-row { display: flex; justify-content: center; margin: 14px 0 10px; }
 .device-code { font-size: calc(30px * var(--fs, 1)); letter-spacing: 6px; padding: 10px 18px; background: var(--content-bg-sunken); user-select: all; }
 .device-actions { justify-content: center; margin-bottom: 8px; }
+.pack-bar { display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--content-bg-sunken); border-left: 4px solid var(--accent); }
+.pack-bar .name { font-weight: bold; }
+.pack-bar .meta { font-size: calc(11px * var(--fs, 1)); color: var(--text-faint); }
+.badge.pack { display: inline-flex; align-items: center; gap: 3px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: -2px; background: var(--border); color: var(--content-bg); }
+.badge.pack .ico { width: 11px; height: 11px; flex: none; }
+.pack-changelog { max-height: 220px; overflow: auto; white-space: pre-wrap; padding: 8px 10px; font-size: calc(12px * var(--fs, 1)); background: var(--content-bg-sunken); }
+.pack-line { margin: 6px 0; }
