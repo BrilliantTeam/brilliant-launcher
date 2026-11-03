@@ -80,7 +80,8 @@ static REFRESHING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static LAST_ATTEMPT: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
 const RATE_LIMIT_COOLDOWN_SECS: i64 = 60 * 60;
 const FAILURE_COOLDOWN_SECS: i64 = 5 * 60;
-const ATTEMPT_GAP: std::time::Duration = std::time::Duration::from_secs(5);
+const ATTEMPT_GAP: std::time::Duration = std::time::Duration::from_secs(20);
+const BACKGROUND_AHEAD_SECS: i64 = 6 * 3600;
 
 fn cooldown_file() -> std::path::PathBuf {
     crate::paths::root().join("auth-cooldown")
@@ -103,7 +104,32 @@ fn waiting(account: &Account, ahead: i64, shared: i64) -> Option<R<Account>> {
         return Some(Ok(account.clone()));
     }
     let minutes = (until - now + 59) / 60;
-    Some(Err(anyhow::anyhow!("{}，約 {minutes} 分鐘後會自動再試；這段時間反覆登入會讓限制更久。", auth::msa::RATE_LIMITED).into()))
+    if shared > now || account.session_error.contains(auth::msa::RATE_LIMITED) {
+        return Some(Err(anyhow::anyhow!("{}，約 {minutes} 分鐘後會自動再試；這段時間反覆登入會讓限制更久。", auth::msa::RATE_LIMITED).into()));
+    }
+    let reason = if account.session_error.is_empty() { "上次驗證沒有成功" } else { account.session_error.as_str() };
+    Some(Err(anyhow::anyhow!("{reason}（約 {minutes} 分鐘後會自動再試）").into()))
+}
+
+async fn start_cooldown() {
+    let _ = crate::net::write_file(&cooldown_file(), (now_secs() + RATE_LIMIT_COOLDOWN_SECS).to_string().as_bytes(), false).await;
+}
+
+pub fn login_allowed() -> R<()> {
+    let left = shared_cooldown() - now_secs();
+    if left > 0 {
+        bail!("{}，約 {} 分鐘後才能再登入；這段時間反覆登入會讓限制更久。", auth::msa::RATE_LIMITED, (left + 59) / 60);
+    }
+    Ok(())
+}
+
+pub async fn remember_limit<T>(result: R<T>) -> R<T> {
+    if let Err(error) = &result {
+        if auth::msa::is_rate_limited(&error.0) {
+            start_cooldown().await;
+        }
+    }
+    result
 }
 
 async fn space_attempts() {
@@ -137,9 +163,9 @@ pub async fn fresh(account: Account, ahead: i64) -> R<Account> {
         Err(e) if crate::net::is_offline(&e.0) => Ok(account),
         Err(e) => {
             let detail = format!("{:#}", e.0);
-            let limited = detail.contains(auth::msa::RATE_LIMITED);
+            let limited = auth::msa::is_rate_limited(&e.0);
             if limited {
-                let _ = crate::net::write_file(&cooldown_file(), (now_secs() + RATE_LIMIT_COOLDOWN_SECS).to_string().as_bytes(), false).await;
+                start_cooldown().await;
             }
             let mut marked = account.clone();
             marked.retry_at = now_secs() + if limited { RATE_LIMIT_COOLDOWN_SECS } else { FAILURE_COOLDOWN_SECS };
@@ -392,10 +418,12 @@ pub async fn refresh_sessions(state: State<'_, AppState>) -> R<Vec<SessionStatus
     let selected = config::load_settings().await.selected_account;
     let accounts = config::load_accounts().await;
     let current = accounts.iter().find(|a| a.id == selected).or_else(|| accounts.first()).cloned();
+    let idle = state.running.lock().await.is_empty() && state.launching.lock().map(|set| set.is_empty()).unwrap_or(false);
+    let ahead = if idle { BACKGROUND_AHEAD_SECS } else { 60 };
     for account in current.into_iter().filter(|a| a.kind == "msa") {
         let before = account.expires_at;
         let id = account.id.clone();
-        out.push(match fresh(account, 60).await {
+        out.push(match fresh(account, ahead).await {
             Ok(a) => {
                 if !a.session_error.is_empty() {
                     let mut cleared = a.clone();
@@ -480,7 +508,16 @@ mod tests {
         assert!(waiting(&msa(now + 7200, 0), 3 * 3600, 0).is_none());
         assert!(matches!(waiting(&msa(now + 7200, 0), 60, 0), Some(Ok(_))));
         let shared = waiting(&msa(now - 10, 0), 60, now + 3000).unwrap().err().unwrap();
-        assert!(format!("{:#}", shared.0).contains("50 分鐘"));
+        assert!(format!("{:#}", shared.0).contains("50 分鐘") && format!("{:#}", shared.0).contains("HTTP 429"));
+        let generic = waiting(&msa(now - 10, now + 300), 60, 0).unwrap().err().unwrap();
+        assert!(!format!("{:#}", generic.0).contains("429") && format!("{:#}", generic.0).contains("5 分鐘"));
+        let reason = waiting(&Account { session_error: "續期失敗（HTTP 400）".into(), ..msa(now - 10, now + 300) }, 60, 0).unwrap().err().unwrap();
+        assert!(format!("{:#}", reason.0).starts_with("續期失敗（HTTP 400）"));
+        let limited = waiting(&Account { session_error: auth::msa::RATE_LIMITED.into(), ..msa(now - 10, now + 300) }, 60, 0).unwrap().err().unwrap();
+        assert!(format!("{:#}", limited.0).contains("HTTP 429"));
+        assert!(matches!(waiting(&msa(now + 7200, now + 300), BACKGROUND_AHEAD_SECS, 0), Some(Ok(_))));
+        assert!(waiting(&msa(now + 7200, 0), BACKGROUND_AHEAD_SECS, 0).is_none());
+        assert!(matches!(waiting(&msa(now + 30000, 0), BACKGROUND_AHEAD_SECS, 0), Some(Ok(_))));
         assert!(matches!(waiting(&msa(now + 7200, 0), 3 * 3600, now + 3000), Some(Ok(_))));
         assert!(waiting(&msa(now - 10, 0), 60, now - 5).is_none());
     }

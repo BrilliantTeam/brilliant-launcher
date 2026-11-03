@@ -20,6 +20,42 @@ const MC_PROFILE_URL: &str = "https://api.minecraftservices.com/minecraft/profil
 const SCOPE: &str = "XboxLive.signin offline_access";
 pub const RATE_LIMITED: &str = "Mojang 暫時限制了這個網路的登入次數（HTTP 429）";
 
+fn limited_error() -> anyhow::Error {
+    anyhow!("{RATE_LIMITED}，約 60 分鐘後會自動再試；這段時間反覆登入會讓限制更久。")
+}
+
+pub fn is_rate_limited(error: &anyhow::Error) -> bool {
+    format!("{error:#}").contains(RATE_LIMITED)
+}
+
+async fn post_xbox<T: serde::de::DeserializeOwned>(url: &str, body: &serde_json::Value) -> R<T> {
+    let res = net::client().post(url).json(body).send().await?;
+    let status = res.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(limited_error().into());
+    }
+    let text = res.text().await?;
+    if !status.is_success() {
+        bail!("HTTP {status}：{text}");
+    }
+    Ok(serde_json::from_str(&text).with_context(|| format!("解析 JSON 失敗：{url}"))?)
+}
+
+fn mc_login_error(error: anyhow::Error) -> anyhow::Error {
+    if is_rate_limited(&error) {
+        return error;
+    }
+    let detail = format!("{error:#}");
+    if detail.contains("Invalid app registration") {
+        anyhow!("輝煌啟動器的正版登入正在等待 Mojang 審核開通，目前暫時無法使用正版帳號。
+請先使用離線帳號；開通後不需要更新啟動器，直接重新登入即可。")
+    } else if detail.contains("ACCOUNT_SUSPENDED") {
+        anyhow!("這個 Microsoft 帳號已被停權，無法登入 Minecraft。請到 https://enforcement.xbox.com 用同一個帳號登入查看原因或提出申訴；若懷疑帳號被盜，請先到 https://account.microsoft.com 檢查安全性")
+    } else {
+        anyhow!("Minecraft 服務驗證失敗：{detail}")
+    }
+}
+
 #[derive(Deserialize)]
 struct MsaToken {
     access_token: String,
@@ -129,6 +165,9 @@ pub async fn exchange(client_id: &str, code: &str, pkce: &Pkce) -> R<Account> {
         .send()
         .await?;
     let status = res.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(limited_error().into());
+    }
     let text = res.text().await?;
     if !status.is_success() {
         let err: TokenError = serde_json::from_str(&text)
@@ -156,6 +195,9 @@ pub struct DeviceCode {
 pub async fn device_start(client_id: &str) -> R<DeviceCode> {
     let res = net::client().post(DEVICE_URL).form(&[("client_id", client_id), ("scope", SCOPE)]).send().await?;
     let status = res.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(limited_error().into());
+    }
     let text = res.text().await?;
     if !status.is_success() {
         bail!("無法取得登入代碼（HTTP {status}）：{text}");
@@ -187,6 +229,9 @@ pub async fn device_finish(client_id: &str, code: &DeviceCode) -> R<Account> {
             .send()
             .await?;
         let status = res.status();
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(limited_error().into());
+        }
         let text = res.text().await?;
         if status.is_success() {
             let token: MsaToken = serde_json::from_str(&text).context("解析登入回應失敗")?;
@@ -214,6 +259,9 @@ pub async fn refresh(client_id: &str, refresh_token: &str) -> R<Account> {
         .send()
         .await?;
     let status = res.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(limited_error().into());
+    }
     let text = res.text().await?;
     if !status.is_success() {
         bail!("續期失敗（HTTP {status}），請重新登入：{text}");
@@ -223,7 +271,7 @@ pub async fn refresh(client_id: &str, refresh_token: &str) -> R<Account> {
 }
 
 async fn finish(msa: MsaToken) -> R<Account> {
-    let xbl: XboxAuth = net::post_json(
+    let xbl: XboxAuth = post_xbox(
         XBL_URL,
         &json!({
             "Properties": {
@@ -236,7 +284,7 @@ async fn finish(msa: MsaToken) -> R<Account> {
         }),
     )
     .await
-    .map_err(|e| anyhow!("Xbox Live 驗證失敗：{:#}", e.0))?;
+    .map_err(|e| if is_rate_limited(&e.0) { e.0 } else { anyhow!("Xbox Live 驗證失敗：{:#}", e.0) })?;
 
     let uhs = xbl
         .display_claims
@@ -246,7 +294,7 @@ async fn finish(msa: MsaToken) -> R<Account> {
         .filter(|s| !s.is_empty())
         .context("Xbox Live 沒有回傳使用者雜湊")?;
 
-    let xsts: XboxAuth = match net::post_json(
+    let xsts: XboxAuth = match post_xbox(
         XSTS_URL,
         &json!({
             "Properties": { "SandboxId": "RETAIL", "UserTokens": [xbl.token] },
@@ -257,29 +305,18 @@ async fn finish(msa: MsaToken) -> R<Account> {
     .await
     {
         Ok(v) => v,
+        Err(e) if is_rate_limited(&e.0) => return Err(e),
         Err(e) => bail!("{}", xsts_hint(&format!("{:#}", e.0))),
     };
 
     let xuid = xsts.display_claims.xui.first().map(|x| x.xid.clone()).unwrap_or_default();
 
-    let mc: McToken = net::post_json(
+    let mc: McToken = post_xbox(
         MC_LOGIN_URL,
         &json!({ "identityToken": format!("XBL3.0 x={uhs};{}", xsts.token) }),
     )
     .await
-    .map_err(|e| {
-        let detail = format!("{:#}", e.0);
-        if detail.contains("Invalid app registration") {
-            anyhow!("輝煌啟動器的正版登入正在等待 Mojang 審核開通，目前暫時無法使用正版帳號。
-請先使用離線帳號；開通後不需要更新啟動器，直接重新登入即可。")
-        } else if detail.contains("ACCOUNT_SUSPENDED") {
-            anyhow!("這個 Microsoft 帳號已被停權，無法登入 Minecraft。請到 https://enforcement.xbox.com 用同一個帳號登入查看原因或提出申訴；若懷疑帳號被盜，請先到 https://account.microsoft.com 檢查安全性")
-        } else if detail.contains("429") {
-            anyhow!("{RATE_LIMITED}，啟動器會在約 60 分鐘後自動再試；這段時間反覆登入會讓限制更久。")
-        } else {
-            anyhow!("Minecraft 服務驗證失敗：{detail}")
-        }
-    })?;
+    .map_err(|e| mc_login_error(e.0))?;
 
     let res = net::client()
         .get(MC_PROFILE_URL)
@@ -290,6 +327,9 @@ async fn finish(msa: MsaToken) -> R<Account> {
         bail!("這個微軟帳號沒有 Minecraft: Java Edition，無法用正版登入");
     }
     let status = res.status();
+    if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+        return Err(limited_error().into());
+    }
     let text = res.text().await?;
     if !status.is_success() {
         bail!("取得遊戲檔案失敗（HTTP {status}）：{text}");
@@ -329,6 +369,16 @@ fn xsts_hint(raw: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_real_rate_limits_count() {
+        assert!(is_rate_limited(&limited_error()));
+        let suspicious = anyhow!("HTTP 400 Bad Request：trace 14291, retry 429");
+        assert!(!is_rate_limited(&suspicious));
+        assert!(format!("{:#}", mc_login_error(suspicious)).starts_with("Minecraft 服務驗證失敗"));
+        assert!(is_rate_limited(&mc_login_error(limited_error())));
+        assert!(format!("{:#}", mc_login_error(anyhow!("HTTP 403：ACCOUNT_SUSPENDED"))).contains("停權"));
+    }
 
     #[test]
     fn known_xbox_errors_get_plain_hints() {

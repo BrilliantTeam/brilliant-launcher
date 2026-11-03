@@ -608,8 +608,10 @@ export async function refreshSessions() {
     if (results.some((r) => r.refreshed || !r.ok)) await loadAccounts().catch(() => {});
     const limited = results.find((r) => !r.ok && r.error.includes('HTTP 429'));
     if (limited) return toast(limited.error, 'warn');
-    const broken = results.filter((r) => !r.ok).map((r) => store.accounts.find((a) => a.id === r.id)?.name).filter(Boolean);
-    if (broken.length) toast(`${broken.join('、')} 的登入已失效，請到「帳號」頁重新登入。`, 'warn');
+    for (const failed of results.filter((r) => !r.ok)) {
+        const name = store.accounts.find((a) => a.id === failed.id)?.name;
+        toast(`${name ?? '帳號'} 驗證失敗：${failed.error.slice(0, 200)}`, 'warn');
+    }
 }
 
 let viewerName = '';

@@ -138,9 +138,10 @@ pub fn cancel_login() {
 
 #[tauri::command]
 pub async fn login_microsoft(app: AppHandle, state: State<'_, AppState>, browser: Option<bool>) -> R<Account> {
+    crate::skins::login_allowed()?;
     if browser.unwrap_or(true) {
         let (code, pkce) = browser_code(&app).await?;
-        let account = auth::msa::exchange(config::MSA_CLIENT_ID, &code, &pkce).await?;
+        let account = crate::skins::remember_limit(auth::msa::exchange(config::MSA_CLIENT_ID, &code, &pkce).await).await?;
         upsert_account(&state, account.clone()).await?;
         return Ok(Account { access_token: String::new(), refresh_token: String::new(), ..account });
     }
@@ -172,7 +173,7 @@ pub async fn login_microsoft(app: AppHandle, state: State<'_, AppState>, browser
     let result = rx.recv().await.unwrap_or_else(|| Err("已取消登入".into()));
     let _ = window.destroy();
     let code = result.map_err(|why| anyhow::anyhow!(why))?;
-    let account = auth::msa::exchange(config::MSA_CLIENT_ID, &code, &pkce).await?;
+    let account = crate::skins::remember_limit(auth::msa::exchange(config::MSA_CLIENT_ID, &code, &pkce).await).await?;
     upsert_account(&state, account.clone()).await?;
     Ok(Account { access_token: String::new(), refresh_token: String::new(), ..account })
 }
@@ -187,7 +188,8 @@ struct DeviceCodeInfo {
 
 #[tauri::command]
 pub async fn login_device(app: AppHandle, state: State<'_, AppState>) -> R<Account> {
-    let code = auth::msa::device_start(config::MSA_CLIENT_ID).await?;
+    crate::skins::login_allowed()?;
+    let code = crate::skins::remember_limit(auth::msa::device_start(config::MSA_CLIENT_ID).await).await?;
     let (cancel_tx, cancel_rx) = tokio::sync::oneshot::channel();
     if let Ok(mut slot) = LOGIN_CANCEL.lock() {
         if let Some(previous) = slot.replace(cancel_tx) {
@@ -196,7 +198,7 @@ pub async fn login_device(app: AppHandle, state: State<'_, AppState>) -> R<Accou
     }
     let _ = app.emit("launcher://device-code", DeviceCodeInfo { user_code: code.user_code.clone(), verification_uri: code.verification_uri.clone(), expires_in: code.expires_in });
     let account = tokio::select! {
-        result = auth::msa::device_finish(config::MSA_CLIENT_ID, &code) => result?,
+        result = auth::msa::device_finish(config::MSA_CLIENT_ID, &code) => crate::skins::remember_limit(result).await?,
         _ = cancel_rx => bail!("已取消登入"),
     };
     upsert_account(&state, account.clone()).await?;
