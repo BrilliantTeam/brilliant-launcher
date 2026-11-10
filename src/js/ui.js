@@ -185,14 +185,41 @@ export function clear(el) {
     return el;
 }
 
+const TOAST_MAX = 5;
+
+function raiseToasts() {
+    const host = $('#toasts');
+    if (!host.showPopover) return;
+    if (host.matches(':popover-open')) host.hidePopover();
+    host.showPopover();
+}
+
+function dismissToast(box) {
+    if (box.classList.contains('out')) return;
+    clearTimeout(box.timer);
+    box.classList.add('out');
+    setTimeout(() => box.remove(), 250);
+}
+
 export function toast(message, kind = '') {
-    const box = h('div', { class: `toast ${kind}` }, String(message));
-    $('#toasts').append(box);
+    const text = String(message);
+    const host = $('#toasts');
+    const live = $$('.toast:not(.task):not(.out)', host);
+    let box = live.find((el) => el.toastKey === `${kind}\n${text}`);
+    if (box) {
+        box.dataset.count = String((Number(box.dataset.count) || 1) + 1);
+    } else {
+        box = h('div', { class: `toast ${kind}`, role: kind === 'error' ? 'alert' : 'status' }, text);
+        box.toastKey = `${kind}\n${text}`;
+        box.addEventListener('click', () => dismissToast(box));
+        if (!host.childElementCount) raiseToasts();
+        host.append(box);
+        const oldest = [...live.filter((el) => !el.classList.contains('error')), ...live.filter((el) => el.classList.contains('error'))];
+        for (const old of oldest.slice(0, Math.max(0, live.length + 1 - TOAST_MAX))) dismissToast(old);
+    }
     const ms = (Number(document.documentElement.dataset.toastSeconds) || 6) * 1000;
-    setTimeout(() => {
-        box.classList.add('out');
-        setTimeout(() => box.remove(), 250);
-    }, kind === 'error' ? Math.max(ms * 2, 8000) : ms);
+    clearTimeout(box.timer);
+    box.timer = setTimeout(() => dismissToast(box), kind === 'error' ? Math.max(ms * 2, 8000) : ms);
 }
 
 export function progressToast(title) {
@@ -200,6 +227,7 @@ export function progressToast(title) {
     const label = h('span', {}, '準備中⋯');
     const count = h('span', {});
     const box = h('div', { class: 'toast task', role: 'status' }, h('b', {}, title), h('div', { class: 'track' }, fill), h('div', { class: 'caption' }, label, count));
+    if (!$('#toasts').childElementCount) raiseToasts();
     $('#toasts').append(box);
     return {
         set({ label: text, doneFiles = 0, totalFiles = 0, doneBytes = 0, totalBytes = 0 }) {
@@ -258,6 +286,7 @@ export function dialog({ title, content, wide = false, buttons = [{ label: '關�
             );
         }
         dlg.showModal();
+        if ($('#toasts').childElementCount) raiseToasts();
         const field = body.querySelector('input[type="text"]:not([disabled])');
         (field ?? foot.querySelector('button'))?.focus();
     });

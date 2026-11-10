@@ -173,6 +173,17 @@ export function initLog() {
     const box = $('#console');
 
     let pending = [];
+    let stale = false;
+    const watching = () => !document.hidden && document.body.dataset.view === 'log';
+    const catchUp = () => {
+        if (!stale || !watching()) return;
+        stale = false;
+        if (source !== LIVE) return;
+        const top = box.scrollTop;
+        render();
+        if (!$('#log-follow').checked) box.scrollTop = top;
+    };
+    document.addEventListener('visibilitychange', catchUp);
     const flush = () => {
         const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
         const fresh = pending.filter((entry) => entry.instance === shown);
@@ -192,6 +203,10 @@ export function initLog() {
         if (buffer.length > MAX_LINES * 1.25) buffer.splice(0, buffer.length - MAX_LINES);
         if (shown === null || (isNew && source === LIVE && !logs.get(shown)?.length)) return showInstance(entry.instance);
         if (isNew) renderPickers();
+        if (!watching()) {
+            stale = true;
+            return;
+        }
         if (!pending.length) requestAnimationFrame(flush);
         pending.push(entry);
     });
@@ -205,6 +220,7 @@ export function initLog() {
     addEventListener('hashchange', () => {
         if (location.hash !== '#log') return;
         loadFiles();
+        catchUp();
         if (follow.checked && source === LIVE) toBottom();
     });
     follow.addEventListener('change', () => { if (follow.checked) toBottom(); });

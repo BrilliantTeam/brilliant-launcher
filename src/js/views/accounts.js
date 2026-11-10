@@ -465,7 +465,9 @@ async function setCape(account, cape) {
 }
 
 let panelSeq = 0;
+let panelStale = false;
 async function renderPanel() {
+    panelStale = false;
     const seq = ++panelSeq;
     const account = selectedAccount();
     const box = clear($('#account-panel'));
@@ -600,7 +602,8 @@ function render() {
         return;
     }
     box.append(...store.accounts.map(card));
-    renderPanel();
+    if (document.body.dataset.view === 'accounts') renderPanel();
+    else panelStale = true;
 }
 
 export async function refreshSessions() {
@@ -624,8 +627,10 @@ export function initAccounts() {
     $('#btn-login-msa').addEventListener('click', guard(loginMicrosoft));
     $('#btn-login-offline').addEventListener('click', guard(addOffline));
     on('accounts', render);
-    addEventListener('hashchange', () => {
-        if (viewer) viewer.renderPaused = location.hash !== '#accounts';
-    });
+    new MutationObserver(() => {
+        const shown = document.body.dataset.view === 'accounts';
+        if (viewer) viewer.renderPaused = !shown;
+        if (shown && panelStale) renderPanel();
+    }).observe(document.body, { attributes: true, attributeFilter: ['data-view'] });
     render();
 }

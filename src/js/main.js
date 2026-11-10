@@ -556,6 +556,7 @@ async function boot() {
     on('settings', applyTheme);
     applyWalkers();
     on('settings', applyWalkers);
+    on('instances', () => document.body.classList.toggle('game-running', store.running.length > 0));
 
     await Promise.all([loadInstances().catch(fail), loadAccounts().catch(fail)]);
     window.addEventListener('focus', () => loadAccounts().catch(() => {}));

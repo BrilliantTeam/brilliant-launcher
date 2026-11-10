@@ -1228,7 +1228,7 @@ function installedRow(entry) {
     const missing = missingOf(kind, entry);
     const problems = (missing.length ? 1 : 0) + (entry.conflicts?.length ? 1 : 0) + (entry.loader_needed ? 1 : 0);
     return h('div', { class: `row ${entry.enabled ? '' : 'off'} ${problems ? 'has-problem' : ''}` },
-        entry.icon_url ? h('img', { class: 'row-icon', src: entry.icon_url, alt: '' }) : h('div', { class: 'row-icon' }, icon(KIND_ICON[kind])),
+        entry.icon_url ? h('img', { class: 'row-icon', src: entry.icon_url, alt: '', loading: 'lazy', decoding: 'async' }) : h('div', { class: 'row-icon' }, icon(KIND_ICON[kind])),
         h('div', entry.project_id && !entry.managed ? { class: 'grow clickable', title: '查看詳細介紹', onclick: () => showDetail(kind, { project_id: entry.project_id, title: entry.name }) } : { class: 'grow' },
             h('div', { class: 'name' },
                 entry.name,

@@ -889,7 +889,8 @@ async function exportDiagnostics(instance) {
 export function moreMenu(instance) {
     const item = (name, label, handler, extra = '') =>
         h('button', { type: 'button', role: 'menuitem', class: extra, onclick: (e) => { e.stopPropagation(); closeMenus(); handler(); } }, icon(name), label);
-    const menu = h('div', { class: 'inst-menu', role: 'menu', popover: 'manual', hidden: true },
+    const menu = h('div', { class: 'inst-menu', role: 'menu', popover: 'manual', hidden: true });
+    const items = () => [
         item('map', '世界管理', () => showWorlds(instance)),
         item('save', '存檔備份', () => manageBackups(instance)),
         item('image', '截圖', () => showScreenshots(instance)),
@@ -903,7 +904,7 @@ export function moreMenu(instance) {
         item('bug', '匯出診斷包', () => exportDiagnostics(instance)),
         item('copy', '複製實例', () => duplicateInstance(instance)),
         item('archive', '存成範本⋯', () => saveAsTemplate(instance)),
-        item('trash', '刪除實例', () => removeInstance(instance), 'danger'));
+        item('trash', '刪除實例', () => removeInstance(instance), 'danger')];
     const toggle = h('button', {
         type: 'button',
         class: 'mc icon-btn',
@@ -915,6 +916,7 @@ export function moreMenu(instance) {
             const open = menu.hidden;
             closeMenus();
             if (!open) return;
+            if (!menu.childElementCount) menu.append(...items());
             menu.hidden = false;
             menu.showPopover();
             placeMenu(menu, toggle);

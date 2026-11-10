@@ -381,7 +381,7 @@ dialog.wide { max-width: min(760px, 94vw); }
 .shards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .shard { position: relative; padding: 9px 12px 8px; font: inherit; text-align: left; cursor: pointer; }
 .shard:hover { background: var(--glass-bg-hover); }
-.shard[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); border-color: var(--accent); }
+.shard[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 22%, var(--glass-bg)); border-color: var(--accent); }
 .shard .name { font-size: calc(15px * var(--fs, 1)); font-weight: 700; line-height: 1.4; }
 .shard .meta { display: flex; align-items: center; gap: 6px; font-size: calc(12px * var(--fs, 1)); color: var(--glass-dim); }
 .shard .meta b { color: var(--glass-ink); }
@@ -390,7 +390,7 @@ dialog.wide { max-width: min(760px, 94vw); }
 .shard.pending .dot { background: var(--glass-faint); }
 .shard .bar { height: 3px; margin-top: 6px; background: var(--glass-line); }
 .shard .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.4s ease; }
-.shard .check { position: absolute; top: 7px; right: 9px; display: flex; align-items: center; gap: 3px; font-size: calc(12px * var(--fs, 1)); color: var(--accent); visibility: hidden; }
+.shard .check { position: absolute; top: 7px; right: 9px; display: flex; align-items: center; gap: 3px; font-size: calc(12px * var(--fs, 1)); color: color-mix(in srgb, var(--accent) 55%, var(--glass-ink)); visibility: hidden; }
 .shard[aria-pressed="true"] .check { visibility: visible; }
 
 .shard-hint { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: calc(12px * var(--fs, 1)); color: rgba(255, 255, 255, 0.86); text-shadow: 0 1px 2px #000; }
@@ -855,6 +855,9 @@ dialog .dlg-foot {
     gap: 8px;
     max-width: min(420px, 90vw);
 }
+.toasts[popover] { inset: auto 16px 16px auto; margin: 0; padding: 0; border: 0; overflow: visible; color: inherit; background: none; }
+.toast:not(.task) { cursor: pointer; }
+.toast[data-count]::after { content: '　×' attr(data-count); color: var(--text-faint); }
 .toast {
     padding: 10px 14px;
     font-size: calc(13px * var(--fs, 1));
@@ -1925,3 +1928,18 @@ body.home-editing .social { pointer-events: auto; }
 .pack-choice { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin: 0; cursor: pointer; background: var(--content-bg-sunken); }
 .pack-choice small { display: block; color: var(--text-faint); }
 .warn-text { color: var(--warning); }
+
+body.game-running :is(.bg-img, .update-chip.ready) { animation-play-state: paused !important; }
+.log-bar label + label { margin-left: 8px; }
+.inst-note .ico { margin-right: 6px; }
+:root[data-buttons="flat"] input[type="checkbox"] { border: 1px solid var(--border); }
+:root[data-buttons="flat"] input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); }
+:root[data-buttons="flat"] input[type="checkbox"]:checked::after { left: 5px; top: 1px; border-color: var(--accent-ink); }
+:root[data-corners="rounded"] input[type="checkbox"] { border-radius: 4px; }
+:root[data-buttons="flat"] input[type="range"]::-webkit-slider-runnable-track { height: 6px; border: 0; border-radius: var(--radius, 0); background: linear-gradient(to right, var(--accent) 0 var(--fill, 0%), var(--border-soft) var(--fill, 0%) 100%); }
+:root[data-buttons="flat"] .color-pop input[type="range"]::-webkit-slider-runnable-track { background: var(--track); }
+:root[data-buttons="flat"] input[type="range"]::-webkit-slider-thumb { width: 16px; height: 16px; margin-top: -5px; background: var(--content-bg); border: 2px solid var(--accent); border-radius: var(--radius, 0); }
+:root[data-buttons="flat"] input[type="range"]:hover::-webkit-slider-thumb { background: var(--accent); }
+.look-presets > .hint { grid-column: 1 / -1; margin: 0; }
+#album-filter { width: auto; min-width: 220px; max-width: 100%; }
+.instance-menu, .account-menu { background: linear-gradient(var(--glass-bg), var(--glass-bg)), var(--content-bg); backdrop-filter: none; -webkit-backdrop-filter: none; }

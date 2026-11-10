@@ -23,7 +23,13 @@ export function on(key, handler) {
 }
 
 export function emit(key) {
-    for (const handler of listeners.get(key) ?? []) handler();
+    for (const handler of listeners.get(key) ?? []) {
+        try {
+            handler();
+        } catch (error) {
+            console.error(`emit(${key})`, error);
+        }
+    }
 }
 
 export async function loadSettings() {
@@ -53,12 +59,14 @@ export async function loadInstances() {
 
 export async function loadAccounts() {
     const [accounts, settings] = await Promise.all([api.list_accounts(), api.get_settings()]);
+    const same = JSON.stringify(accounts) === JSON.stringify(store.accounts);
+    const moved = !!store.settings && settings.selectedAccount !== store.settings.selectedAccount;
     store.accounts = accounts;
-    if (store.settings && settings.selectedAccount !== store.settings.selectedAccount) {
+    if (moved) {
         store.settings.selectedAccount = settings.selectedAccount;
         emit('settings');
     }
-    emit('accounts');
+    if (!same || moved) emit('accounts');
 }
 
 export const idle = () => document.hidden || store.running.length > 0;
