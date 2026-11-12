@@ -6,8 +6,7 @@ const TOURS = {
         view: 'instances',
         steps: [
             ['#btn-new-instance', '建立實例', '自己挑 Minecraft 版本、Fabric、記憶體與封面。每個實例的模組、存檔都各自獨立。'],
-            ['#btn-quick-instance', '一鍵建立輝煌實例', '不想自己設定？按這裡會用輝煌推薦的版本與模組直接建好。'],
-            ['#btn-import', '從其他啟動器搬家', '官方、Prism、CurseForge、Modrinth App 的實例、存檔與設定都能帶過來。'],
+            ['#btn-create-more', '更多建立方式', '不想自己設定，可以一鍵建立輝煌實例；也能從官方、Prism、CurseForge、Modrinth App 搬家，或匯入模組包、從範本建立。'],
             ['#btn-new-group', '建立分組', '把實例收進分組，還能讓同一組共用資源包、光影、存檔與截圖。'],
             ['#instance-list .inst-card', '實例卡片', '點一下選擇實例，點兩下進入它的模組與資源。也可以把卡片拖到分組上，或把模組檔案直接拖進來安裝。'],
             ['#instance-list .inst-card .inst-more > button', '更多功能', '世界管理、存檔備份、截圖、升級版本、效能健檢、建立桌面捷徑都在這裡。'],

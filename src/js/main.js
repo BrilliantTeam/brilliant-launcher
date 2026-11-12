@@ -50,7 +50,12 @@ function show(view) {
         clearTimeout(active.enterTimer);
         active.enterTimer = setTimeout(() => active.classList.remove('entering'), 700);
     }
-    $$('.rail a').forEach((el) => el.classList.toggle('active', el.dataset.view === (name === 'mods' ? 'instances' : name)));
+    $$('.rail a').forEach((el) => {
+        const current = el.dataset.view === (name === 'mods' ? 'instances' : name);
+        el.classList.toggle('active', current);
+        if (current) el.setAttribute('aria-current', 'page');
+        else el.removeAttribute('aria-current');
+    });
     wrap.scrollTop = scrollMemory[name] ?? 0;
 }
 
@@ -143,8 +148,10 @@ function applyTheme() {
     const root = document.documentElement;
     const theme = THEMES[store.settings?.theme] ? store.settings.theme : 'auto';
     const effective = theme === 'schedule' ? scheduledTheme(store.settings) : theme === 'background' ? (store.bgPalette ? (store.bgPalette.light >= 55 ? 'light' : 'dark') : 'auto') : theme;
-    if (effective === 'auto') delete root.dataset.theme;
-    else root.dataset.theme = effective;
+    const mode = effective === 'auto' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : effective;
+    root.dataset.theme = mode;
+    root.dataset.mode = mode;
+    try { localStorage.setItem('brilliant.mode', mode); } catch {}
     root.dataset.font = pick(store.settings?.font, ['pixel', 'system', 'naikai', 'serif', ...(store.settings?.customFont ? ['custom'] : [])], 'pixel');
     loadCustomFont(store.settings?.customFont);
     const toggle = $('#theme-toggle');
@@ -197,8 +204,6 @@ function applyTheme() {
     }
     root.dataset.contrast = look.highContrast ? 'high' : 'normal';
     root.dataset.streamer = look.streamerMode ? 'on' : 'off';
-    const mode = root.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-    root.dataset.mode = mode;
     const props = {};
     const generated = autoPalette ? autoTokens(autoPalette, mode) : {};
     for (const token of COLOR_TOKENS) {
@@ -333,6 +338,15 @@ function initChrome() {
     const win = appWindow();
     $('#win-min').addEventListener('click', () => win.minimize());
     $('#win-max').addEventListener('click', () => win.toggleMaximize());
+    const syncMaximized = async () => {
+        const max = await win.isMaximized().catch(() => false);
+        const button = $('#win-max');
+        button.replaceChildren(icon(max ? 'restore' : 'maximize'));
+        button.title = max ? '還原' : '最大化';
+        button.setAttribute('aria-label', button.title);
+    };
+    win.onResized?.(syncMaximized);
+    syncMaximized();
     let closing = false;
     const closeWindow = async () => {
         if (store.settings?.closeToTray) return win.hide();

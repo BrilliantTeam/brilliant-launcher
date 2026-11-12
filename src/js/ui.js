@@ -265,7 +265,9 @@ export function dialog({ title, content, wide = false, buttons = [{ label: 'é—œé
     dlg.classList.toggle('wide', wide);
     const body = clear($('#dlg-body'));
     const foot = clear($('#dlg-foot'));
-    if (title) body.append(h('h2', {}, title));
+    if (title) body.append(h('h2', { id: 'dlg-title' }, title));
+    if (title) dlg.setAttribute('aria-labelledby', 'dlg-title');
+    else dlg.removeAttribute('aria-labelledby');
     body.append(content);
 
     if (closeOpenDialog) closeOpenDialog(null);
@@ -304,6 +306,18 @@ addEventListener('keydown', (e) => {
 });
 
 export const dismissDialog = (value) => closeOpenDialog?.(value);
+
+addEventListener('keydown', (e) => {
+    const menu = e.target.closest?.('[role="menu"]');
+    const step = { ArrowDown: 1, ArrowUp: -1, Home: -Infinity, End: Infinity }[e.key];
+    if (!menu || !step) return;
+    const items = [...menu.querySelectorAll('[role="menuitem"]:not(:disabled)')].filter((el) => el.getClientRects().length > 0);
+    if (!items.length) return;
+    e.preventDefault();
+    const at = items.indexOf(document.activeElement);
+    const next = Number.isFinite(step) ? (at + step + items.length) % items.length : step < 0 ? 0 : items.length - 1;
+    items[next].focus();
+});
 
 const fileZones = new WeakMap();
 

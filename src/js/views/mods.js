@@ -42,7 +42,7 @@ const CF_PATH = { mod: 'mc-mods', resourcepack: 'texture-packs', shader: 'shader
 const isCf = (id) => String(id || '').startsWith('cf-');
 const cfCats = {};
 const KIND_LABEL = { mod: '模組', resourcepack: '資源包', shader: '光影' };
-const KIND_ICON = { mod: 'zap', resourcepack: 'image', shader: 'sun' };
+const KIND_ICON = { mod: 'puzzle', resourcepack: 'image', shader: 'sun' };
 const MODRINTH_PATH = { mod: 'mod', resourcepack: 'resourcepack', shader: 'shader' };
 const CATEGORIES = {
     mod: [['', '全部'], ['optimization', '效能優化'], ['utility', '實用工具'], ['decoration', '裝飾'], ['storage', '收納'], ['adventure', '冒險'], ['library', '前置函式庫']],

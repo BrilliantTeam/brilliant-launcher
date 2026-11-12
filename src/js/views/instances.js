@@ -911,18 +911,36 @@ export function moreMenu(instance) {
         title: '更多',
         'aria-label': '更多',
         'aria-haspopup': 'menu',
-        onclick: (e) => {
-            e.stopPropagation();
-            const open = menu.hidden;
-            closeMenus();
-            if (!open) return;
-            if (!menu.childElementCount) menu.append(...items());
-            menu.hidden = false;
-            menu.showPopover();
-            placeMenu(menu, toggle);
-        }
+        'aria-expanded': 'false',
+        onclick: (e) => openMenu(e, menu, toggle, items)
     }, icon('more-horizontal'));
     return h('div', { class: 'inst-more' }, toggle, menu);
+}
+
+function openMenu(e, menu, anchor, items) {
+    e.stopPropagation();
+    const open = menu.hidden;
+    closeMenus();
+    if (!open) return;
+    if (!menu.childElementCount) menu.append(...items());
+    menu.hidden = false;
+    menu.showPopover();
+    placeMenu(menu, anchor);
+    menu.previousElementSibling?.setAttribute('aria-expanded', 'true');
+    if (!e.detail) menu.querySelector('[role="menuitem"]')?.focus();
+}
+
+function createMenu() {
+    const toggle = $('#btn-create-more');
+    const item = (name, label, handler) =>
+        h('button', { type: 'button', role: 'menuitem', onclick: (e) => { e.stopPropagation(); closeMenus(); return handler().catch(fail); } }, icon(name), label);
+    const menu = h('div', { class: 'inst-menu', role: 'menu', 'aria-label': '更多建立方式', 'data-align': 'left', popover: 'manual', hidden: true });
+    toggle.after(menu);
+    toggle.addEventListener('click', (e) => openMenu(e, menu, $('#create-split'), () => [
+        item('zap', '一鍵建立輝煌實例', quickCreate),
+        item('download', '從其他啟動器匯入', importFlow),
+        item('briefcase', '匯入模組包', () => importPack(null)),
+        item('copy', '從範本建立', fromTemplate)]));
 }
 
 function placeMenu(menu, anchor) {
@@ -932,7 +950,7 @@ function placeMenu(menu, anchor) {
     menu.style.maxHeight = '';
     const down = menu.scrollHeight > above && below > above;
     menu.style.maxHeight = `${Math.max(160, down ? below : above)}px`;
-    menu.style.left = `${Math.max(8, rect.right - menu.offsetWidth)}px`;
+    menu.style.left = `${Math.max(8, menu.dataset.align === 'left' ? rect.left : rect.right - menu.offsetWidth)}px`;
     menu.style.top = down ? `${rect.bottom + 6}px` : 'auto';
     menu.style.bottom = down ? 'auto' : `${innerHeight - rect.top + 6}px`;
 }
@@ -940,8 +958,20 @@ function placeMenu(menu, anchor) {
 addEventListener('scroll', (e) => { if (!(e.target instanceof Element && e.target.closest('.inst-menu'))) closeMenus(); }, true);
 addEventListener('resize', () => closeMenus());
 
+addEventListener('keydown', (e) => {
+    const menu = e.key === 'Escape' && document.querySelector('.inst-menu:not([hidden]):not(.floating)');
+    if (!menu) return;
+    e.stopPropagation();
+    closeMenus();
+    menu.previousElementSibling?.focus();
+}, true);
+
 function closeMenus() {
-    document.querySelectorAll('.inst-menu').forEach((m) => { m.hidden = true; if (m.matches(':popover-open')) m.hidePopover(); });
+    document.querySelectorAll('.inst-menu').forEach((m) => {
+        m.hidden = true;
+        if (m.matches(':popover-open')) m.hidePopover();
+        if (m.previousElementSibling?.hasAttribute('aria-haspopup')) m.previousElementSibling.setAttribute('aria-expanded', 'false');
+    });
     document.querySelectorAll('.inst-menu.floating').forEach((m) => m.remove());
 }
 
@@ -1027,7 +1057,7 @@ function card(instance) {
                 onclick: (e) => { e.stopPropagation(); playInstance(instance); }
             }, icon(running ? 'close' : 'play'), running ? '結束遊戲' : '開始遊戲'),
             tool('edit', '設定', () => editInstance(instance)),
-            tool('zap', modded(instance) ? '模組與資源' : '資源包與光影', () => manageMods(instance)),
+            tool('puzzle', modded(instance) ? '模組與資源' : '資源包與光影', () => manageMods(instance)),
             moreMenu(instance))
     );
 }
@@ -1266,7 +1296,7 @@ function sortMembers(members) {
 export function accentStyle(color) {
     if (!/^#[0-9a-f]{6}$/i.test(color ?? '')) return '';
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(color.slice(i, i + 2), 16));
-    return `--accent:${color};--accent-hover:color-mix(in srgb, ${color} 85%, #000);--accent-ink:${0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#111111' : '#ffffff'}`;
+    return `--accent:${color};--accent-hover:color-mix(in srgb, ${color} 85%, #000);--accent-text:color-mix(in srgb, ${color} var(--accent-text-mix), #000);--accent-ink:${0.299 * r + 0.587 * g + 0.114 * b > 140 ? '#111111' : '#ffffff'}`;
 }
 
 function render() {
@@ -1659,10 +1689,7 @@ export function initInstances() {
     provide('playInstance', playInstance);
     provide('manageMods', manageMods);
     $('#btn-new-instance').addEventListener('click', guard(() => createInstance()));
-    $('#btn-quick-instance').addEventListener('click', guard(() => quickCreate().catch(fail)));
-    $('#btn-import').addEventListener('click', guard(() => importFlow().catch(fail)));
-    $('#btn-import-pack').addEventListener('click', guard(() => importPack(null).catch(fail)));
-    $('#btn-from-template').addEventListener('click', guard(() => fromTemplate().catch(fail)));
+    createMenu();
     $('#btn-new-group').addEventListener('click', guard(() => groupDialog().catch(fail)));
     $('#btn-refresh-instances').addEventListener('click', guard(async () => {
         store.versions = null;
