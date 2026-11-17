@@ -1,4 +1,4 @@
 /src-tauri/target/
-/src-tauri/gen/
+/src-tauri/gen/schemas/
 /src-tauri/resources/mods/*.jar
 node_modules/

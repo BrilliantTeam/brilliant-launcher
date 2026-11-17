@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 neočekávaně spadl</string>
+    <string name="lazy_service_default_title">輝煌啟動器 služba na popředí</string>
+    <string name="storage_required">輝煌啟動器 vyžaduje přípojené externí úložiště. Připojte jej prosím znovu a restartujte tuto aplikaci.</string>
+    <string name="modpack_install_notification_title">Instalátor Modpacků 輝煌啟動器u</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 vyžaduje oprávnění k odesílání oznámení, aby se zabránilo zastavení stahování hry/modpacku při opuštění aplikace. Bez tohoto oprávnění může Android přerušit vaše stahování, když přepnete 輝煌啟動器 do režimu na pozadí.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

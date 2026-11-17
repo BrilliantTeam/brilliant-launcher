@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 s-a oprit neașteptat</string>
+    <string name="lazy_service_default_title">Serviciu 輝煌啟動器 prim-plan</string>
+</resources>

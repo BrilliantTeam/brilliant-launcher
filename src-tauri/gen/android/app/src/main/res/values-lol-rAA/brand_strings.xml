@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 haz unexpectadly crashd</string>
+    <string name="lazy_service_default_title">輝煌啟動器 background police</string>
+    <string name="storage_required">輝煌啟動器 requirez external storage to be attached. purrlease reconnect it an restart da app.</string>
+    <string name="modpack_install_notification_title">輝煌啟動器 Modpack Installer really gud</string>
+</resources>

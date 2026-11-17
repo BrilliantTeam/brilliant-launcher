@@ -32,6 +32,8 @@ pub mod snapshots;
 pub mod diskuse;
 pub mod secret;
 pub mod modpack;
+#[cfg(target_os = "android")]
+pub mod mobile;
 
 use tauri::{Listener, Manager};
 
@@ -58,15 +60,20 @@ pub fn run() {
     if std::path::Path::new("/proc/driver/nvidia").exists() && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(desktop)]
+    let builder = builder
         .plugin(tauri_plugin_single_instance::init(|app, argv, _| {
             extras::reveal(app);
             advanced::handle_cli(app, &argv);
         }))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build());
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(mobile::init());
+    builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(state::AppState::default())
         .setup(|app| {
             let startup = tauri::async_runtime::block_on(config::load_settings());
@@ -76,6 +83,7 @@ pub fn run() {
                 eprintln!("[setup] 代理設定無效，改用直接連線：{:#}", e.0);
             }
             advanced::handle_cli(app.handle(), &std::env::args().collect::<Vec<_>>());
+            #[cfg(desktop)]
             extras::setup_tray(app)?;
             std::thread::spawn(commands::cleanup_updates);
             std::thread::spawn(|| paths::purge_trash(paths::TRASH_DAYS));
@@ -92,6 +100,7 @@ pub fn run() {
             app.listen("launcher://exit", move |_| {
                 if let Some(window) = handle.get_webview_window("main") {
                     let _ = window.show();
+                    #[cfg(desktop)]
                     let _ = window.unminimize();
                 }
             });
@@ -104,6 +113,8 @@ pub fn run() {
             commands::list_accounts,
             commands::login_microsoft,
             commands::cancel_login,
+            commands::stage_picked,
+            commands::resume_game,
             commands::login_device,
             commands::add_offline_account,
             commands::remove_account,

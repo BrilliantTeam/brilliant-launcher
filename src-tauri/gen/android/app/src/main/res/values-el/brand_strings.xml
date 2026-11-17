@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">Ο 輝煌啟動器 κατέρρευσε απροσδόκητα</string>
+    <string name="lazy_service_default_title">Υπηρεσία Προσκήνιου 輝煌啟動器</string>
+    <string name="storage_required">Το 輝煌啟動器 απαιτεί την προσάρτηση εξωτερικού χώρου. Παρακαλώ επανασυνδέστε το και επανεκκινήστε την εφαρμογή.</string>
+    <string name="notification_permission_dialog_text">Το 輝煌啟動器 απαιτεί την άδεια να δημοσιεύει ειδοποιήσεις για να αποτρέψει τη διακοπή λήψεων παιχνιδιού/modpacks όταν φεύγετε από την εφαρμογή. Χωρίς αυτήν την άδεια, το Android μπορεί να τερματίσει τις λήψεις σας όταν βάζετε το 輝煌啟動器 στη λειτουργία παρασκηνίου.</string>
+</resources>

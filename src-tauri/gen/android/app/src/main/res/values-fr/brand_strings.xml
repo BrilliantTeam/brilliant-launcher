@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 a cessé de fonctionner de façon inattendue</string>
+    <string name="lazy_service_default_title">Service de premier plan de 輝煌啟動器</string>
+    <string name="storage_required">輝煌啟動器 nécessite que le stockage externe soit connecté. Veuillez le reconnecter et redémarrer l\'application.</string>
+    <string name="modpack_install_notification_title">Installeur 輝煌啟動器 de Modpack</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 a besoin d\'une autorisation pour afficher des notifications afin d\'éviter que les téléchargements de jeux/modpacks ne s\'arrêtent lorsque vous quittez l\'application. Sans cette autorisation, Android peut interrompre vos téléchargements lorsque vous mettez 輝煌啟動器 en mode arrière-plan.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

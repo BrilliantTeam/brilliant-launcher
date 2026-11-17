@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">O 輝煌啟動器 parou de funcionar inesperadamente</string>
+    <string name="storage_required">O 輝煌啟動器 requer que o armazenamento externo seja conectado. Por favor, reconecte-o e reinicie o aplicativo.</string>
+    <string name="modpack_install_notification_title">Instalador de Modpack do 輝煌啟動器</string>
+    <string name="notification_permission_dialog_text">O 輝煌啟動器 requer a permissão de mandar notificações para impedir que o download do jogo/modpack pare quando você sair do aplicativo. Sem essa permissão, o Android pode cancelar seus downloads quando você colocar o 輝煌啟動器 em segundo plano.</string>
+</resources>

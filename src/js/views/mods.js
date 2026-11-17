@@ -1,4 +1,4 @@
-import { api, fileSrc, isType, listen, openUrl, pickFile, typeLabel, watchFolders } from '../api.js';
+import { ANDROID, api, fileSrc, isType, listen, openUrl, pickFile, typeLabel, watchFolders } from '../api.js';
 import { $, $$, clear, confirm, dialog, dismissDialog, fail, fileZoneAt, fmtBytes, fmtDuration, h, modalOpen, progressToast, toast, guard } from '../ui.js';
 import { emit, isRunning, loaderLabel, loadInstances, modded, on, selectedInstance, store } from '../store.js';
 import { icon, iconOf, instanceIconName, instanceVisual, svgFromFile } from '../icons.js';
@@ -696,7 +696,7 @@ async function showBlocked(list, instanceId) {
                 b.icon_url ? h('img', { class: 'row-icon', src: b.icon_url, alt: '' }) : h('div', { class: 'row-icon' }, icon(KIND_ICON.mod)),
                 h('div', { class: 'grow' }, h('div', { class: 'name' }, b.name)),
                 /^https:\/\//.test(b.url) ? h('button', { type: 'button', class: 'mc', onclick: () => openUrl(b.url) }, icon('external-link'), '開啟網頁') : null)))),
-        buttons: [{ label: '開啟 mods 資料夾', value: 'folder' }, { label: '知道了', value: null }]
+        buttons: ANDROID ? [{ label: '知道了', value: null }] : [{ label: '開啟 mods 資料夾', value: 'folder' }, { label: '知道了', value: null }]
     });
     if (value !== 'folder') return;
     try {

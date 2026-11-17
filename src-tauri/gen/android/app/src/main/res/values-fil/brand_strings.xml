@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">Ang 輝煌啟動器 ay hindi inaasahang nag-crash</string>
+    <string name="lazy_service_default_title">Serbisyong Harapan ng 輝煌啟動器</string>
+</resources>

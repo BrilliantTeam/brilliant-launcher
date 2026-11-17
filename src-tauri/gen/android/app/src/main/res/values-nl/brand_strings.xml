@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 is onverwacht gecrasht</string>
+    <string name="lazy_service_default_title">輝煌啟動器 voorgrond Service</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 heeft toestemming nodig om meldingen te plaatsen om te voorkomen dat downloads van game/modpack stoppen wanneer je de app verlaat. Zonder deze toestemming kan Android je downloads afsluiten als je 輝煌啟動器 in de achtergrondmodus plaatst.</string>
+</resources>

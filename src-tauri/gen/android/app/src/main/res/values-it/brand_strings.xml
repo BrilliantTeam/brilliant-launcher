@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 è crashato inaspettatamente</string>
+    <string name="lazy_service_default_title">Servizio di Foreground 輝煌啟動器</string>
+    <string name="storage_required">輝煌啟動器 necessita della memoria esterna, connettila e riavvia l\'applicazione</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 richiede l\'autorizzazione a inviare notifiche per evitare che i download di giochi/modpack si interrompano quando si lascia l\'applicazione. Senza questa autorizzazione, Android potrebbe interrompere i download quando si mette 輝煌啟動器 in modalità di sfondo.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

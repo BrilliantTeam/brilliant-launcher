@@ -608,7 +608,7 @@ async function scanDisk() {
             h('summary', {}, h('b', {}, inst.name), h('span', { class: 'disk-size' }, fmtBytes(inst.total)),
                 h('div', { class: 'disk-bar mini' }, h('i', { style: `width:${(inst.total / Math.max(1, usage.instances[0]?.total ?? 1)) * 100}%;background:var(--accent)` }))),
             bar(inst.parts, inst.total), legend(inst.parts),
-            h('div', { class: 'toolbar' }, h('button', { type: 'button', class: 'mc', onclick: () => api.open_instance_folder({ id: inst.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail) }, icon('folder'), '開啟資料夾')))));
+            h('div', { class: 'toolbar desktop-only' }, h('button', { type: 'button', class: 'mc', onclick: () => api.open_instance_folder({ id: inst.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail) }, icon('folder'), '開啟資料夾')))));
 }
 
 const COLOR_LABELS = [
@@ -1306,7 +1306,7 @@ export function initSettings() {
                         h('div', { class: 'meta' }, path)),
                     h('button', {
                         type: 'button',
-                        class: 'mc',
+                        class: 'mc desktop-only',
                         onclick: () => api.open_path({ path }).catch(fail)
                     }, '開啟'))
             )

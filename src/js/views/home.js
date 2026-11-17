@@ -1,5 +1,5 @@
-import { api, listen, openUrl } from '../api.js';
-import { $, clear, confirm, dialog, fail, fmtBytes, h, toast } from '../ui.js';
+import { ANDROID, api, listen, openUrl } from '../api.js';
+import { $, clear, confirm, dialog, fail, fmtBytes, h, lowMemoryOk, toast } from '../ui.js';
 import { accountFor, avatarUrl, emit, isRunning, loaderLabel, loadAccounts, loadInstances, modded, on, selectedAccount, selectedInstance, store, saveSettings } from '../store.js';
 import { initNews } from './news.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
@@ -160,7 +160,7 @@ function renderPlayBar() {
     const action = running ? 'stop' : busy ? 'busy' : !instance ? 'create' : !account ? 'login' : 'play';
     const where = target ? `直連 ${target.label}` : '進入主畫面';
     const [label, sub] = {
-        stop: ['結束遊戲', ''],
+        stop: ANDROID ? ['返回遊戲', '遊戲進行中'] : ['結束遊戲', ''],
         busy: ['準備中⋯', ''],
         create: ['建立實例', '一鍵建立輝煌實例'],
         login: ['登入帳號', '尚未登入，無法開始遊戲'],
@@ -168,7 +168,7 @@ function renderPlayBar() {
     }[action];
     clear(button).append(label, sub ? h('small', {}, sub) : null);
     button.dataset.action = action;
-    button.classList.toggle('stop', action === 'stop');
+    button.classList.toggle('stop', action === 'stop' && !ANDROID);
     button.classList.toggle('busy', action === 'busy');
     button.disabled = action === 'busy';
     renderAccountChip();
@@ -260,15 +260,19 @@ async function splash(title, sub) {
     }, store.settings?.afterLaunch === 'keep' ? 400 : 0);
 }
 
+async function forceStop(instance) {
+    if (!(await confirm(`要強制結束「${instance.name}」嗎？\n強制結束不會存檔，單人世界最近的進度可能遺失；建議先在遊戲裡按「儲存並離開」或關閉遊戲視窗。`, '強制結束'))) return;
+    await api.stop_game({ id: instance.id }).then(() => toast(`已強制結束「${instance.name}」`), fail);
+}
+
 async function play(relogged = false, join = null) {
     const instance = selectedInstance();
     if (!instance) return;
     if (busy && relogged !== true) return toast('正在準備遊戲，請等這次完成', 'warn');
 
     if (isRunning(instance.id)) {
-        if (!(await confirm(`要強制結束「${instance.name}」嗎？\n強制結束不會存檔，單人世界最近的進度可能遺失；建議先在遊戲裡按「儲存並離開」或關閉遊戲視窗。`, '強制結束'))) return;
-        await api.stop_game({ id: instance.id }).then(() => toast(`已強制結束「${instance.name}」`), fail);
-        return;
+        if (ANDROID) return api.resume_game().catch(fail);
+        return forceStop(instance);
     }
 
     const goingTo = !join && !instance.general ? shardOf(store.settings?.quickJoin) : SHARDS.find((s) => s.host === join?.host);
@@ -284,6 +288,7 @@ async function play(relogged = false, join = null) {
     const soon = restart.next;
     if (soon && soon.mins <= 5 && !(await confirm(`${goingTo.label}將在 ${soon.time} 每日重啟（${soon.mins ? `約 ${soon.mins} 分鐘後` : '就是現在'}），現在進去很快就會斷線。
 仍要開始遊戲嗎？`, '仍要開始'))) return;
+    if (!(await lowMemoryOk())) return;
 
     busy = true;
     clearRecentLog(instance.id);
@@ -296,8 +301,8 @@ async function play(relogged = false, join = null) {
         toast(join ? `遊戲已啟動，將直接連線 ${join.name}` : target ? `遊戲已啟動，將直接連線 ${target.label}` : '遊戲已啟動');
         if (store.settings?.launchSplash) await splash(instance.name, join ? `直連 ${join.name}` : target ? `直連 ${target.label}` : '進入主畫面');
         await loadInstances();
-        if (store.settings?.openLogOnLaunch) location.hash = '#log';
-        const after = store.settings?.afterLaunch;
+        if (!ANDROID && store.settings?.openLogOnLaunch) location.hash = '#log';
+        const after = ANDROID ? '' : store.settings?.afterLaunch;
         if (after === 'hide') await api.hide_window();
         else if (after === 'exit') await api.exit_launcher();
     } catch (error) {
@@ -389,7 +394,7 @@ async function showCrash(id, code, seconds) {
             ...(boxes.length ? [{ label: '一鍵修復', value: 'fix' }] : [{ label: '修復遊戲檔案', value: 'repair' }]),
             { label: '回報給管理員', value: 'report' },
             { label: '複製日誌', value: 'copy' },
-            { label: '查看日誌', value: 'log' },
+            ...(ANDROID ? [] : [{ label: '查看日誌', value: 'log' }]),
             { label: '關閉', value: null }
         ]
     });
@@ -544,6 +549,9 @@ function toggleInstanceMenu(force) {
             )
         ),
         store.instances.length ? h('hr') : '',
+        ANDROID && current && isRunning(current.id)
+            ? h('button', { type: 'button', class: 'danger', onclick: () => { toggleInstanceMenu(false); forceStop(current); } }, `強制結束「${current.name}」`)
+            : '',
         h('button', { type: 'button', onclick: () => { toggleInstanceMenu(false); location.hash = '#instances'; } }, '管理實例⋯')
     );
 }

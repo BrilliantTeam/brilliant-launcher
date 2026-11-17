@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 uległ nieoczekiwanej awarii</string>
+    <string name="lazy_service_default_title">Usługa 輝煌啟動器 Foreground</string>
+    <string name="storage_required">輝煌啟動器 wymaga podłączenia pamięci zewnętrznej. Podłącz ją ponownie i zrestartuj aplikację.</string>
+    <string name="modpack_install_notification_title">Instalator paczek modów 輝煌啟動器</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 wymaga uprawnień do wysyłania powiadomień, aby zapobiec zatrzymaniu pobierania gier/paczek modów po opuszczeniu aplikacji. Bez tych uprawnień system Android może zatrzymać pobieranie, gdy 輝煌啟動器 zostanie przełączony w tryb tła.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

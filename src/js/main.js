@@ -1,4 +1,4 @@
-import { api, appVersion, appWindow, fileSrc, listen, openUrl, setZoom } from './api.js';
+import { ANDROID, api, appVersion, appWindow, fileSrc, listen, openUrl, setZoom } from './api.js';
 import { icon } from './icons.js';
 import { $, $$, autoTokens, confirm, dialog, fail, h, modalOpen, rangeFill, toast, guard, workPending } from './ui.js';
 import { emit, loadAccounts, loadInstances, loadSettings, on, saveSettings, selectedAccount, store } from './store.js';
@@ -218,7 +218,7 @@ function applyTheme() {
         else root.style.removeProperty(`--${name}`);
     }
     root.dataset.heading = look.headingStyle === 'modern' ? 'modern' : 'game';
-    root.style.setProperty('--fs', String(Math.min(130, Math.max(90, Number(look.fontScale) || 100)) / 100));
+    root.style.setProperty('--fs', String(Math.min(130, Math.max(90, Number(look.fontScale) || 100)) / 100 * (ANDROID ? 1.15 : 1)));
     const solid = look.bgSource === 'color';
     root.dataset.bgsource = solid ? 'color' : 'auto';
     const c1 = HEX.test(look.bgColor ?? '') ? look.bgColor : '#1b2027';

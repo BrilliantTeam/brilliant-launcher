@@ -1,5 +1,7 @@
 const tauri = window.__TAURI__;
 
+export const ANDROID = document.documentElement.dataset.platform === 'android';
+
 const NETWORK_ERROR = /error sending request|dns error|tcp connect|connection (?:refused|reset)|timed out|network is unreachable|沒有網路|連不上/i;
 
 export const api = new Proxy(
@@ -16,7 +18,12 @@ export const listen = (event, handler) => tauri.event.listen(event, (e) => handl
 
 export const openUrl = (url) => tauri.opener.openUrl(url);
 
-export const pickFiles = (options) => tauri.dialog.open(options);
+const stagePicked = (path) => (typeof path === 'string' && path.startsWith('content://') ? api.stage_picked({ uri: path }) : path);
+
+export const pickFiles = async (options) => {
+    const picked = await tauri.dialog.open(options);
+    return Array.isArray(picked) ? Promise.all(picked.map(stagePicked)) : picked && stagePicked(picked);
+};
 
 const RASTER = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
 

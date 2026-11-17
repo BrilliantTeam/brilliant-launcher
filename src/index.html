@@ -54,7 +54,7 @@
         <a href="#explore" data-view="explore" title="探索"><i data-icon="map"></i><span>探索</span></a>
         <a href="#accounts" data-view="accounts" title="帳號"><i data-icon="user"></i><span>帳號</span></a>
         <a href="#settings" data-view="settings" title="設定"><i data-icon="sliders"></i><span>設定</span></a>
-        <a href="#log" data-view="log" title="日誌"><i data-icon="script-text"></i><span>日誌</span></a>
+        <a href="#log" data-view="log" title="日誌" class="desktop-only"><i data-icon="script-text"></i><span>日誌</span></a>
         <span class="rail-spacer"></span>
         <a href="#about" data-view="about" title="關於"><i data-icon="info-box"></i><span>關於</span></a>
 </nav>
@@ -234,14 +234,14 @@
                     <div class="toolbar">
                         <button type="button" class="mc primary" id="btn-update-all" hidden>全部更新</button>
                         <button type="button" class="mc" id="btn-add-mod">安裝本機檔案⋯</button>
-                        <button type="button" class="mc" id="btn-open-mods">開啟資料夾</button>
+                        <button type="button" class="mc desktop-only" id="btn-open-mods">開啟資料夾</button>
                         <button type="button" class="mc" id="btn-mod-snapshots"><i data-icon="reload"></i>模組快照</button>
                         <span class="spacer"></span>
                         <input type="search" id="installed-search" class="installed-search" spellcheck="false" aria-label="搜尋已安裝">
                         <button type="button" class="mc" id="btn-refresh-mods">重新整理</button>
                     </div>
                     <div class="rows" id="mod-list"></div>
-                    <div class="toolbar folder-links">
+                    <div class="toolbar folder-links desktop-only">
                         <span class="toolbar-label">其他資料夾</span>
                         <button type="button" class="mc" data-folder="screenshots">截圖</button>
                         <button type="button" class="mc" data-folder="saves">存檔</button>
@@ -276,17 +276,17 @@
                     <a href="#" data-jump="set-update">更新與安全</a>
                     <a href="#" data-jump="set-system">系統與下載</a>
                     <a href="#" data-jump="set-data">資料</a>
-                    <a href="#" data-jump="set-keys">快捷鍵</a>
+                    <a href="#" data-jump="set-keys" class="desktop-only">快捷鍵</a>
                     <input type="search" id="settings-search" class="settings-search" placeholder="搜尋設定" spellcheck="false" aria-label="搜尋設定">
                 </nav>
 
                 <h2 id="set-game">遊戲</h2>
                 <div class="hardware" id="hardware"></div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label for="set-memory">記憶體上限：<b id="set-memory-value">4096</b> MB</label>
                     <input type="range" id="set-memory" min="1024" max="32768" step="512">
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <div class="field-inline">
                         <label for="set-memory-min">記憶體下限（-Xms）</label>
                         <input type="number" id="set-memory-min" min="0" max="32768" step="256">
@@ -294,7 +294,7 @@
                     </div>
                     <div class="hint">設定後遊戲一開始就向系統要這麼多記憶體，減少執行中擴充記憶體造成的卡頓；超過上限時會自動以上限為準。</div>
                 </div>
-                <div class="field-row">
+                <div class="field-row desktop-only">
                     <div class="field">
                         <label for="set-width">視窗寬度</label>
                         <input type="number" id="set-width" min="320" max="7680">
@@ -304,10 +304,10 @@
                         <input type="number" id="set-height" min="240" max="4320">
                     </div>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label><input type="checkbox" id="set-fullscreen">全螢幕啟動</label>
                 </div>
-                <div class="field-row">
+                <div class="field-row desktop-only">
                     <div class="field">
                         <label for="set-window-mode">遊戲視窗</label>
                         <select id="set-window-mode">
@@ -320,23 +320,23 @@
                         <select id="set-window-monitor"></select>
                     </div>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label><input type="checkbox" id="set-remember-window">記住遊戲視窗的位置與大小</label>
                     <div class="toolbar">
                         <button type="button" class="mc" id="btn-forget-window">忘記記住的位置</button>
                     </div>
                     <div class="hint">遊戲視窗設定目前只支援 Windows。「無邊框全螢幕」會在遊戲視窗出現後自動套用，不要同時勾選上方的「全螢幕啟動」。</div>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label for="set-java">Java 執行檔</label>
                     <select id="set-java"></select>
                     <div class="hint">選「自動」時，啟動器會依版本需求下載 Mojang 官方 JRE，或沿用系統上版本相符的 Java。</div>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label><input type="checkbox" id="set-java-auto">自動偵測並更新 Java</label>
                     <div class="hint">Mojang 內建的 Java 很少更新，可能缺少安全修補。開啟後，Java 選「自動」的實例每次開始遊戲前會檢查 Adoptium（Eclipse Temurin）有沒有新版，有的話自動下載並校驗後換上；檢查失敗或離線時沿用現有的 Java。</div>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label for="set-jvm">JVM 參數</label>
                     <textarea id="set-jvm" spellcheck="false" maxlength="4096"></textarea>
                     <div class="jvm-presets" id="jvm-presets"></div>
@@ -359,7 +359,7 @@
                 </div>
 
                 <h2 id="set-flow">啟動流程</h2>
-                <div class="field">
+                <div class="field desktop-only">
                     <label for="set-after">遊戲啟動後</label>
                     <select id="set-after">
                         <option value="hide">隱藏啟動器（遊戲結束後自動回來）</option>
@@ -376,11 +376,11 @@
                     </div>
                     <div class="hint">備份存在實例資料夾的 backups，可在「實例 → 更多 → 存檔備份」還原。</div>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label for="set-pre">啟動前執行指令</label>
                     <input type="text" id="set-pre" spellcheck="false" maxlength="1024" placeholder="例如 start obs64.exe">
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label for="set-post">遊戲結束後執行指令</label>
                     <input type="text" id="set-post" spellcheck="false" maxlength="1024" placeholder="例如 taskkill /im obs64.exe">
                     <div class="hint">可使用環境變數 %INST_NAME%、%INST_DIR%、%INST_MC_VER%；結束指令另有 %EXIT_CODE%。啟動前指令失敗時會取消啟動。</div>
@@ -773,7 +773,7 @@
                     <input type="range" id="set-volume" min="0" max="100" step="5">
                     <div class="hint">支援 MP3、OGG、WAV、M4A、FLAC、Opus，可以一次加入多首。遊戲執行中或啟動器縮到背景時會自動暫停。</div>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label><input type="checkbox" id="set-walkers">虛擬夥伴（官網的飯娘和寵物會在啟動器裡散步，可以抓起來丟）</label>
                 </div>
 
@@ -883,7 +883,7 @@
                     <div class="link-add">
                         <input type="text" id="rail-link-name" maxlength="12" placeholder="名稱，例如：輝煌 Wiki" aria-label="捷徑名稱">
                         <input type="text" id="rail-link-target" maxlength="1024" placeholder="網址（https://⋯）或資料夾路徑" aria-label="網址或資料夾路徑">
-                        <button type="button" class="mc" id="btn-rail-link-folder"><i data-icon="folder"></i>選資料夾</button>
+                        <button type="button" class="mc desktop-only" id="btn-rail-link-folder"><i data-icon="folder"></i>選資料夾</button>
                         <button type="button" class="mc primary" id="btn-rail-link-add"><i data-icon="plus"></i>新增</button>
                     </div>
                     <div class="hint">最多 8 個，會顯示在側欄下方；側欄只顯示名稱的前 4 個字。</div>
@@ -892,7 +892,7 @@
                     <label>導航列顯示</label>
                     <div class="check-row" id="tool-visibility">
                         <label><input type="checkbox" id="set-account-name">帳號名稱</label>
-                        <label><input type="checkbox" data-tool="walker-toggle">虛擬夥伴按鈕</label>
+                        <label class="desktop-only"><input type="checkbox" data-tool="walker-toggle">虛擬夥伴按鈕</label>
                         <label><input type="checkbox" data-tool="font-toggle">字體切換按鈕</label>
                         <label><input type="checkbox" data-tool="theme-toggle">亮暗切換按鈕</label>
                     </div>
@@ -1002,7 +1002,7 @@
                 </div>
                 <div class="field">
                     <label><input type="checkbox" id="set-debug">除錯模式（Fabric 與 Mixin 詳細日誌）</label>
-                    <label><input type="checkbox" id="set-open-log">開始遊戲後自動切到「日誌」頁</label>
+                    <label class="desktop-only"><input type="checkbox" id="set-open-log">開始遊戲後自動切到「日誌」頁</label>
                     <div class="hint">回報模組衝突或當機時很有用；平常建議關閉。實例的「更多 → 匯出診斷包」可以把日誌、當機報告與模組清單打包成一個檔案（會自動隱藏登入憑證）。</div>
                 </div>
 
@@ -1017,7 +1017,7 @@
                     <div class="hint" id="channel-hint">只影響輝煌啟動器本身，輝煌模組不分通道、一律使用最新版。正式版的每個版本都先經過 Beta 測試；從 Beta 換回正式版時，會在下一個正式版推出時自動換回，不會降級。還沒有正式版或 Beta 時，會先拿到最新的 Alpha。</div>
                 </div>
                 <div class="field-row">
-                    <div class="field">
+                    <div class="field desktop-only">
                         <label for="set-launcher-update">啟動器更新</label>
                         <select id="set-launcher-update">
                             <option value="auto">自動下載，重新啟動時安裝（推薦）</option>
@@ -1050,10 +1050,10 @@
                 <div class="field">
                     <label><input type="checkbox" id="set-inherit">新實例沿用最近一個實例的按鍵、遊戲設定與輝煌模組設定</label>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label><input type="checkbox" id="set-tray">按關閉時縮到系統匣（右下角圖示可再叫出或直接開始遊戲）</label>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label><input type="checkbox" id="set-autostart">開機時自動啟動輝煌啟動器</label>
                 </div>
                 <div class="field">
@@ -1094,26 +1094,26 @@
                     <div class="disk-usage" id="disk-usage"></div>
                 </div>
                 <div class="toolbar">
-                    <button type="button" class="mc" id="btn-open-root"><i data-icon="folder"></i>開啟啟動器資料夾</button>
+                    <button type="button" class="mc desktop-only" id="btn-open-root"><i data-icon="folder"></i>開啟啟動器資料夾</button>
                     <button type="button" class="mc" id="btn-clean-cache"><i data-icon="trash"></i>清理快取</button>
                     <button type="button" class="mc" id="btn-config-export"><i data-icon="download"></i>匯出設定</button>
                     <button type="button" class="mc" id="btn-config-import"><i data-icon="archive"></i>匯入設定</button>
                 </div>
                 <div class="hint">清理快取會刪除可自動重建的 natives、7 天前的日誌，以及回收資料夾裡超過 30 天的項目，不會動到存檔、模組與設定。<br>匯出設定會把啟動器設定與所有實例的設定打包到「下載」資料夾（不含帳號登入資料與遊戲檔案），換電腦時匯入就能還原，遊戲檔案會在第一次開始遊戲時自動下載。</div>
 
-                <h2 id="set-keys">快捷鍵</h2>
-                <div class="field">
+                <h2 id="set-keys" class="desktop-only">快捷鍵</h2>
+                <div class="field desktop-only">
                     <label>指令面板</label>
                     <div class="hint">按 <kbd class="mod-key">Ctrl</kbd> + <kbd>K</kbd>（可在下方修改）打開，輸入文字就能啟動實例、跳到任何設定、開資料夾、切換帳號或套用設定方案。</div>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label>系統層級快捷鍵</label>
                     <div class="toolbar">
                         <button type="button" class="mc combo-btn" id="btn-global-shortcut"></button>
                         <span class="toolbar-label">啟動器縮到背景或工作列時也有效，按下就直接開始遊戲（目前選擇的實例）。</span>
                     </div>
                 </div>
-                <div class="field">
+                <div class="field desktop-only">
                     <label>啟動器內的快捷鍵</label>
                     <div class="shortcut-list" id="shortcut-list"></div>
                     <div class="toolbar">
@@ -1141,7 +1141,7 @@
                     <button type="button" class="mc" id="btn-clear-log">清空畫面</button>
                     <button type="button" class="mc" id="btn-log-delete"><i data-icon="trash"></i>刪除這個檔案</button>
                     <button type="button" class="mc" id="btn-log-clean">清除舊紀錄檔</button>
-                    <button type="button" class="mc" id="btn-open-logs"><i data-icon="folder"></i>開啟資料夾</button>
+                    <button type="button" class="mc desktop-only" id="btn-open-logs"><i data-icon="folder"></i>開啟資料夾</button>
                     <span class="spacer"></span>
                     <button type="button" class="mc" id="btn-my-reports">我的回報</button>
                 </div>
@@ -1175,6 +1175,12 @@
                 <p class="hint">
                     字型：Minecraft-Font、GNU Unifont、內海字體（SIL OFL 1.1）；3D 皮膚預覽：skinview3d（MIT）；圖示：Pixelarticons（MIT）。
                     資料處理方式請見 <a href="#" data-url="https://www.brilliantw.net/%E9%9A%B1%E7%A7%81%E6%94%BF%E7%AD%96/">隱私政策第七節</a>。
+                </p>
+                <p class="hint android-only">
+                    手機版的遊戲執行環境改作自 Amethyst-Android（LGPL-3.0），繪圖轉譯層改作自 MobileGlues（LGPL-2.1），修改後的完整原始碼公開於
+                    <a href="#" data-url="https://github.com/BrilliantTeam/brilliant-mobile-runtime">brilliant-mobile-runtime</a> 與
+                    <a href="#" data-url="https://github.com/BrilliantTeam/MobileGlues">MobileGlues</a>。
+                    另含 SDL（zlib）、OpenAL Soft（LGPL-2.1）、LWJGL（BSD-3）、bytehook（MIT）、SPIRV-Cross（Apache-2.0）、imgui-java（MIT）、FreeType（FTL）。
                 </p>
                 <h2>版本</h2>
                 <p><span id="about-version" class="about-version">輝煌啟動器</span></p>

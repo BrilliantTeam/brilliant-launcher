@@ -1,3 +1,5 @@
+import { ANDROID, api } from './api.js';
+
 export const $ = (sel, root = document) => root.querySelector(sel);
 export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -157,8 +159,19 @@ addEventListener('focusin', (e) => {
 });
 addEventListener('focusout', (e) => { if (hasHistory(e.target)) { rememberSearch(e.target); closeHistory(); } });
 addEventListener('input', (e) => { if (hasHistory(e.target) && document.activeElement === e.target) showHistory(e.target); });
-addEventListener('scroll', closeHistory, true);
-addEventListener('resize', closeHistory);
+function placeHistory() {
+    const input = document.activeElement;
+    if (!historyBox || !hasHistory(input)) return closeHistory();
+    const r = input.getBoundingClientRect();
+    Object.assign(historyBox.style, { left: `${r.left}px`, top: `${r.bottom + 4}px`, width: `${r.width}px` });
+}
+let historyWidth = innerWidth;
+addEventListener('scroll', (e) => { if (!(e.target instanceof Element && e.target.closest('.search-history'))) (ANDROID ? placeHistory : closeHistory)(); }, true);
+addEventListener('resize', () => {
+    const sameWidth = innerWidth === historyWidth;
+    historyWidth = innerWidth;
+    (ANDROID && sameWidth ? placeHistory : closeHistory)();
+});
 addEventListener('keydown', (e) => {
     if (!hasHistory(e.target)) return;
     if (historyBox && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -345,6 +358,22 @@ export async function confirm(message, okLabel = '確定') {
         ]
     });
     return answer === true;
+}
+
+export async function lowMemoryOk() {
+    if (!ANDROID) return true;
+    try {
+        if (localStorage.getItem('brilliant.lowMemoryOk')) return true;
+    } catch {}
+    const memory = (await api.system_info().catch(() => null))?.memoryMb ?? 0;
+    if (!memory || memory >= 5120) return true;
+    const ok = await confirm(`這支手機的記憶體約 ${(memory / 1024).toFixed(1)} GB，低於建議的 6 GB。遊戲可能很卡，或在遊玩中被系統關閉。`, '仍要開始');
+    if (ok) {
+        try {
+            localStorage.setItem('brilliant.lowMemoryOk', '1');
+        } catch {}
+    }
+    return ok;
 }
 
 export function fmtBytes(bytes) {

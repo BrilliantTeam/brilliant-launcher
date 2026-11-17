@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器意外崩潰</string>
+    <string name="lazy_service_default_title">輝煌啟動器前臺服務</string>
+    <string name="storage_required">輝煌啟動器需要連接外部存儲，請重新連接並重啟應用。</string>
+    <string name="modpack_install_notification_title">輝煌啟動器模組包安裝程式</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器需要取得通知權限，以防您離開應用時，游戲或模組包停止下載。若無該權限，Android 可能會在您將 輝煌啟動器置於後台模式時，關閉您的下載。</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

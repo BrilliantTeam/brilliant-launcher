@@ -1,4 +1,4 @@
-import { api, fileSrc } from './api.js';
+import { ANDROID, api, fileSrc } from './api.js';
 import { dialog, h, toast } from './ui.js';
 import { refreshSessions } from './views/accounts.js';
 import { emit, on, saveSettings, selectedInstance, store } from './store.js';
@@ -79,7 +79,7 @@ async function checkUpgrade() {
 }
 
 async function tuneHardware() {
-    if (store.settings?.hardwareTuned) return;
+    if (ANDROID || store.settings?.hardwareTuned) return;
     const info = await api.system_info().catch(() => null);
     if (!info?.memoryMb) return;
     await saveSettings({ memoryMb: info.recommendedMb, hardwareTuned: true });

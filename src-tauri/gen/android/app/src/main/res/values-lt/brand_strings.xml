@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 netikėtai išsijungė arba užlužo</string>
+    <string name="lazy_service_default_title">輝煌啟動器 foninis servisas</string>
+    <string name="modpack_install_notification_title">輝煌啟動器 Modpack diegėjas</string>
+</resources>

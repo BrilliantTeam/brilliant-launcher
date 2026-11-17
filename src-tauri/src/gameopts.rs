@@ -76,9 +76,106 @@ pub async fn apply(instance: &crate::instance::Instance, settings: &crate::confi
     let _ = tokio::task::spawn_blocking(move || apply_with(&from, &to, &groups)).await;
 }
 
+const MOBILE: [(&str, &str); 20] = [
+    ("graphicsPreset", "\"custom\""),
+    ("renderDistance", "8"),
+    ("simulationDistance", "6"),
+    ("maxFps", "60"),
+    ("enableVsync", "false"),
+    ("particles", "1"),
+    ("entityShadows", "false"),
+    ("renderClouds", "\"fast\""),
+    ("cloudRange", "64"),
+    ("cutoutLeaves", "false"),
+    ("improvedTransparency", "false"),
+    ("biomeBlendRadius", "0"),
+    ("chunkSectionFadeInTime", "0.0"),
+    ("weatherRadius", "5"),
+    ("entityDistanceScaling", "0.75"),
+    ("vignette", "false"),
+    ("menuBackgroundBlurriness", "0"),
+    ("mipmapLevels", "0"),
+    ("inactivityFpsLimit", "\"afk\""),
+    ("tutorialStep", "none"),
+];
+
+const LOW_MEMORY: [(&str, &str); 4] = [
+    ("renderDistance", "5"),
+    ("simulationDistance", "5"),
+    ("particles", "2"),
+    ("entityDistanceScaling", "0.5"),
+];
+
+fn low_memory_device() -> bool {
+    matches!(crate::boost::total_memory_mb(), 1..5120)
+}
+
+fn data_version(client_jar: &Path) -> Option<i64> {
+    let mut zip = zip::ZipArchive::new(std::fs::File::open(client_jar).ok()?).ok()?;
+    let json: serde_json::Value = serde_json::from_reader(zip.by_name("version.json").ok()?).ok()?;
+    json["world_version"].as_i64()
+}
+
+fn tune_for_mobile(game_dir: &Path, client_jar: &Path, low_memory: bool) -> std::io::Result<bool> {
+    let marker = game_dir.join(".brilliant-mobile-options");
+    if marker.exists() {
+        return Ok(false);
+    }
+    let file = game_dir.join("options.txt");
+    let mut current = parse(&std::fs::read_to_string(&file).unwrap_or_default());
+    if !current.iter().any(|(k, _)| k == "version") {
+        let Some(version) = data_version(client_jar) else {
+            return Ok(false);
+        };
+        current.insert(0, ("version".into(), version.to_string()));
+    }
+    for (key, value) in MOBILE.iter().chain(if low_memory { LOW_MEMORY.iter() } else { [].iter() }) {
+        match current.iter_mut().find(|(k, _)| k == key) {
+            Some(entry) => entry.1 = value.to_string(),
+            None => current.push((key.to_string(), value.to_string())),
+        }
+    }
+    std::fs::create_dir_all(game_dir)?;
+    paths::write_atomic(&file, render(&current).as_bytes())?;
+    std::fs::write(marker, b"")?;
+    Ok(true)
+}
+
+pub async fn mobile_defaults(instance: &crate::instance::Instance) {
+    let (dir, jar) = (paths::game_dir(&instance.id), paths::version_jar(&instance.mc_version));
+    let _ = tokio::task::spawn_blocking(move || tune_for_mobile(&dir, &jar, low_memory_device())).await;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mobile_tuning_writes_data_version_once() {
+        let base = std::env::temp_dir().join(format!("bl-mobile-{}", rand::random::<u32>()));
+        std::fs::create_dir_all(&base).unwrap();
+        let jar = base.join("client.jar");
+        {
+            let mut zip = zip::ZipWriter::new(std::fs::File::create(&jar).unwrap());
+            zip.start_file("version.json", zip::write::SimpleFileOptions::default()).unwrap();
+            std::io::Write::write_all(&mut zip, br#"{"world_version": 5023}"#).unwrap();
+            zip.finish().unwrap();
+        }
+        let game = base.join("game");
+        assert!(tune_for_mobile(&game, &jar, false).unwrap());
+        let text = std::fs::read_to_string(game.join("options.txt")).unwrap();
+        assert!(text.starts_with("version:5023\n") && text.contains("renderDistance:8\n") && text.contains("graphicsPreset:\"custom\"\n") && text.contains("tutorialStep:none\n"));
+        std::fs::write(game.join("options.txt"), "version:5023\nrenderDistance:12\n").unwrap();
+        assert!(!tune_for_mobile(&game, &jar, false).unwrap());
+        assert_eq!(std::fs::read_to_string(game.join("options.txt")).unwrap(), "version:5023\nrenderDistance:12\n");
+        std::fs::remove_dir_all(&game).unwrap();
+        std::fs::create_dir_all(&game).unwrap();
+        std::fs::write(game.join("options.txt"), "version:4000\nrenderDistance:20\nlang:zh_tw\n").unwrap();
+        assert!(tune_for_mobile(&game, &base.join("missing.jar"), true).unwrap());
+        let text = std::fs::read_to_string(game.join("options.txt")).unwrap();
+        assert!(text.starts_with("version:4000\nrenderDistance:5\nlang:zh_tw\n") && text.contains("simulationDistance:5\n") && text.contains("particles:2\n"));
+        std::fs::remove_dir_all(&base).unwrap();
+    }
 
     #[test]
     fn copies_only_chosen_groups_from_source() {

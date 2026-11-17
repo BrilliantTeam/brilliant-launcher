@@ -136,7 +136,7 @@ pub async fn world_export(id: String, folder: String) -> R<String> {
     if !src.join("level.dat").is_file() {
         bail!("找不到這個世界");
     }
-    let out_dir = dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"));
+    let out_dir = paths::exports();
     std::fs::create_dir_all(&out_dir)?;
     let base = format!("{folder}-{}", now_secs());
     let dest = paths::unused(out_dir.join(format!("{base}.zip")));

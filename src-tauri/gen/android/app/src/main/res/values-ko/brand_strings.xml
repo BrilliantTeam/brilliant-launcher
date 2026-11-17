@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器에 예기치 못한 충돌이 발생했어요</string>
+    <string name="lazy_service_default_title">輝煌啟動器 포그라운드 서비스</string>
+    <string name="storage_required">輝煌啟動器Luancher를 사용하려면 외부 저장소를 연결해야합니다. 다시 연결한 후 앱을 다시 시작하세요.</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器Luancher는 앱을 종료할 때 게임/모드팩 다운로드가 중지되는 것을 방지하기 위해 알림을 게시할 수 있는 권한이 필요합니다. 이 권한이 없으면 輝煌啟動器를 백그라운드 모드로 전환할 때 Android에서 다운로드를 종료할 수 있습니다.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

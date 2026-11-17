@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 telah ranap tanpa diduga</string>
+    <string name="lazy_service_default_title">Perkhidmatan Latar Depan 輝煌啟動器</string>
+    <string name="storage_required">輝煌啟動器 memerlukan storan luaran untuk dilampirkan. Sila sambungkan semula dan mulakan semula aplikasi.</string>
+    <string name="modpack_install_notification_title">Pemasang Pek Mod 輝煌啟動器</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 memerlukan kebenaran untuk menyiarkan pemberitahuan untuk menghalang muat turun permainan atau pek mod daripada berhenti apabila anda meninggalkan aplikasi. Tanpa kebenaran ini, Android mungkin menutup muat turun anda apabila anda meletakkan 輝煌啟動器 dalam mod latar belakang.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

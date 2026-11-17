@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 קרס באופן בלתי צפוי</string>
+    <string name="lazy_service_default_title">שירות הרקע של 輝煌啟動器</string>
+    <string name="storage_required">輝煌啟動器 דורש אחסון חיצוני מחובר. בבקשה תחבר/י אותו ואז הפעל/י מחדש את האפליקציה.</string>
+    <string name="modpack_install_notification_title">מתקין modpack של 輝煌啟動器</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 דורש הרשאה לפרסום התראות כדי למנוע הפסקת הורדות של משחקים/מודים כשאתה עוזב את האפליקציה. ללא הרשאה זו, אנדרואיד עשויה לכבות את ההורדות שלך כשאתה מעביר את 輝煌啟動器 למצב רקע.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

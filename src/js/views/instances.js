@@ -1,4 +1,4 @@
-import { api, FILE_TYPES, fileSrc, isType, openUrl, pickFile, pickFiles, watchFolders } from '../api.js';
+import { ANDROID, api, FILE_TYPES, fileSrc, isType, openUrl, pickFile, pickFiles, watchFolders } from '../api.js';
 import { $, $$, acceptFiles, clear, confirm, dialog, fail, fmtBytes, fmtDuration, h, pickColor, rangeFill, toast, guard, RECYCLE_NOTE } from '../ui.js';
 import { accountFor, emit, isRunning, LOADER_NAME, loaderLabel, loadInstances, modded, on, saveSettings, selectedInstance, store } from '../store.js';
 import { provide } from '../commands.js';
@@ -204,20 +204,20 @@ async function editorDialog(title, source) {
     const freezeMods = h('input', { type: 'checkbox', checked: !!source.freezeMods });
     const advanced = h('details', { class: 'advanced', open: !!(source.javaPath || source.jvmArgs || source.width || source.javaMajor || source.wrapper || source.envVars || source.modChannel || source.freezeMods) },
         h('summary', {}, '進階設定（覆寫全域）'),
-        h('div', { class: 'field-row' },
+        h('div', { class: 'field-row desktop-only' },
             h('div', { class: 'field' }, h('label', {}, 'Java 版本'), javaMajor),
             h('div', { class: 'field' }, h('label', {}, 'Java 執行檔'), javaPath)),
-        h('div', { class: 'hint' }, '指定版本時，啟動器會自動下載並管理對應的 Java；選了「Java 執行檔」則以執行檔為準。'),
-        h('div', { class: 'field' }, h('label', {}, 'JVM 參數'), jvmArgs, h('div', { class: 'jvm-presets' }, ...jvmPresetButtons(jvmArgs, () => {}))),
-        h('div', { class: 'field' }, h('label', {}, '啟動包裝指令'), wrapper),
-        h('div', { class: 'field' }, h('label', {}, '環境變數'), envVars),
+        h('div', { class: 'hint desktop-only' }, '指定版本時，啟動器會自動下載並管理對應的 Java；選了「Java 執行檔」則以執行檔為準。'),
+        h('div', { class: 'field desktop-only' }, h('label', {}, 'JVM 參數'), jvmArgs, h('div', { class: 'jvm-presets' }, ...jvmPresetButtons(jvmArgs, () => {}))),
+        h('div', { class: 'field desktop-only' }, h('label', {}, '啟動包裝指令'), wrapper),
+        h('div', { class: 'field desktop-only' }, h('label', {}, '環境變數'), envVars),
         h('div', { class: 'field-row' },
             h('div', { class: 'field' }, h('label', {}, '模組更新管道'), modChannel),
             h('div', { class: 'field' }, h('label', {}, freezeMods, '凍結模組'), h('div', { class: 'hint' }, '不檢查也不自動更新這個實例的模組，適合穩定的整合包。'))),
-        h('div', { class: 'field-row' },
+        h('div', { class: 'field-row desktop-only' },
             h('div', { class: 'field' }, h('label', {}, '視窗寬度'), width),
             h('div', { class: 'field' }, h('label', {}, '視窗高度'), height)),
-        h('label', {}, fullscreen, '全螢幕啟動（需同時填寫寬高才會覆寫）'));
+        h('label', { class: 'desktop-only' }, fullscreen, '全螢幕啟動（需同時填寫寬高才會覆寫）'));
 
     const content = h(
         'div',
@@ -232,7 +232,7 @@ async function editorDialog(title, source) {
         h('div', { class: 'field' }, h('label', {}, 'Minecraft 版本'), mcVersion, modSupported.size ? showAllBox : ''),
         h('div', { class: 'field' }, h('label', {}, '模組載入器'), loader),
         loaderField,
-        h('div', { class: 'field' }, h('label', {}, '記憶體上限：', memoryLabel), memory),
+        h('div', { class: 'field desktop-only' }, h('label', {}, '記憶體上限：', memoryLabel), memory),
         accountField,
         rpcField,
         advanced
@@ -710,7 +710,7 @@ async function showWorlds(instance) {
                 h('button', { type: 'button', class: 'mc primary', onclick: () => importWorld(false) }, icon('plus'), '匯入 zip'),
                 h('button', { type: 'button', class: 'mc', onclick: () => importWorld(true) }, icon('folder'), '匯入資料夾'),
                 h('span', { class: 'spacer' }),
-                h('button', { type: 'button', class: 'mc', onclick: () => openFolder(instance, 'saves') }, icon('folder'), '開啟存檔資料夾')),
+                h('button', { type: 'button', class: 'mc desktop-only', onclick: () => openFolder(instance, 'saves') }, icon('folder'), '開啟存檔資料夾')),
             notice,
             list,
             h('div', { class: 'hint' }, '可以把世界 zip 直接拖進這個視窗匯入。遊戲執行中無法匯入、複製或刪除世界。')), 'world', (path) => importWorld(false, path))
@@ -797,7 +797,7 @@ async function manageBackups(instance) {
                 }
             }, icon('save'), '立即備份'),
             h('span', { class: 'spacer' }),
-            h('button', { type: 'button', class: 'mc', onclick: () => openFolder(instance, '../backups') }, icon('folder'), '開啟備份資料夾')),
+            h('button', { type: 'button', class: 'mc desktop-only', onclick: () => openFolder(instance, '../backups') }, icon('folder'), '開啟備份資料夾')),
         list,
         h('div', { class: 'hint' }, '可在「設定 → 啟動流程」開啟每次啟動前自動備份。'));
     refresh();
@@ -846,7 +846,7 @@ async function showScreenshots(instance) {
                 h('div', { class: 'toolbar' },
                     h('span', { class: 'toolbar-label' }, '點一下用系統預設程式開啟'),
                     h('span', { class: 'spacer' }),
-                    h('button', { type: 'button', class: 'mc', onclick: () => openFolder(instance, 'screenshots') }, icon('folder'), '開啟截圖資料夾')),
+                    h('button', { type: 'button', class: 'mc desktop-only', onclick: () => openFolder(instance, 'screenshots') }, icon('folder'), '開啟截圖資料夾')),
                 grid)
         });
     } finally {
@@ -894,13 +894,13 @@ export function moreMenu(instance) {
         item('map', '世界管理', () => showWorlds(instance)),
         item('save', '存檔備份', () => manageBackups(instance)),
         item('image', '截圖', () => showScreenshots(instance)),
-        item('zap', '效能健檢', () => perfCheck(instance)),
+        ANDROID ? null : item('zap', '效能健檢', () => perfCheck(instance)),
         item('arrow-right', '升級版本⋯', () => pickUpgrade(instance)),
         item('arrow-up', pinnedKey() === `i:${instance.id}` ? '取消置頂' : '置頂實例', () => togglePin(`i:${instance.id}`)),
         item('folder', '移到分組⋯', () => moveToGroup(instance).catch(fail)),
-        item('folder', '開啟資料夾', () => openFolder(instance)),
+        ANDROID ? null : item('folder', '開啟資料夾', () => openFolder(instance)),
         item('reload', '驗證並修復檔案', () => repairInstance(instance)),
-        navigator.userAgent.includes('Mac') ? null : item('external-link', '建立桌面捷徑', () => createShortcut(instance)),
+        navigator.userAgent.includes('Mac') || ANDROID ? null : item('external-link', '建立桌面捷徑', () => createShortcut(instance)),
         item('bug', '匯出診斷包', () => exportDiagnostics(instance)),
         item('copy', '複製實例', () => duplicateInstance(instance)),
         item('archive', '存成範本⋯', () => saveAsTemplate(instance)),
@@ -922,10 +922,11 @@ function openMenu(e, menu, anchor, items) {
     const open = menu.hidden;
     closeMenus();
     if (!open) return;
-    if (!menu.childElementCount) menu.append(...items());
+    if (!menu.childElementCount) menu.append(...items().filter(Boolean));
     menu.hidden = false;
     menu.showPopover();
     placeMenu(menu, anchor);
+    openState = { menu, anchor, width: innerWidth };
     menu.previousElementSibling?.setAttribute('aria-expanded', 'true');
     if (!e.detail) menu.querySelector('[role="menuitem"]')?.focus();
 }
@@ -938,7 +939,7 @@ function createMenu() {
     toggle.after(menu);
     toggle.addEventListener('click', (e) => openMenu(e, menu, $('#create-split'), () => [
         item('zap', '一鍵建立輝煌實例', quickCreate),
-        item('download', '從其他啟動器匯入', importFlow),
+        ANDROID ? null : item('download', '從其他啟動器匯入', importFlow),
         item('briefcase', '匯入模組包', () => importPack(null)),
         item('copy', '從範本建立', fromTemplate)]));
 }
@@ -955,8 +956,17 @@ function placeMenu(menu, anchor) {
     menu.style.bottom = down ? 'auto' : `${innerHeight - rect.top + 6}px`;
 }
 
-addEventListener('scroll', (e) => { if (!(e.target instanceof Element && e.target.closest('.inst-menu'))) closeMenus(); }, true);
-addEventListener('resize', () => closeMenus());
+let openState = null;
+
+function followMenu() {
+    if (!openState || openState.menu.hidden) return;
+    const rect = openState.anchor.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > innerHeight) closeMenus();
+    else placeMenu(openState.menu, openState.anchor);
+}
+
+addEventListener('scroll', (e) => { if (!(e.target instanceof Element && e.target.closest('.inst-menu'))) (ANDROID ? followMenu : closeMenus)(); }, true);
+addEventListener('resize', () => (ANDROID && openState?.width === innerWidth ? followMenu : closeMenus)());
 
 addEventListener('keydown', (e) => {
     const menu = e.key === 'Escape' && document.querySelector('.inst-menu:not([hidden]):not(.floating)');
@@ -1055,7 +1065,7 @@ function card(instance) {
                 type: 'button',
                 class: 'mc primary inst-play',
                 onclick: (e) => { e.stopPropagation(); playInstance(instance); }
-            }, icon(running ? 'close' : 'play'), running ? '結束遊戲' : '開始遊戲'),
+            }, icon(running && !ANDROID ? 'close' : 'play'), running ? (ANDROID ? '返回遊戲' : '結束遊戲') : '開始遊戲'),
             tool('edit', '設定', () => editInstance(instance)),
             tool('puzzle', modded(instance) ? '模組與資源' : '資源包與光影', () => manageMods(instance)),
             moreMenu(instance))
@@ -1219,7 +1229,7 @@ async function sharedResources(group) {
             tabs,
             h('div', { class: 'toolbar' },
                 addButton,
-                h('button', { type: 'button', class: 'mc', onclick: async () => api.open_path({ path: await api.shared_folder_path({ key: group.key }) + (navigator.userAgent.includes('Windows') ? '\\' : '/') + folder }).catch(fail) }, icon('folder'), '開啟資料夾'),
+                h('button', { type: 'button', class: 'mc desktop-only', onclick: async () => api.open_path({ path: await api.shared_folder_path({ key: group.key }) + (navigator.userAgent.includes('Windows') ? '\\' : '/') + folder }).catch(fail) }, icon('folder'), '開啟資料夾'),
                 h('button', { type: 'button', class: 'mc', onclick: () => load() }, icon('reload'), '重新整理'),
                 h('span', { class: 'spacer' }),
                 status),
@@ -1378,7 +1388,7 @@ function groupHeader(group, members, closed) {
         title: '管理這個分組共用的資源包、光影、存檔或截圖',
         onclick: () => sharedResources(group).catch(fail)
     }, icon('folder'), '共用資源') : null,
-    group.name ? h('button', {
+    group.name && !ANDROID ? h('button', {
         type: 'button',
         class: 'mc',
         disabled: !members.length || running === members.length,
@@ -1407,7 +1417,7 @@ function groupMenu(group, members, x, y) {
                 saveGroups(groups).catch(fail);
             });
         }),
-        members.length ? item('play', '全部啟動', () => launchGroup(group.name, members).catch(fail)) : null,
+        members.length && !ANDROID ? item('play', '全部啟動', () => launchGroup(group.name, members).catch(fail)) : null,
         item('trash', '刪除分組（實例保留）', () => removeGroup(group).catch(fail), 'danger'));
     document.body.append(menu);
     const rect = menu.getBoundingClientRect();
@@ -1470,7 +1480,7 @@ async function groupDialog(existing = null) {
                 h('div', { class: 'hint' }, '勾選的資料夾由這個分組的實例共用一份，其他分組不受影響。加入共用時，實例原本的內容會搬進分組的共用資料夾（同名會自動改名，不會覆蓋）；實例離開分組或取消共用時，會把共用內容複製一份回實例。'),
                 h('div', { class: 'share-cards' }, ...shareCards),
                 shareWarn,
-                h('div', { class: 'share-location' }, location, existing?.key ? h('button', { type: 'button', class: 'mc', onclick: async () => api.open_path({ path: await api.shared_folder_path({ key }) }).catch(fail) }, icon('folder'), '開啟') : null)),
+                h('div', { class: 'share-location' }, location, existing?.key ? h('button', { type: 'button', class: 'mc desktop-only', onclick: async () => api.open_path({ path: await api.shared_folder_path({ key }) }).catch(fail) }, icon('folder'), '開啟') : null)),
             h('div', { class: 'field' }, h('label', {}, '同步遊戲選項'),
                 h('div', { class: 'hint' }, '啟動這個分組的實例時，會把勾選的選項從來源實例複製過去；來源實例本身不會被改動，其他分組也不受影響。語言、資源包等其他選項不會同步。'),
                 h('div', { class: 'check-row', id: 'sync-cats' }, ...syncChecks),

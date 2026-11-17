@@ -525,7 +525,7 @@ fn safe_name(text: &str) -> String {
 }
 
 fn export_dir() -> PathBuf {
-    dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"))
+    paths::exports()
 }
 
 pub fn export_diagnostics(instance: &Instance, settings: &Settings, java: &str) -> R<PathBuf> {

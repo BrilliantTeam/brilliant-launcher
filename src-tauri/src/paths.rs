@@ -9,6 +9,14 @@ pub fn root() -> PathBuf {
         .join("BrilliantLauncher")
 }
 
+pub fn exports() -> PathBuf {
+    #[cfg(target_os = "android")]
+    if let Some(storage) = std::env::var_os("EXTERNAL_STORAGE") {
+        return PathBuf::from(storage).join("Download");
+    }
+    dirs::download_dir().unwrap_or_else(|| root().join("exports"))
+}
+
 pub fn config_file() -> PathBuf {
     root().join("config.json")
 }

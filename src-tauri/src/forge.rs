@@ -124,6 +124,9 @@ fn read_installer(jar: &PathBuf) -> R<(String, Vec<PathBuf>)> {
 }
 
 pub async fn install(app: &AppHandle, loader: &str, mc: &str, version: &str, mirror: bool) -> R<String> {
+    if cfg!(target_os = "android") {
+        bail!("手機版目前只支援原版與 Fabric 實例，Forge 與 NeoForge 請在電腦版遊玩");
+    }
     if !is_forge_like(loader) || !paths::valid_version_id(mc) || !paths::valid_version_id(version) {
         bail!("載入器版本不正確：{loader} {version}");
     }

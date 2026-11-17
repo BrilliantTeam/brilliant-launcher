@@ -1,4 +1,4 @@
-import { api, openUrl } from './api.js';
+import { ANDROID, api, openUrl } from './api.js';
 import { icon } from './icons.js';
 import { $, $$, clear, fail, h, toast } from './ui.js';
 import { emit, on, saveSettings, selectedInstance, store } from './store.js';
@@ -35,13 +35,13 @@ export const ACTIONS = [
     ['search', '搜尋（設定頁搜尋設定，其他頁搜尋模組）', 'Ctrl+F', () => hooks.search?.()],
     ...Object.entries(VIEW_LABELS).map(([view, label], i) => [`view-${view}`, `切換到「${label}」`, i < 9 ? `Ctrl+${i + 1}` : '', () => { location.hash = `#${view}`; }]),
     ['open-screenshot', '開啟最新截圖', '', latestScreenshot],
-    ['open-folder', '開啟目前實例的資料夾', '', () => { const i = selectedInstance(); if (i) api.open_instance_folder({ id: i.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail); }],
+    ANDROID ? null : ['open-folder', '開啟目前實例的資料夾', '', () => { const i = selectedInstance(); if (i) api.open_instance_folder({ id: i.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail); }],
     ['next-track', '背景音樂下一首', '', () => hooks.nextTrack?.()],
     ['toggle-theme', '切換亮色／深色', '', () => $('#theme-toggle').click()],
     ['toggle-font', '切換字型', '', () => $('#font-toggle').click()],
     ['streamer', '切換直播模式', '', () => saveSettings({ streamerMode: !store.settings?.streamerMode }).then(() => toast(store.settings.streamerMode ? '已開啟直播模式：帳號、信箱、IP 與路徑會被隱藏' : '已關閉直播模式'), fail)],
     ['home-edit', '編輯主頁版面', '', () => { location.hash = '#home'; hooks.editHome?.(); }]
-].map(([id, label, combo, run]) => ({ id, label, combo, run }));
+].filter(Boolean).map(([id, label, combo, run]) => ({ id, label, combo, run }));
 
 export const comboOf = (id) => {
     const custom = store.settings?.shortcuts?.[id];
@@ -157,7 +157,7 @@ function paletteItems() {
     for (const instance of store.instances) {
         items.push({ label: `開始遊戲：${instance.name}`, tag: '實例', run: () => hooks.playInstance?.(instance) });
         items.push({ label: `開啟實例頁：${instance.name}`, tag: '實例', run: () => hooks.manageMods?.(instance) });
-        items.push({ label: `開啟資料夾：${instance.name}`, tag: '實例', run: () => api.open_instance_folder({ id: instance.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail) });
+        if (!ANDROID) items.push({ label: `開啟資料夾：${instance.name}`, tag: '實例', run: () => api.open_instance_folder({ id: instance.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail) });
     }
     for (const account of store.accounts ?? []) {
         items.push({ label: `切換帳號：${account.name}`, tag: '帳號', run: () => hooks.selectAccount?.(account) });

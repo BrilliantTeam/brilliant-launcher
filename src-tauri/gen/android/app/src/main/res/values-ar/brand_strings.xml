@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">لقد توقف 輝煌啟動器 بشكل غير متوقع</string>
+    <string name="lazy_service_default_title">خدمة 輝煌啟動器 في المقدمة</string>
+    <string name="storage_required">يتطلب 輝煌啟動器 أن تكون وحدة التخزين الخارجية متصلة. الرجاء إعادة الاتصال بها وإعادة تشغيل التطبيق.</string>
+    <string name="modpack_install_notification_title">輝煌啟動器 Modpack Installerⁿ</string>
+</resources>

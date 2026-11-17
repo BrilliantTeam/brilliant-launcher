@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 neočakávane spadol</string>
+    <string name="storage_required">輝煌啟動器 vyžaduje pripojené externé úložisko. Pripojte ho a reštartujte aplikáciu.</string>
+    <string name="modpack_install_notification_title">輝煌啟動器 inštalátor modpackov</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 vyžaduje povolenie na ukazovanie upozornení, aby sa zabránilo zastaveniu sťahovania hry/modpackov, keď opustíte aplikáciu. Bez tohto povolenia môže Android zastaviť sťahovanie, keď pošlete 輝煌啟動器 do pozadia.</string>
+</resources>

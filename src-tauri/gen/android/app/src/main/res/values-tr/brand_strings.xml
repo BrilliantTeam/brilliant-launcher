@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 beklenmedik bir sebepten dolayı çöktü</string>
+    <string name="lazy_service_default_title">輝煌啟動器 Önplan Hizmeti</string>
+    <string name="storage_required">輝煌啟動器 harici depolama biriminin bağlı olmasını gerektirir. Lütfen yeniden bağlayın ve uygulamayı yeniden başlatın.</string>
+    <string name="modpack_install_notification_title">輝煌啟動器 Mod Paketi Yükleyicisi</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器, uygulamadan ayrıldığınızda oyun/mod paketi indirmelerinin durmasını önlemek için bildirim gönderme izni gerektirir. Bu izin olmadan, Android 輝煌啟動器\'ı arka plan moduna aldığınızda indirmelerinizi kapatabilir.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

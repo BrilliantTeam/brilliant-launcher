@@ -188,7 +188,7 @@ pub async fn profile_export(id: String, name: String, files: Vec<String>, format
     } else {
         modrinth_index(&inst, &name, locals, deps).await
     };
-    let out_dir = dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"));
+    let out_dir = paths::exports();
     std::fs::create_dir_all(&out_dir)?;
     let stem = file_name_safe(&format!("{}-{}", inst.name, name));
     let dest = paths::unused(out_dir.join(format!("{stem}.{extension}")));

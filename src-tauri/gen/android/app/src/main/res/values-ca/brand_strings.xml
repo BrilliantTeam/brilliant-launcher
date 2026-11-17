@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 s’ha parat inesperadament</string>
+    <string name="lazy_service_default_title">Servei de primer plà del 輝煌啟動器</string>
+    <string name="storage_required">El 輝煌啟動器 requereix que hi hagi emmagatzemament extern connectat. Si us plau, reconnecteu-ho i reinicieu l\'app.</string>
+    <string name="modpack_install_notification_title">Instal·lador de Modpacks del 輝煌啟動器</string>
+</resources>

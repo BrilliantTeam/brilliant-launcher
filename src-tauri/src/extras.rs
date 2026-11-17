@@ -472,7 +472,7 @@ pub async fn export_look(name: String, description: String, look: serde_json::Va
         manifest.music.push(crate::config::MediaItem { path: entry.clone(), name: track.name.chars().filter(|c| !c.is_control()).take(60).collect() });
         entries.push((entry, file));
     }
-    let dir = dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"));
+    let dir = paths::exports();
     tokio::fs::create_dir_all(&dir).await?;
     let path = paths::unused(dir.join(format!("輝煌外觀-{}.brlook", safe_title(&manifest.name))));
     let kept = match entries.first().filter(|(name, _)| name.starts_with("background.")) {
@@ -814,11 +814,13 @@ pub fn hook_command(script: &str, instance: &crate::instance::Instance) -> tokio
 pub fn reveal(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
+        #[cfg(desktop)]
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
 }
 
+#[cfg(desktop)]
 pub fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};

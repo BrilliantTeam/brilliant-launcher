@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 ist unerwartet abgestürzt</string>
+    <string name="lazy_service_default_title">輝煌啟動器-Vordergrunddienst</string>
+    <string name="storage_required">輝煌啟動器 benötigt einen verbundenen externen Speicher. Bitte verbinde ihn erneut und starte dann die App neu.</string>
+    <string name="modpack_install_notification_title">輝煌啟動器-Modpack-Installer</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 benötigt eine Berechtigung, um Benachrichtigungen anzuzeigen, damit Spiel-/Modpack-Downloads nicht abgebrochen werden, wenn die App verlassen wird. Ohne diese Berechtigung könnte Android Downloads stoppen, wenn 輝煌啟動器 nicht mehr im Vordergrund ist.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

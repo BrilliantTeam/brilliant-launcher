@@ -531,7 +531,7 @@ pub async fn save_png(name: String, data: String) -> R<String> {
     if bytes.len() > 20 << 20 || !bytes.starts_with(b"\x89PNG") {
         bail!("圖片資料不正確");
     }
-    let dir = dirs::download_dir().unwrap_or_else(|| paths::root().join("exports"));
+    let dir = paths::exports();
     tokio::fs::create_dir_all(&dir).await?;
     let path = paths::unused(dir.join(format!("{}-{}.png", name.trim_end_matches(".png"), now_secs())));
     tokio::fs::write(&path, bytes).await.context("儲存圖片失敗")?;

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 se ha detenido de forma inesperada</string>
+    <string name="lazy_service_default_title">Servicio de primer plano de 輝煌啟動器</string>
+    <string name="storage_required">輝煌啟動器 necesita que el almacenamiento externo esté conectado, por favor reconéctalo y reinicia la aplicación.</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 necesita un permiso para enviar notificaciones para evitar que las descargas del juego o modpacks se detengan cuando minimizes la aplicación. Sin este permiso, Android puede cancelar tus descargas cuando 輝煌啟動器 esté en segundo plano.</string>
+</resources>

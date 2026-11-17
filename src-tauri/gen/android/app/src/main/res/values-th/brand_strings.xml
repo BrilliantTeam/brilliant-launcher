@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 ได้ขัดข้องโดยไม่คาดคิด</string>
+    <string name="storage_required">輝煌啟動器 จำเป็นต้องแนบที่จัดเก็บข้อมูลภายนอก โปรดเชื่อมต่อใหม่และรีสตาร์ทแอป</string>
+    <string name="modpack_install_notification_title">ตัวติดตั้ง 輝煌啟動器 Modpack</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 ต้องได้รับอนุญาตในการโพสต์การแจ้งเตือนเพื่อป้องกันไม่ให้การดาวน์โหลดเกม/modpack หยุดเมื่อคุณออกจากแอป หากไม่ได้รับอนุญาตนี้ Android อาจปิดการดาวน์โหลดของคุณเมื่อคุณให้ 輝煌啟動器 อยู่ในโหมดเบื้องหลัง</string>
+</resources>

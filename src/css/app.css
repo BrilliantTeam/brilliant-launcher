@@ -34,6 +34,8 @@
 }
 
 html, body { height: 100%; overflow: hidden; }
+* { -webkit-tap-highlight-color: transparent; }
+:root[data-platform="android"] .desktop-only, :root:not([data-platform="android"]) .android-only { display: none !important; }
 input, textarea, .console, .crash-exception { user-select: text; -webkit-user-select: text; }
 img { -webkit-user-drag: none; }
 
@@ -455,6 +457,7 @@ button.mc.primary {
     cursor: pointer;
 }
 .instance-menu button:hover, .account-menu button:hover { background: var(--glass-hover); }
+.instance-menu button.danger:hover, .instance-menu button.danger:active { color: var(--danger-ink); background: var(--danger); }
 .instance-menu button[aria-current="true"], .account-menu button[aria-current="true"] { color: var(--accent-text); }
 .instance-menu .sub, .account-menu .sub { margin-left: auto; font-size: calc(12px * var(--fs, 1)); color: var(--glass-faint); }
 .instance-menu hr, .account-menu hr { border: 0; border-top: 1px solid var(--glass-line); margin: 4px 0; }
@@ -1931,3 +1934,54 @@ body.game-running :is(.bg-img, .update-chip.ready) { animation-play-state: pause
 .split-btn > #btn-create-more .ico { width: 14px; height: 14px; }
 :root .split-btn > button.mc:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 :root .split-btn > button.mc + button.mc { border-top-left-radius: 0; border-bottom-left-radius: 0; }
+
+@media (pointer: coarse) and (max-height: 600px) {
+    body { grid-template-rows: 36px 1fr; }
+    .titlebar-brand span, .win, .win-sep, #walker-toggle { display: none; }
+    .tool { width: 40px; height: 32px; }
+    .titlebar-tools { gap: 8px; padding-right: 4px; }
+    .account-chip, .channel-chip, .net-chip, .update-chip { min-height: 32px; }
+    .account-more { min-width: 40px; justify-content: center; }
+    :root[lang] body { grid-template-columns: 80px 1fr; }
+    :root[lang][data-railside="right"] body { grid-template-columns: 1fr 80px; }
+    .rail { overflow: hidden auto; scrollbar-width: none; padding: 8px 0; gap: 4px; }
+    .rail::-webkit-scrollbar { display: none; }
+    .inst-actions, .wardrobe-actions, .log-bar, .pick-tools, .preset-actions, .profile-bar, .setup-actions, .dock-head, .link-actions, .toolbar, .split-btn + .toolbar { gap: 8px; }
+    .rail-spacer { flex: none; }
+    :root[lang] .rail a { flex: none; width: 72px; min-height: 56px; padding: 6px 0 4px; justify-content: center; }
+    .rail a svg { width: 24px; height: 24px; }
+    .page-wrap { padding: 16px 16px 24px; }
+    button.mc, select, input:not([type="checkbox"], [type="radio"], [type="range"]), .settings-nav a, [role="tab"], .inst-group-name, .inst-page-name, .instance-menu button, .account-menu button, [role="menuitem"] { min-height: 48px; }
+    button.mc.icon-btn, .split-btn > #btn-create-more { min-width: 48px; min-height: 48px; }
+    .row button.mc.icon-btn, .world-row button.mc.icon-btn, .wardrobe-actions button.mc.icon-btn { min-width: 48px; min-height: 48px; }
+    .stage-anims .chip, #shard-hint button { min-width: 48px; min-height: 48px; }
+    .settings-nav a { display: inline-flex; align-items: center; }
+    input[type="range"] { height: 48px; }
+    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
+    label:has(> input[type="checkbox"], > input[type="radio"]) { min-height: 48px; display: flex; align-items: center; gap: 8px; }
+    .news-more { display: flex; align-items: center; min-height: 48px; padding: 0 14px; }
+
+    .view.home.active { overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); grid-template-rows: minmax(0, 1fr); column-gap: 16px; padding: 16px 80px 16px 16px; }
+    .view.home.active:has(> .progress:not([hidden])) { padding-bottom: 72px; }
+    .home-brand, .home-clock, .credit, .widget { display: none; }
+    .home > :is(.news, .dock) { position: relative; inset: auto !important; width: auto; grid-row: 1; align-self: end; max-height: 100%; min-height: 0; }
+    .news > *, .dock > * { flex: none; }
+    .news > .news-list, .dock > .shards, .dock > .setup { flex: 0 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
+    :root:not([data-toastpos="top-center"]) .toasts { top: 44px; bottom: auto; }
+    .dock:has(> .setup:not([hidden])) > :is(.dock-head, .shards, .shard-hint) { display: none; }
+    .dock > .shards { padding-right: 4px; grid-auto-rows: max-content; align-content: start; }
+    .news > .fold { top: 0; right: 0; }
+    #home-edit-toggle, .social a[data-url$="/mod/"] { display: none; }
+    :root[data-layout="mirrored"] .home > .dock { order: -1; }
+    :root[data-layout="mirrored"] .view.home.active { padding: 16px 16px 16px 80px; }
+    .social { right: 16px; }
+    :root[data-layout="mirrored"] .social { left: 16px; }
+    .news-list { min-height: 0; }
+    .news-tabs button, .news-list button { min-height: 48px; }
+    .news-tabs { padding-right: 48px; }
+    .shard { padding: 8px 12px; min-height: 48px; }
+    .fold { width: 48px; height: 48px; }
+    .social { gap: 8px; }
+    .social a, .scenic-toggle { width: 48px; height: 48px; }
+    .progress { padding: 8px 16px 9px; }
+}

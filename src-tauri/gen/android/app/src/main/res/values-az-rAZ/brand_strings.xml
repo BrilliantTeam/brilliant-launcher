@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 gözlənilmədən çökdü</string>
+    <string name="lazy_service_default_title">輝煌啟動器 Önplan Xidməti</string>
+    <string name="storage_required">輝煌啟動器 xarici yaddaşın əlavə edilməsini tələb edir. Lütfən, onu yenidən qoşun və proqramı yenidən başladın.</string>
+    <string name="modpack_install_notification_title">輝煌啟動器 Mod paket quraşdırıcısı</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器, proqramı tərk etdiyiniz zaman oyun/mod paketi yükləmələrinin dayandırılmasının qarşısını almaq məqsədilə bildirişlər göndərmək üçün icazə tələb edir. Bu icazə olmadan 輝煌啟動器-i fon rejiminə keçirdiyiniz zaman Android, yükləmələrinizi bağlaya bilər.</string>
+</resources>

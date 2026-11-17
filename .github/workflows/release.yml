@@ -115,3 +115,116 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: true
           files: release/*
+
+  android:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: 簽出儲存庫
+        uses: actions/checkout@v4
+
+      - name: 簽出手機執行層
+        uses: actions/checkout@v4
+        with:
+          repository: BrilliantTeam/brilliant-mobile-runtime
+          path: runtime
+          submodules: true
+
+      - name: 設置 Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: |
+            8
+            21
+
+      - name: 設置 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: 安裝 Tauri CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: tauri-cli@2
+
+      - name: 快取 Rust 編譯
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: android
+
+      - name: 設置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: 安裝 Android NDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.3.13750724" > /dev/null
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.3.13750724" >> "$GITHUB_ENV"
+
+      - name: 確認版本號與標籤一致
+        id: version
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v$version" ]; then
+            echo "::error::標籤 ${GITHUB_REF_NAME} 與 tauri.conf.json 的版本 $version 不一致"
+            exit 1
+          fi
+
+      - name: 確認發布通道標註
+        id: channel
+        run: node .github/release-channel.mjs "${{ steps.version.outputs.version }}" "$(git log -1 --format=%s)"
+
+      - name: 建置手機執行層
+        working-directory: runtime
+        run: |
+          chmod +x gradlew
+          ./gradlew :brilliant_runtime:assembleRelease :androidnsbypass:assembleRelease -Porg.gradle.java.installations.paths="$JAVA_HOME_8_X64" --no-daemon --console=plain
+
+      - name: 準備 APK 簽章金鑰
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE" ]; then
+            echo "::error::缺少 ANDROID_KEYSTORE，拒絕發佈沒有簽章的 APK"
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "BRILLIANT_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+
+      - name: 打包 APK
+        working-directory: src-tauri
+        env:
+          ORG_GRADLE_PROJECT_brilliantRuntimeDir: ${{ github.workspace }}/runtime
+          BRILLIANT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BRILLIANT_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          BRILLIANT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: cargo tauri android build --apk --target aarch64
+
+      - name: 整理安裝檔名稱
+        run: |
+          mkdir -p release
+          cp src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk "release/BrilliantLauncher_${{ steps.version.outputs.version }}_arm64.apk"
+          ls -la release
+
+      - name: 數位簽章
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node .github/sign-release.mjs release "SIGNATURES-Android.json"
+
+      - name: 發佈 Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: 輝煌啟動器 v${{ steps.version.outputs.version }}
+          generate_release_notes: false
+          draft: false
+          prerelease: ${{ steps.channel.outputs.prerelease }}
+          fail_on_unmatched_files: true
+          overwrite_files: true
+          files: release/*

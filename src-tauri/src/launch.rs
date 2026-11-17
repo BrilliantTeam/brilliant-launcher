@@ -216,7 +216,13 @@ async fn prepare(
     } else {
         (resolved.java_version.component.clone(), resolved.java_version.major_version)
     };
+    #[cfg(not(target_os = "android"))]
     let java = java::ensure(app, &java_component, java_major, instance.java(settings), mirror, settings.java_auto_update);
+    #[cfg(target_os = "android")]
+    let java = async {
+        let _ = (&java_component, java_major);
+        Ok::<PathBuf, crate::err::Error>(PathBuf::new())
+    };
     let mods = async {
         if files_only || !instance.wants_rich_presence(settings) {
             return Ok(Vec::new());
@@ -386,6 +392,10 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     let Some(_claim) = state.claim(instance_id).await else {
         bail!("這個實例已經在執行中或正在準備啟動，同一個實例一次只能開一個遊戲");
     };
+    #[cfg(target_os = "android")]
+    if !state.running.lock().await.is_empty() || crate::mobile::game_running(app).await {
+        bail!("手機版一次只能執行一個遊戲，請先回到遊戲並關閉，或在「選擇實例」選單強制結束");
+    }
 
     let mut settings = crate::config::load_settings().await;
     if let Some(host) = join {
@@ -467,6 +477,17 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     let (java_exe, args, game_dir, mut notes) = prepared.context("準備啟動參數失敗")?;
     early_notes.append(&mut notes);
     let notes = early_notes;
+    #[cfg(target_os = "android")]
+    {
+        let _ = (java_exe, args, started);
+        crate::gameopts::mobile_defaults(&instance).await;
+        crate::mobile::launch(app, &instance, &account, &settings.language).await?;
+        let _ = game_dir;
+        let begun = now_secs();
+        let stop = watch_mobile(app, &instance, begun).await;
+        tokio::spawn(follow_mobile(app.clone(), instance.clone(), begun, stop, 7));
+        return Ok(notes);
+    }
 
     if !settings.pre_launch_cmd.trim().is_empty() {
         net::emit_stage(app, "hook", "執行啟動前指令");
@@ -587,7 +608,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         if asked_to_stop {
             let _ = child.kill().await;
         }
-        finish_game(&app_handle, &hook_instance, started, code, asked_to_stop).await;
+        finish_game(&app_handle, &hook_instance, started, now_secs(), code, asked_to_stop).await;
     });
 
     instance.last_played = started;
@@ -595,15 +616,15 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     Ok(notes)
 }
 
-async fn finish_game(app: &AppHandle, instance: &Instance, started: i64, code: i32, asked_to_stop: bool) {
+async fn finish_game(app: &AppHandle, instance: &Instance, started: i64, ended: i64, code: i32, asked_to_stop: bool) {
     let id = instance.id.clone();
     let settings = crate::config::load_settings().await;
-    let seconds = now_secs() - started;
+    let seconds = ended - started;
     app.state::<AppState>().running.lock().await.remove(&id);
     drop_record(&id);
     if let Ok(mut inst) = crate::instance::get(&id).await {
         inst.play_seconds += seconds.max(0);
-        inst.last_played = now_secs();
+        inst.last_played = ended;
         let _ = crate::instance::save(&inst).await;
     }
     crate::insight::record_session(crate::insight::Session { instance: id.clone(), name: instance.name.clone(), start: started, seconds, code }).await;
@@ -774,7 +795,70 @@ async fn tail_latest_log(app: AppHandle, id: String, file: PathBuf, done: std::s
     }
 }
 
+#[cfg(target_os = "android")]
+fn mobile_record() -> PathBuf {
+    paths::root().join("running-mobile.json")
+}
+
+#[cfg(target_os = "android")]
+async fn watch_mobile(app: &AppHandle, instance: &Instance, begun: i64) -> tokio::sync::oneshot::Receiver<()> {
+    let (stop_tx, stop_rx) = tokio::sync::oneshot::channel::<()>();
+    app.state::<AppState>().running.lock().await.insert(instance.id.clone(), RunningGame { started_at: begun, stop: Some(stop_tx) });
+    let _ = std::fs::write(mobile_record(), serde_json::json!({ "id": instance.id, "started": begun }).to_string());
+    stop_rx
+}
+
+#[cfg(target_os = "android")]
+async fn follow_mobile(app: AppHandle, instance: Instance, begun: i64, mut stop_rx: tokio::sync::oneshot::Receiver<()>, mut grace: u32) {
+    let mut asked = false;
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        if !asked && stop_rx.try_recv().is_ok() {
+            asked = true;
+            crate::mobile::stop_game(&app).await;
+        }
+        if crate::mobile::game_running(&app).await {
+            grace = 0;
+        } else if grace == 0 {
+            break;
+        } else {
+            grace -= 1;
+        }
+    }
+    let _ = std::fs::remove_file(mobile_record());
+    finish_game(&app, &instance, begun, now_secs(), 0, asked).await;
+}
+
+#[cfg(target_os = "android")]
+async fn adopt_mobile(app: AppHandle) {
+    let Some(record) = std::fs::read_to_string(mobile_record()).ok().and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok()) else { return };
+    let (Some(id), Some(begun)) = (record["id"].as_str(), record["started"].as_i64()) else { return };
+    let Some(instance) = crate::instance::get(id).await.ok() else {
+        let _ = std::fs::remove_file(mobile_record());
+        return;
+    };
+    if !crate::mobile::game_running(&app).await {
+        let modified = |path: PathBuf| std::fs::metadata(path)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64);
+        let ended = modified(mobile_record()).max(modified(paths::game_dir(&instance.id).join("logs").join("launcher-runtime.txt")));
+        let _ = std::fs::remove_file(mobile_record());
+        if let Some(ended) = ended.filter(|&e| e > begun) {
+            finish_game(&app, &instance, begun, ended, 0, false).await;
+        }
+        return;
+    }
+    let stop = watch_mobile(&app, &instance, begun).await;
+    let _ = app.emit("launcher://adopted", instance.id.clone());
+    follow_mobile(app, instance, begun, stop, 0).await;
+}
+
 pub async fn adopt(app: AppHandle) {
+    #[cfg(target_os = "android")]
+    return adopt_mobile(app).await;
+    #[allow(unreachable_code)]
     let Ok(entries) = std::fs::read_dir(paths::root().join("running")) else { return };
     for entry in entries.flatten() {
         let path = entry.path();
@@ -812,7 +896,7 @@ pub async fn adopt(app: AppHandle) {
             };
             done.store(true, std::sync::atomic::Ordering::Relaxed);
             let code = if cfg!(unix) && code == 0 && crashed_since(&game_dir, record.started) { 1 } else { code };
-            finish_game(&app_handle, &instance, record.started, code, asked_to_stop).await;
+            finish_game(&app_handle, &instance, record.started, now_secs(), code, asked_to_stop).await;
         });
         let _ = app.emit("launcher://adopted", id);
     }

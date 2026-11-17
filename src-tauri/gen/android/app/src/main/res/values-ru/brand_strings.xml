@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 был остановлен в результате сбоя</string>
+    <string name="lazy_service_default_title">Активная служба 輝煌啟動器</string>
+    <string name="storage_required">輝煌啟動器 требует подключения к внешнему хранилищу. Переподключите его и перезапустите приложение.</string>
+    <string name="modpack_install_notification_title">Установка сборки 輝煌啟動器</string>
+    <string name="notification_permission_dialog_text">Лаунчеру требуется разрешение на отправку уведомлений, чтобы предотвратить остановку игры/загрузки её данных при сворачивании приложения. Без этого разрешения Android может принудительно завершить работу 輝煌啟動器 при переходе в фоновый режим.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

@@ -1,4 +1,4 @@
-import { api } from './api.js';
+import { ANDROID, api } from './api.js';
 import { dialog, fail, h, toast } from './ui.js';
 import { loadInstances } from './store.js';
 import { isIntegratedGpu } from './services.js';
@@ -102,6 +102,6 @@ export async function perfCheck(instance) {
 export async function perfAfterExit(id, seconds) {
     const report = await api.perf_report({ id }).catch(() => null);
     const last = report?.sessions?.at(-1);
-    if (!last || last.start < Date.now() / 1000 - seconds - 120 || last.avgFps >= 40) return;
+    if (ANDROID || !last || last.start < Date.now() / 1000 - seconds - 120 || last.avgFps >= 40) return;
     toast(`這次平均只有 ${last.avgFps} FPS。到實例的「更多 → 效能健檢」，啟動器會幫你找出最適合的設定。`, 'warn');
 }

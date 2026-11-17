@@ -363,6 +363,8 @@ pub async fn write_file(path: &Path, bytes: &[u8], executable: bool) -> R<()> {
 }
 
 pub async fn download_all(app: &AppHandle, stage: &str, files: Vec<DlFile>, mirror: bool) -> R<()> {
+    #[cfg(target_os = "android")]
+    let _keep_alive = crate::mobile::KeepAlive::new(app);
     if let Some(bad) = files.iter().find(|f| f.path.components().any(|c| matches!(c, std::path::Component::ParentDir))) {
         bail!("下載清單裡有不安全的檔案路徑（{}），為了安全已取消；如果有開啟下載鏡像，請先關閉後再試", bad.path.display());
     }

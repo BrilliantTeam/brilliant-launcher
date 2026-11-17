@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 đã bị thoát đột ngột</string>
+    <string name="lazy_service_default_title">Dịch vụ tiền cảnh 輝煌啟動器</string>
+    <string name="storage_required">輝煌啟動器 cần sử dụng bộ nhớ lưu trữ ngoài. Vui lòng kết nối lại và khởi động lại ứng dụng.</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 cần quyền gửi thông báo đến thiết bị để có thể tiếp tục tải trò chơi hoặc modpack khi thoát khỏi ứng dụng. Nếu không cấp quyền, hệ thống Android có thể gây gián đoạn quá trình tải nếu bạn chạy 輝煌啟動器 trong nền.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 був зупинений у результаті збою</string>
+    <string name="lazy_service_default_title">Служба 輝煌啟動器</string>
+    <string name="storage_required">輝煌啟動器 потребує під’єднання до сховища. Будь ласка, під’єднайте його ще раз і перезапустіть додаток.</string>
+    <string name="modpack_install_notification_title">Установлювач пакета модів 輝煌啟動器</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 потребує дозволу на надсилання сповіщень, щоб запобігти припиненню завантаження гри/пакета модів, коли ви виходите з додатка. Без цього дозволу Android може припинити завантаження, коли ви переведете 輝煌啟動器 у тловий режим.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

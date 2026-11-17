@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 has unexpectedly crashed</string>
+    <string name="lazy_service_default_title">輝煌啟動器 Foreground Service</string>
+    <string name="storage_required">輝煌啟動器 requires external storage to be attached. Please reconnect it and restart the app.</string>
+    <string name="modpack_install_notification_title">輝煌啟動器 Modpack Installer</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 requires a permission to post notifications to prevent game/modpack downloads from stopping when you leave the app. Without this permission, Android may shut down your downloads when you put 輝煌啟動器 in background mode.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>

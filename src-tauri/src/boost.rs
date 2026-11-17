@@ -106,7 +106,7 @@ pub struct SystemInfo {
 }
 
 #[cfg(windows)]
-fn total_memory_mb() -> u64 {
+pub(crate) fn total_memory_mb() -> u64 {
     use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
     let mut status: MEMORYSTATUSEX = unsafe { std::mem::zeroed() };
     status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
@@ -117,8 +117,8 @@ fn total_memory_mb() -> u64 {
     }
 }
 
-#[cfg(target_os = "linux")]
-fn total_memory_mb() -> u64 {
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub(crate) fn total_memory_mb() -> u64 {
     std::fs::read_to_string("/proc/meminfo")
         .ok()
         .and_then(|s| s.lines().find(|l| l.starts_with("MemTotal:"))?.split_whitespace().nth(1)?.parse::<u64>().ok())
@@ -127,7 +127,7 @@ fn total_memory_mb() -> u64 {
 }
 
 #[cfg(target_os = "macos")]
-fn total_memory_mb() -> u64 {
+pub(crate) fn total_memory_mb() -> u64 {
     std::process::Command::new("sysctl")
         .args(["-n", "hw.memsize"])
         .output()
@@ -137,8 +137,8 @@ fn total_memory_mb() -> u64 {
         .unwrap_or(0)
 }
 
-#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
-fn total_memory_mb() -> u64 {
+#[cfg(not(any(windows, target_os = "linux", target_os = "android", target_os = "macos")))]
+pub(crate) fn total_memory_mb() -> u64 {
     0
 }
 

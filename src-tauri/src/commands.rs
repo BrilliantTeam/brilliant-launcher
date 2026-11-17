@@ -17,6 +17,31 @@ pub async fn get_settings() -> Settings {
 }
 
 #[tauri::command]
+pub async fn resume_game(app: AppHandle) -> R<()> {
+    #[cfg(target_os = "android")]
+    return crate::mobile::resume_game(&app).await;
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        bail!("只有手機版需要切回遊戲")
+    }
+}
+
+#[tauri::command]
+pub async fn stage_picked(app: AppHandle, uri: String) -> R<String> {
+    if !uri.starts_with("content://") {
+        bail!("不支援的檔案位置");
+    }
+    #[cfg(target_os = "android")]
+    return crate::mobile::stage(&app, uri).await;
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        bail!("只有手機版需要轉存選取的檔案")
+    }
+}
+
+#[tauri::command]
 pub async fn save_settings(settings: Settings) -> R<Settings> {
     let before = config::load_settings().await;
     if before.autostart != settings.autostart {
@@ -123,6 +148,7 @@ async fn browser_code(app: &AppHandle) -> R<(String, auth::msa::Pkce)> {
         slot.take();
     }
     if let Some(window) = app.get_webview_window("main") {
+        #[cfg(desktop)]
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
@@ -139,9 +165,37 @@ pub fn cancel_login() {
 #[tauri::command]
 pub async fn login_microsoft(app: AppHandle, state: State<'_, AppState>, browser: Option<bool>) -> R<Account> {
     crate::skins::login_allowed()?;
+    #[cfg(target_os = "android")]
+    {
+        let _ = browser;
+        let (url, pkce) = auth::msa::authorize_url(config::MSA_CLIENT_ID, auth::msa::REDIRECT_URI);
+        let Some(back) = crate::mobile::web_login(&app, &url, auth::msa::REDIRECT_URI).await? else {
+            bail!("已取消登入");
+        };
+        let back: tauri::Url = back.parse().context("登入回傳的網址不正確")?;
+        let code = match auth::msa::read_redirect(&back, &pkce.state, auth::msa::REDIRECT_URI) {
+            auth::msa::Redirect::Code(code) => code,
+            auth::msa::Redirect::Denied(why) => bail!("{why}"),
+            auth::msa::Redirect::Ignore => bail!("已取消登入"),
+        };
+        let account = crate::skins::remember_limit(auth::msa::exchange(config::MSA_CLIENT_ID, &code, &pkce).await).await?;
+        upsert_account(&state, account.clone()).await?;
+        return Ok(Account { access_token: String::new(), refresh_token: String::new(), ..account });
+    }
+    #[allow(unreachable_code)]
     if browser.unwrap_or(true) {
         let (code, pkce) = browser_code(&app).await?;
-        let account = crate::skins::remember_limit(auth::msa::exchange(config::MSA_CLIENT_ID, &code, &pkce).await).await?;
+        let mut tries = 0;
+        let exchanged = loop {
+            match auth::msa::exchange(config::MSA_CLIENT_ID, &code, &pkce).await {
+                Err(e) if tries < 30 && e.0.chain().any(|c| c.downcast_ref::<reqwest::Error>().is_some_and(|r| r.is_connect())) => {
+                    tries += 1;
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                other => break other,
+            }
+        };
+        let account = crate::skins::remember_limit(exchanged).await?;
         upsert_account(&state, account.clone()).await?;
         return Ok(Account { access_token: String::new(), refresh_token: String::new(), ..account });
     }
@@ -743,6 +797,11 @@ pub fn cleanup_updates() {
     }
 }
 
+#[cfg(mobile)]
+fn install_update(_: &std::path::Path) -> R<()> {
+    bail!("手機版請到輝煌官網下載新版安裝檔")
+}
+
 #[cfg(target_os = "windows")]
 fn install_update(file: &std::path::Path) -> R<()> {
     std::process::Command::new(file)
@@ -937,9 +996,20 @@ pub async fn site_json(path: String) -> R<serde_json::Value> {
 }
 
 #[tauri::command]
-pub fn open_path(app: AppHandle, path: String) -> R<()> {
+pub async fn open_path(app: AppHandle, path: String) -> R<()> {
     use tauri_plugin_opener::OpenerExt;
     let target = std::path::PathBuf::from(&path);
+    #[cfg(target_os = "android")]
+    {
+        let ext = target.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if !target.is_file() {
+            bail!("手機版無法直接開啟資料夾；匯出的檔案會放在手機的「下載」資料夾");
+        }
+        if !["png", "jpg", "jpeg", "gif", "webp", "txt", "log"].contains(&ext.as_str()) {
+            bail!("手機版只能開啟圖片與紀錄檔");
+        }
+        return crate::mobile::open_file(&app, &target).await;
+    }
     if let Some(parent) = target.parent() {
         let _ = std::fs::create_dir_all(if target.is_dir() { &target } else { parent });
     }

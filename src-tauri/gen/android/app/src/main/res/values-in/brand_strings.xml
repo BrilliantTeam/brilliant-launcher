@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="error_fatal">輝煌啟動器 tiba-tiba crash tanpa diduga</string>
+    <string name="lazy_service_default_title">輝煌啟動器 Sedang Berjalan Di Latar Depan</string>
+    <string name="storage_required">輝煌啟動器 membutuhkan penyimpanan eksternal. Mohon untuk dipasang kembali dan merestart aplikasi.</string>
+    <string name="modpack_install_notification_title">Pemasang Modpack 輝煌啟動器</string>
+    <string name="notification_permission_dialog_text">輝煌啟動器 launcher memperlukan izin untuk post notifikasi untuk mencegah download game/modpack berhenti ketika keluar dari aplikasi. Tanpa izin ini, android mungkin membatalkan unduhan ketita menempatkan 輝煌啟動器Launher dalam mode latar belakang.</string>
+    <string name="app_short_name">輝煌啟動器</string>
+</resources>
