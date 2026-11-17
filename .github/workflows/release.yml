@@ -4,12 +4,18 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      only_android:
+        description: 只重新打包 Android 版（補發 APK 時用，避免覆蓋已發布的電腦版檔案）
+        type: boolean
+        default: false
 
 permissions:
   contents: write
 
 jobs:
   release:
+    if: ${{ !inputs.only_android }}
     strategy:
       fail-fast: false
       matrix:
@@ -163,8 +169,10 @@ jobs:
 
       - name: 安裝 Android NDK
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "ndk;27.3.13750724" > /dev/null
-          echo "NDK_HOME=$ANDROID_HOME/ndk/27.3.13750724" >> "$GITHUB_ENV"
+          ndk="$ANDROID_HOME/ndk/27.3.13750724"
+          [ -d "$ndk" ] || "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;27.3.13750724"
+          test -x "$ndk/ndk-build"
+          echo "NDK_HOME=$ndk" >> "$GITHUB_ENV"
 
       - name: 確認版本號與標籤一致
         id: version
