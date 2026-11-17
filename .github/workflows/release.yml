@@ -212,7 +212,7 @@ jobs:
           BRILLIANT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           BRILLIANT_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           BRILLIANT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: cargo tauri android build --apk --target aarch64
+        run: cargo tauri android build --apk --target aarch64 --split-per-abi
 
       - name: 整理安裝檔名稱
         run: |
