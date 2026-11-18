@@ -35,7 +35,7 @@
 
 html, body { height: 100%; overflow: hidden; }
 * { -webkit-tap-highlight-color: transparent; }
-:root[data-platform="android"] .desktop-only, :root:not([data-platform="android"]) .android-only { display: none !important; }
+:root[data-platform="android"] .desktop-only, :root:not([data-platform="android"]) .android-only, :root[data-store="play"] .no-play { display: none !important; }
 input, textarea, .console, .crash-exception { user-select: text; -webkit-user-select: text; }
 img { -webkit-user-drag: none; }
 

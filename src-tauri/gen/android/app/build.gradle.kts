@@ -66,6 +66,9 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    if (System.getenv("BRILLIANT_PLAY") != null) {
+        sourceSets.getByName("release").manifest.srcFile("src/play/AndroidManifest.xml")
+    }
 }
 
 rust {

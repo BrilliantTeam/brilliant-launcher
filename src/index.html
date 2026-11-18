@@ -1020,7 +1020,7 @@
                 </div>
 
                 <h2 id="set-update">更新與安全</h2>
-                <div class="field">
+                <div class="field no-play">
                     <label for="set-update-channel">更新通道</label>
                     <select id="set-update-channel">
                         <option value="stable">正式版（推薦）</option>
@@ -1030,7 +1030,7 @@
                     <div class="hint" id="channel-hint">只影響輝煌啟動器本身，輝煌模組不分通道、一律使用最新版。正式版的每個版本都先經過 Beta 測試；從 Beta 換回正式版時，會在下一個正式版推出時自動換回，不會降級。還沒有正式版或 Beta 時，會先拿到最新的 Alpha。</div>
                 </div>
                 <div class="field-row">
-                    <div class="field">
+                    <div class="field no-play">
                         <label for="set-launcher-update">啟動器更新</label>
                         <select id="set-launcher-update">
                             <option value="auto">自動下載，重新啟動時安裝（推薦）</option>
@@ -1038,7 +1038,7 @@
                             <option value="off">不自動檢查，我自己按「立即檢查」</option>
                         </select>
                     </div>
-                    <div class="field android-only">
+                    <div class="field android-only no-play">
                         <label><input type="checkbox" id="set-update-cellular">使用行動數據時也自動下載更新</label>
                         <div class="hint">安裝檔約 70 MB。關閉時只在連上 Wi-Fi 時自動下載，用行動數據時要自己按「下載更新」；只有「啟動器更新」選自動下載時才有作用。</div>
                     </div>
@@ -1050,8 +1050,8 @@
                         </select>
                     </div>
                 </div>
-                <div class="rows" id="update-status"></div>
-                <div class="toolbar">
+                <div class="rows no-play" id="update-status"></div>
+                <div class="toolbar no-play">
                     <button type="button" class="mc" id="btn-check-update"><i data-icon="reload"></i>立即檢查更新</button>
                     <button type="button" class="mc" id="btn-update-page"><i data-icon="external-link"></i>官網下載頁</button>
                 </div>
@@ -1102,7 +1102,7 @@
                     <label><input type="checkbox" id="set-streamer">直播模式</label>
                     <div class="hint">隱藏畫面上的帳號名稱、信箱、伺服器 IP、檔案路徑與截圖座標；上傳日誌、匯出診斷包時也會一併遮蔽 IP、信箱與玩家名稱。</div>
                 </div>
-                <div class="field android-only">
+                <div class="field android-only no-play">
                     <label>資料位置</label>
                     <div class="media-list" id="data-location-list"></div>
                     <div class="link-add">

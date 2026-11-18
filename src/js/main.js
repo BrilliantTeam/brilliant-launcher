@@ -569,6 +569,7 @@ async function checkUpdate(manual = false) {
     const mode = store.settings?.launcherUpdate || 'auto';
     if (mode === 'off' && !manual) return;
     const [info, current, kind] = await Promise.all([api.check_update().catch(() => null), appVersion().catch(() => ''), api.update_platform().catch(() => '')]);
+    if (ANDROID && !kind) return;
     updateKind = kind;
     const latest = info?.launcher;
     store.update = { checkedAt: Date.now(), current, latest: latest ?? null, reachable: !!info, newer: !!(latest && current && newerVersion(latest.version, current)), signed: !!updateAsset(latest ?? {})?.signature, self: !!updateKind };
@@ -654,6 +655,13 @@ async function boot() {
 
     emit('settings');
     show(location.hash.slice(1) || startView());
+    if (ANDROID) api.update_platform().then((kind) => {
+        if (kind) return;
+        document.documentElement.dataset.store = 'play';
+        const about = $('#about-update-link').parentElement;
+        about.firstChild.textContent = '輝煌模組的更新檔都經過輝煌官方數位簽章驗證才會安裝，啟動器本身由 Google Play 更新。模組的更新方式可以在 ';
+        about.lastChild.textContent = ' 調整。';
+    }, () => {});
     checkUpdate();
     setInterval(() => checkUpdate(), 30 * 60 * 1000);
     on('check-update', () => checkUpdate(true).catch(fail));

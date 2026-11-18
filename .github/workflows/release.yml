@@ -236,3 +236,20 @@ jobs:
           fail_on_unmatched_files: true
           overwrite_files: true
           files: release/*
+
+      - name: 打包 Google Play 版 AAB
+        working-directory: src-tauri
+        env:
+          BRILLIANT_PLAY: '1'
+          ORG_GRADLE_PROJECT_brilliantRuntimeDir: ${{ github.workspace }}/runtime
+          BRILLIANT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          BRILLIANT_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          BRILLIANT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: cargo tauri android build --aab --target aarch64
+
+      - name: 上傳 Google Play 版 AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: BrilliantLauncher_${{ steps.version.outputs.version }}_play
+          path: src-tauri/gen/android/app/build/outputs/bundle/universalRelease/app-universal-release.aab
+          if-no-files-found: error

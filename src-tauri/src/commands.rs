@@ -27,6 +27,8 @@ pub async fn resume_game(app: AppHandle) -> R<()> {
     }
 }
 
+pub const PLAY: bool = option_env!("BRILLIANT_PLAY").is_some();
+
 #[tauri::command]
 pub async fn take_shortcut(app: AppHandle) -> String {
     #[cfg(target_os = "android")]
@@ -41,6 +43,10 @@ pub async fn take_shortcut(app: AppHandle) -> String {
 #[tauri::command]
 pub async fn data_location(app: AppHandle) -> R<serde_json::Value> {
     #[cfg(target_os = "android")]
+    if PLAY {
+        bail!("Google Play 版不支援變更資料位置")
+    }
+    #[cfg(target_os = "android")]
     return crate::mobile::data_location(&app).await;
     #[cfg(not(target_os = "android"))]
     {
@@ -52,6 +58,10 @@ pub async fn data_location(app: AppHandle) -> R<serde_json::Value> {
 #[tauri::command]
 pub async fn request_storage_access(app: AppHandle) -> R<()> {
     #[cfg(target_os = "android")]
+    if PLAY {
+        bail!("Google Play 版不支援儲存空間權限")
+    }
+    #[cfg(target_os = "android")]
     return crate::mobile::request_storage_access(&app).await;
     #[cfg(not(target_os = "android"))]
     {
@@ -62,6 +72,10 @@ pub async fn request_storage_access(app: AppHandle) -> R<()> {
 
 #[tauri::command]
 pub async fn move_data(app: AppHandle, target: String) -> R<String> {
+    #[cfg(target_os = "android")]
+    if PLAY {
+        bail!("Google Play 版不支援變更資料位置")
+    }
     #[cfg(target_os = "android")]
     return crate::mobile::move_data(&app, target).await;
     #[cfg(not(target_os = "android"))]
@@ -669,7 +683,9 @@ fn update_dir() -> std::path::PathBuf {
 }
 
 pub fn update_kind() -> &'static str {
-    if cfg!(target_os = "android") {
+    if PLAY {
+        ""
+    } else if cfg!(target_os = "android") {
         "android"
     } else if cfg!(target_os = "windows") {
         "windows"
