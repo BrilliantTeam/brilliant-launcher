@@ -480,7 +480,11 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     #[cfg(target_os = "android")]
     {
         let _ = (java_exe, args, started);
+        let mut notes = notes;
         crate::gameopts::mobile_defaults(&instance).await;
+        if !instance.general && instance.loader == "fabric" {
+            notes.extend(crate::mobile::performance_mods(app, &instance, &settings).await);
+        }
         crate::mobile::launch(app, &instance, &account, &settings.language, settings.quick_join.trim()).await?;
         let _ = game_dir;
         let begun = now_secs();

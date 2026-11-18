@@ -223,3 +223,26 @@ pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
     paths::remove_moved(&from, &names);
     Ok(to.to_string_lossy().to_string())
 }
+
+const PERFORMANCE_MODS: [(&str, &str); 3] = [("ferrite-core", "FerriteCore"), ("lithium", "Lithium"), ("entityculling", "Entity Culling")];
+
+pub async fn performance_mods(app: &AppHandle, instance: &Instance, settings: &crate::config::Settings) -> Option<String> {
+    let marker = crate::paths::instance_dir(&instance.id).join("mobile-performance-mods");
+    if marker.exists() {
+        return None;
+    }
+    crate::net::emit_stage(app, "mods", "安裝手機版效能模組");
+    let mut added = Vec::new();
+    let mut failed = 0;
+    for (project, name) in PERFORMANCE_MODS {
+        match crate::modrinth::install(app, &instance.id, crate::modrinth::Kind::Mod, &instance.loader, project, &instance.mc_version, instance.wants_rich_presence(settings), instance.channel(settings)).await {
+            Ok(files) if !files.is_empty() => added.push(name),
+            Ok(_) => {}
+            Err(_) => failed += 1,
+        }
+    }
+    if failed < PERFORMANCE_MODS.len() {
+        let _ = std::fs::write(&marker, b"");
+    }
+    (!added.is_empty()).then(|| format!("已為手機版安裝效能模組：{}，不需要可以到「模組」頁移除", added.join("、")))
+}

@@ -640,8 +640,8 @@ async function renderDataLocation() {
         const current = place.path === info.root;
         return h('div', { class: `media-row${current ? ' current' : ''}` },
             h('span', { class: 'media-name place' }, `${place.label}　${gb(place.free)}`, h('small', {}, place.path)),
-            current ? h('b', { class: 'disk-size' }, '目前位置') : h('button', { type: 'button', class: 'mc', onclick: guard(() => moveData(place.target, place.path, info)) }, '搬到這裡'));
-    }), ...(known ? [] : [h('div', { class: 'media-row current' }, h('span', { class: 'media-name place' }, '自訂資料夾', h('small', {}, info.root)), h('b', { class: 'disk-size' }, '目前位置'))]));
+            current ? h('span', { class: 'badge' }, '目前位置') : h('button', { type: 'button', class: 'mc', onclick: guard(() => moveData(place.target, place.path, info)) }, '搬到這裡'));
+    }), ...(known ? [] : [h('div', { class: 'media-row current' }, h('span', { class: 'media-name place' }, '自訂資料夾', h('small', {}, info.root)), h('span', { class: 'badge' }, '目前位置'))]));
     $('#data-location-status').textContent = info.missing ? `讀不到之前選的位置「${info.chosen}」（SD 卡可能被拔除，或「所有檔案存取權」被關閉），目前暫時改用手機內部的資料。插回 SD 卡或重新開啟權限後，重新開啟啟動器即可恢復。` : '';
     return info;
 }
