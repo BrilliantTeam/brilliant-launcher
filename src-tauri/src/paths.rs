@@ -1,12 +1,42 @@
 use std::path::{Path, PathBuf};
 
 pub fn root() -> PathBuf {
+    #[cfg(target_os = "android")]
+    if std::env::var_os("BRILLIANT_LAUNCHER_HOME").is_none() {
+        if let Some(dir) = location().lock().unwrap_or_else(|e| e.into_inner()).clone() {
+            return dir;
+        }
+    }
+    private_root()
+}
+
+fn private_root() -> PathBuf {
     if let Some(custom) = std::env::var_os("BRILLIANT_LAUNCHER_HOME") {
         return PathBuf::from(custom);
     }
+    default_root()
+}
+
+pub fn default_root() -> PathBuf {
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("BrilliantLauncher")
+}
+
+#[cfg(target_os = "android")]
+pub fn location_file() -> PathBuf {
+    dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("data-location")
+}
+
+#[cfg(target_os = "android")]
+pub fn chosen_location() -> Option<PathBuf> {
+    std::fs::read_to_string(location_file()).ok().map(|s| PathBuf::from(s.trim())).filter(|p| p.is_absolute())
+}
+
+#[cfg(target_os = "android")]
+pub fn location() -> &'static std::sync::Mutex<Option<PathBuf>> {
+    static DIR: std::sync::OnceLock<std::sync::Mutex<Option<PathBuf>>> = std::sync::OnceLock::new();
+    DIR.get_or_init(|| std::sync::Mutex::new(chosen_location().filter(|p| std::fs::read_dir(p).is_ok())))
 }
 
 pub fn exports() -> PathBuf {
@@ -17,11 +47,13 @@ pub fn exports() -> PathBuf {
     dirs::download_dir().unwrap_or_else(|| root().join("exports"))
 }
 
+pub const PRIVATE_FILES: [&str; 2] = ["config.json", "accounts.json"];
+
 pub fn config_file() -> PathBuf {
-    root().join("config.json")
+    private_root().join(PRIVATE_FILES[0])
 }
 pub fn accounts_file() -> PathBuf {
-    root().join("accounts.json")
+    private_root().join(PRIVATE_FILES[1])
 }
 
 pub fn shared() -> PathBuf {
@@ -122,6 +154,80 @@ fn copy_tree(src: &Path, dest: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+pub fn relocate(from: &Path, to: &Path, mut progress: impl FnMut(u64, u64)) -> std::io::Result<Vec<std::ffi::OsString>> {
+    let names: Vec<_> = std::fs::read_dir(from)?.flatten().map(|e| e.file_name()).filter(|n| !PRIVATE_FILES.iter().any(|p| n == p)).collect();
+    let total = names.iter().map(|n| size_of(&from.join(n))).sum::<u64>().max(1);
+    let mut done = 0;
+    let copied = names.iter().try_for_each(|n| copy_counting(&from.join(n), &to.join(n), &mut done, total, &mut progress));
+    if let Err(error) = copied {
+        for n in &names {
+            let target = to.join(n);
+            let _ = if target.is_dir() { std::fs::remove_dir_all(&target) } else { std::fs::remove_file(&target) };
+        }
+        return Err(error);
+    }
+    rewrite_paths(to, from, to);
+    Ok(names)
+}
+
+fn copy_counting(src: &Path, dest: &Path, done: &mut u64, total: u64, progress: &mut impl FnMut(u64, u64)) -> std::io::Result<()> {
+    let kind = std::fs::symlink_metadata(src)?.file_type();
+    if kind.is_symlink() {
+        return Ok(());
+    }
+    if kind.is_dir() {
+        std::fs::create_dir_all(dest)?;
+        for entry in std::fs::read_dir(src)?.flatten() {
+            copy_counting(&entry.path(), &dest.join(entry.file_name()), done, total, progress)?;
+        }
+        return Ok(());
+    }
+    *done += std::fs::copy(src, dest)?;
+    progress(*done, total);
+    Ok(())
+}
+
+pub fn rewrite_paths(dir: &Path, old: &Path, new: &Path) {
+    for entry in std::fs::read_dir(dir).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
+        let path = entry.path();
+        let name = entry.file_name();
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
+            if ![".minecraft", "shared", "trash", "cache"].iter().any(|skip| name == *skip) {
+                rewrite_paths(&path, old, new);
+            }
+        } else if path.extension().is_some_and(|e| e == "json") {
+            rewrite_file(&path, old, new);
+        }
+    }
+}
+
+pub fn rewrite_file(path: &Path, old: &Path, new: &Path) {
+    let escaped = |p: &Path| serde_json::to_string(&p.to_string_lossy()).unwrap_or_default().trim_matches('"').to_string();
+    let (old, new) = (escaped(old), escaped(new));
+    let Ok(text) = std::fs::read_to_string(path) else { return };
+    if old.is_empty() || !text.contains(&old) {
+        return;
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text.as_str();
+    while let Some(i) = rest.find(&old) {
+        let after = &rest[i + old.len()..];
+        out.push_str(&rest[..i]);
+        out.push_str(if after.starts_with(['"', '/']) || after.starts_with("\\\\") { &new } else { &old });
+        rest = after;
+    }
+    out.push_str(rest);
+    let _ = write_atomic(path, out.as_bytes());
+}
+
+pub fn remove_moved(from: &Path, names: &[std::ffi::OsString]) {
+    for n in names {
+        let target = from.join(n);
+        let _ = if target.is_dir() { std::fs::remove_dir_all(&target) } else { std::fs::remove_file(&target) };
+    }
+    let _ = std::fs::remove_dir(from);
+}
+
 pub fn purge_trash(days: u64) -> u64 {
     purge_in(&trash(), days)
 }
@@ -140,7 +246,7 @@ fn purge_in(trash: &Path, days: u64) -> u64 {
     freed
 }
 
-fn size_of(path: &Path) -> u64 {
+pub(crate) fn size_of(path: &Path) -> u64 {
     match std::fs::symlink_metadata(path) {
         Ok(m) if m.is_dir() => std::fs::read_dir(path).map(|d| d.flatten().map(|e| size_of(&e.path())).sum()).unwrap_or(0),
         Ok(m) => m.len(),
@@ -181,6 +287,28 @@ pub fn game_dir(id: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn relocate_copies_rewrites_and_keeps_private_files() {
+        let home = std::env::temp_dir().join(format!("relocate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let (from, to) = (home.join("old"), home.join("new").join("BrilliantLauncher"));
+        let json = |p: &Path| serde_json::to_string(&p.to_string_lossy()).unwrap();
+        std::fs::create_dir_all(from.join("instances/a/.minecraft")).unwrap();
+        std::fs::write(from.join("accounts.json"), "secret").unwrap();
+        std::fs::write(from.join("instances/a/instance.json"), format!("{{\"image\":{},\"icon\":\"img:{}\",\"x\":{}}}", json(&from.join("media/a.png")), json(&from.join("i.png")).trim_matches('"'), json(&home.join("old2/b.png")))).unwrap();
+        std::fs::write(from.join("instances/a/.minecraft/keep.json"), json(&from.join("z"))).unwrap();
+        let mut last = (0, 0);
+        let names = relocate(&from, &to, |d, t| last = (d, t)).unwrap();
+        assert!(last.0 > 0 && last.0 == last.1);
+        assert!(!to.join("accounts.json").exists() && from.join("accounts.json").exists());
+        let text = std::fs::read_to_string(to.join("instances/a/instance.json")).unwrap();
+        assert!(text.contains(&json(&to.join("media/a.png"))) && text.contains(&format!("img:{}", json(&to.join("i.png")).trim_matches('"'))) && text.contains(&json(&home.join("old2/b.png"))), "{text}");
+        assert_eq!(std::fs::read_to_string(to.join("instances/a/.minecraft/keep.json")).unwrap(), json(&from.join("z")));
+        remove_moved(&from, &names);
+        assert!(!from.join("instances").exists() && from.join("accounts.json").exists());
+        let _ = std::fs::remove_dir_all(home);
+    }
 
     #[test]
     fn version_paths_never_leave_their_folders() {

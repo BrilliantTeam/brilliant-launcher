@@ -26,7 +26,7 @@ async fn call(app: &AppHandle, command: &'static str, payload: Value) -> anyhow:
         .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
-pub async fn launch(app: &AppHandle, instance: &Instance, account: &Account, language: &str) -> R<()> {
+pub async fn launch(app: &AppHandle, instance: &Instance, account: &Account, language: &str, join: &str) -> R<()> {
     if crate::forge::is_forge_like(&instance.loader) {
         bail!("手機版目前只支援原版與 Fabric 實例");
     }
@@ -39,6 +39,7 @@ pub async fn launch(app: &AppHandle, instance: &Instance, account: &Account, lan
         "accessToken": if msa { account.access_token.as_str() } else { "0" },
         "xuid": account.xuid,
         "language": language,
+        "join": join,
         "jvmArgs": format!("-Dbrilliant.launcher={} -Dbrilliant.android=true", env!("CARGO_PKG_VERSION")),
     }))
     .await
@@ -132,4 +133,86 @@ pub async fn open_file(app: &AppHandle, path: &std::path::Path) -> R<()> {
 pub async fn stage(app: &AppHandle, uri: String) -> R<String> {
     let value = call(app, "stage", json!({ "uri": uri })).await.context("讀取選取的檔案失敗")?;
     Ok(value["path"].as_str().context("讀取選取的檔案失敗")?.to_string())
+}
+
+pub async fn data_location(app: &AppHandle) -> R<Value> {
+    let mut info = call(app, "storageInfo", json!({})).await.context("讀取儲存空間失敗")?;
+    let chosen = crate::paths::chosen_location();
+    let root = crate::paths::root();
+    info["root"] = json!(root.to_string_lossy());
+    info["internal"] = json!(crate::paths::default_root().to_string_lossy());
+    info["missing"] = json!(chosen.as_ref().is_some_and(|c| *c != root));
+    info["chosen"] = json!(chosen.map(|c| c.to_string_lossy().to_string()));
+    Ok(info)
+}
+
+pub async fn request_storage_access(app: &AppHandle) -> R<()> {
+    call(app, "requestStorageAccess", json!({})).await.context("無法開啟權限設定")?;
+    Ok(())
+}
+
+pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
+    use crate::paths;
+    use std::path::{Component, PathBuf};
+    if !app.state::<crate::state::AppState>().running.lock().await.is_empty() || game_running(app).await {
+        bail!("請先結束遊戲再搬移資料");
+    }
+    let from = paths::root();
+    let internal = paths::default_root();
+    let to = match target.trim() {
+        "" => internal.clone(),
+        text => {
+            let base = PathBuf::from(text.trim_end_matches('/'));
+            if !base.is_absolute() || base.components().any(|c| matches!(c, Component::ParentDir)) {
+                bail!("請輸入完整的資料夾路徑，例如 /storage/emulated/0");
+            }
+            if base.file_name().is_some_and(|n| n == "BrilliantLauncher") { base } else { base.join("BrilliantLauncher") }
+        }
+    };
+    if to == from {
+        bail!("資料已經在這個位置了");
+    }
+    if to.starts_with(&from) || from.starts_with(&to) {
+        bail!("新位置不能在目前的資料夾裡面，也不能包含目前的資料夾");
+    }
+    let adopt = to.join("instances").is_dir();
+    let occupied = std::fs::read_dir(&to).map(|d| d.flatten().any(|e| !paths::PRIVATE_FILES.iter().any(|p| e.file_name() == *p))).unwrap_or(false);
+    if occupied && !adopt {
+        bail!("「{}」裡已經有其他檔案，請換一個空的資料夾", to.display());
+    }
+    let probe = to.join(".brilliant-write-test");
+    std::fs::create_dir_all(&to).and_then(|_| std::fs::write(&probe, b"ok")).and_then(|_| std::fs::remove_file(&probe)).with_context(|| format!("沒有權限寫入「{}」，請確認已開啟「所有檔案存取權」，或換一個位置", to.display()))?;
+    let mut names = Vec::new();
+    if !adopt {
+        let need = paths::size_of(&from);
+        let free = call(app, "freeSpace", json!({ "path": to.to_string_lossy() })).await.ok().and_then(|v| v["free"].as_u64()).unwrap_or(u64::MAX);
+        if free < need + 256 * 1024 * 1024 {
+            bail!("新位置的空間不足：需要約 {} MB，只剩 {} MB", need / 1048576 + 256, free / 1048576);
+        }
+        let handle = app.clone();
+        let (src, dest) = (from.clone(), to.clone());
+        let mut step = 0;
+        names = tokio::task::spawn_blocking(move || {
+            paths::relocate(&src, &dest, |done, total| {
+                let now = done * 100 / total;
+                if now != step {
+                    step = now;
+                    let _ = tauri::Emitter::emit(&handle, "launcher://relocate", json!({ "done": done, "total": total }));
+                }
+            })
+        })
+        .await
+        .context("搬移工作中斷")?
+        .context("搬移資料失敗，已收回複製到一半的檔案，原本的資料沒有變動")?;
+        paths::rewrite_file(&paths::config_file(), &from, &to);
+    }
+    if to == internal {
+        let _ = std::fs::remove_file(paths::location_file());
+    } else {
+        paths::write_atomic(&paths::location_file(), to.to_string_lossy().as_bytes()).context("儲存新位置失敗")?;
+    }
+    *paths::location().lock().unwrap_or_else(|e| e.into_inner()) = (to != internal).then(|| to.clone());
+    let _ = app.asset_protocol_scope().allow_directory(&to, true);
+    paths::remove_moved(&from, &names);
+    Ok(to.to_string_lossy().to_string())
 }

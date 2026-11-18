@@ -481,7 +481,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     {
         let _ = (java_exe, args, started);
         crate::gameopts::mobile_defaults(&instance).await;
-        crate::mobile::launch(app, &instance, &account, &settings.language).await?;
+        crate::mobile::launch(app, &instance, &account, &settings.language, settings.quick_join.trim()).await?;
         let _ = game_dir;
         let begun = now_secs();
         let stop = watch_mobile(app, &instance, begun).await;

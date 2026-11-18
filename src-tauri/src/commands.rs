@@ -28,6 +28,39 @@ pub async fn resume_game(app: AppHandle) -> R<()> {
 }
 
 #[tauri::command]
+pub async fn data_location(app: AppHandle) -> R<serde_json::Value> {
+    #[cfg(target_os = "android")]
+    return crate::mobile::data_location(&app).await;
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        bail!("只有手機版可以變更資料位置")
+    }
+}
+
+#[tauri::command]
+pub async fn request_storage_access(app: AppHandle) -> R<()> {
+    #[cfg(target_os = "android")]
+    return crate::mobile::request_storage_access(&app).await;
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        bail!("只有手機版需要儲存空間權限")
+    }
+}
+
+#[tauri::command]
+pub async fn move_data(app: AppHandle, target: String) -> R<String> {
+    #[cfg(target_os = "android")]
+    return crate::mobile::move_data(&app, target).await;
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = (app, target);
+        bail!("只有手機版可以變更資料位置")
+    }
+}
+
+#[tauri::command]
 pub async fn stage_picked(app: AppHandle, uri: String) -> R<String> {
     if !uri.starts_with("content://") {
         bail!("不支援的檔案位置");

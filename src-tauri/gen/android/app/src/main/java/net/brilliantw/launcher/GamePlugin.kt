@@ -25,6 +25,7 @@ class LaunchArgs {
   var xuid: String = ""
   var language: String = "zh-TW"
   var jvmArgs: String = ""
+  var join: String = ""
 }
 
 @InvokeArg
@@ -35,6 +36,11 @@ class StageArgs {
 @InvokeArg
 class OpenFileArgs {
   lateinit var path: String
+}
+
+@InvokeArg
+class PathArgs {
+  var path: String = ""
 }
 
 @InvokeArg
@@ -59,7 +65,7 @@ class GamePlugin(private val activity: Activity) : Plugin(activity) {
   @Command
   fun launch(invoke: Invoke) {
     val args = invoke.parseArgs(LaunchArgs::class.java)
-    BrilliantLaunch.launch(activity, args.versionId, args.gameDir, args.username, args.uuid, args.accessToken, args.xuid, 0, args.language, args.jvmArgs,
+    BrilliantLaunch.launch(activity, args.versionId, args.gameDir, args.username, args.uuid, args.accessToken, args.xuid, 0, args.language, args.jvmArgs, args.join,
       object : BrilliantLaunch.Callback {
         override fun onStarted() = invoke.resolve()
         override fun onFailed(error: Throwable) = invoke.reject(error.message ?: error.toString())
@@ -158,5 +164,42 @@ class GamePlugin(private val activity: Activity) : Plugin(activity) {
         invoke.reject(e.message ?: e.toString())
       }
     }.start()
+  }
+
+  private fun storageGranted(): Boolean =
+    if (android.os.Build.VERSION.SDK_INT >= 30) android.os.Environment.isExternalStorageManager()
+    else androidx.core.content.ContextCompat.checkSelfPermission(activity, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+  @Command
+  fun storageInfo(invoke: Invoke) {
+    val volumes = app.tauri.plugin.JSArray()
+    androidx.core.content.ContextCompat.getExternalFilesDirs(activity, null).filterNotNull().forEachIndexed { index, dir ->
+      val root = dir.absolutePath.substringBefore("/Android/data/")
+      val removable = try { android.os.Environment.isExternalStorageRemovable(dir) } catch (e: Exception) { index > 0 }
+      volumes.put(JSObject().put("path", root).put("removable", removable).put("free", dir.usableSpace).put("total", dir.totalSpace))
+    }
+    invoke.resolve(JSObject().put("granted", storageGranted()).put("volumes", volumes).put("internalFree", activity.filesDir.usableSpace))
+  }
+
+  @Command
+  fun requestStorageAccess(invoke: Invoke) {
+    try {
+      if (android.os.Build.VERSION.SDK_INT >= 30) {
+        val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:${activity.packageName}"))
+        try { activity.startActivity(intent) } catch (e: Exception) { activity.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) }
+      } else {
+        androidx.core.app.ActivityCompat.requestPermissions(activity, arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE, android.Manifest.permission.READ_EXTERNAL_STORAGE), 4107)
+      }
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: e.toString())
+    }
+  }
+
+  @Command
+  fun freeSpace(invoke: Invoke) {
+    var dir: File? = File(invoke.parseArgs(PathArgs::class.java).path)
+    while (dir != null && !dir.exists()) dir = dir.parentFile
+    invoke.resolve(JSObject().put("free", dir?.usableSpace ?: 0L))
   }
 }

@@ -1,4 +1,4 @@
-import { api, fileSrc, openUrl, pickFile } from '../api.js';
+import { ANDROID, api, fileSrc, listen, openUrl, pickFile } from '../api.js';
 import { $, $$, acceptFiles, autoTokens, clampNumber, clear, confirm, dialog, fail, fmtBytes, h, pickColor, rangeFill, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { icon } from '../icons.js';
@@ -609,6 +609,70 @@ async function scanDisk() {
                 h('div', { class: 'disk-bar mini' }, h('i', { style: `width:${(inst.total / Math.max(1, usage.instances[0]?.total ?? 1)) * 100}%;background:var(--accent)` }))),
             bar(inst.parts, inst.total), legend(inst.parts),
             h('div', { class: 'toolbar desktop-only' }, h('button', { type: 'button', class: 'mc', onclick: () => api.open_instance_folder({ id: inst.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail) }, icon('folder'), '開啟資料夾')))));
+}
+
+let moving = false;
+
+const whenVisible = () => new Promise((resolve) => {
+    const check = () => {
+        if (document.hidden) return;
+        document.removeEventListener('visibilitychange', check);
+        resolve();
+    };
+    document.addEventListener('visibilitychange', check);
+});
+
+async function renderDataLocation() {
+    let info;
+    try {
+        info = await api.data_location();
+    } catch (error) {
+        $('#data-location-status').textContent = String(error?.message ?? error);
+        return null;
+    }
+    const gb = (n) => `剩 ${fmtBytes(n)}`;
+    const places = [
+        { label: '手機內部（預設，最快）', path: info.internal, target: '', free: info.internalFree },
+        ...info.volumes.map((v) => ({ label: v.removable ? 'SD 卡' : '手機儲存空間', path: `${v.path}/BrilliantLauncher`, target: v.path, free: v.free }))
+    ];
+    const known = places.some((p) => p.path === info.root);
+    clear($('#data-location-list')).append(...places.map((place) => {
+        const current = place.path === info.root;
+        return h('div', { class: `media-row${current ? ' current' : ''}` },
+            h('span', { class: 'media-name place' }, `${place.label}　${gb(place.free)}`, h('small', {}, place.path)),
+            current ? h('b', { class: 'disk-size' }, '目前位置') : h('button', { type: 'button', class: 'mc', onclick: guard(() => moveData(place.target, place.path, info)) }, '搬到這裡'));
+    }), ...(known ? [] : [h('div', { class: 'media-row current' }, h('span', { class: 'media-name place' }, '自訂資料夾', h('small', {}, info.root)), h('b', { class: 'disk-size' }, '目前位置'))]));
+    $('#data-location-status').textContent = info.missing ? `讀不到之前選的位置「${info.chosen}」（SD 卡可能被拔除，或「所有檔案存取權」被關閉），目前暫時改用手機內部的資料。插回 SD 卡或重新開啟權限後，重新開啟啟動器即可恢復。` : '';
+    return info;
+}
+
+async function moveData(target, shown, info) {
+    if (moving) return;
+    if (target && !info.granted) {
+        if (!(await confirm('要把資料放在手機儲存空間或 SD 卡，需要開啟「所有檔案存取權」。按「前往設定」後，找到輝煌啟動器並開啟，再回到這裡。', '前往設定'))) return;
+        await api.request_storage_access().catch(fail);
+        await whenVisible();
+        info = await renderDataLocation();
+        if (!info?.granted) return toast('還沒有開啟「所有檔案存取權」，資料維持在原本的位置', 'warn');
+    }
+    if (!(await confirm(`要把資料搬到「${shown}」嗎？\n資料多時需要幾分鐘，期間請不要關閉啟動器；搬完後會刪除原位置的資料。如果新位置已經有輝煌啟動器的資料，會直接改用那份資料，原位置的資料保留不動。`, '搬移'))) return;
+    moving = true;
+    const status = $('#data-location-status');
+    status.textContent = '準備搬移⋯';
+    const stop = await listen('launcher://relocate', ({ done, total }) => {
+        status.textContent = `搬移中 ${Math.floor((done / total) * 100)}%（${fmtBytes(done)} / ${fmtBytes(total)}）`;
+    });
+    try {
+        const path = await api.move_data({ target });
+        toast(`資料已改放在 ${path}`);
+        setTimeout(() => location.reload(), 800);
+    } catch (error) {
+        status.textContent = '';
+        fail(error);
+    } finally {
+        stop();
+        moving = false;
+    }
 }
 
 const COLOR_LABELS = [
@@ -1268,6 +1332,15 @@ export function initSettings() {
         const paths = await api.launcher_paths();
         await api.open_path({ path: paths[0][1] }).catch(fail);
     }));
+    if (ANDROID) {
+        renderDataLocation().then((info) => info?.missing && toast('讀不到之前選的資料位置，暫時改用手機內部的資料，詳情請看「設定」的「資料位置」', 'warn'));
+        $('#btn-data-move').addEventListener('click', guard(async () => {
+            const typed = $('#data-location-custom').value.trim();
+            if (!typed.startsWith('/')) return toast('請輸入以「/」開頭的完整資料夾路徑', 'warn');
+            const info = await renderDataLocation();
+            if (info) await moveData(typed, typed.replace(/\/+$/, '').endsWith('/BrilliantLauncher') ? typed : `${typed.replace(/\/+$/, '')}/BrilliantLauncher`, info);
+        }));
+    }
     $('#btn-clean-cache').addEventListener('click', guard(async () => {
         if (!(await confirm('要清理快取嗎？存檔、模組與設定都不會受影響；回收資料夾裡放超過 30 天的項目會永久刪除。', '清理'))) return;
         try {

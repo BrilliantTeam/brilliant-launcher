@@ -1769,6 +1769,8 @@ h3.look-group { margin: 28px 0 12px; padding: 6px 10px; font-size: calc(14px * v
 .media-row.current { border-left-color: var(--accent); }
 .media-name { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--text); }
 .media-name small { font-size: calc(13px * var(--fs, 1)); color: var(--text-subtle); overflow: hidden; text-overflow: ellipsis; }
+.media-name.place { flex-direction: column; align-items: flex-start; gap: 2px; padding: 4px 0; white-space: normal; }
+.media-name.place small { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .media-name .ico { color: var(--accent-text); }
 .media-row .badge { margin: 0 4px; }
 :root[data-corners="rounded"] .media-row { border-radius: 8px; }
@@ -1969,8 +1971,14 @@ body.game-running :is(.bg-img, .update-chip.ready) { animation-play-state: pause
     .news > .news-list, .dock > .shards, .dock > .setup { flex: 0 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
     :root:not([data-toastpos="top-center"]) .toasts { top: 44px; bottom: auto; }
     .dock:has(> .setup:not([hidden])) > :is(.dock-head, .shards, .shard-hint) { display: none; }
-    .dock > .shards { padding-right: 4px; grid-auto-rows: max-content; align-content: start; }
-    .news > .fold { top: 0; right: 0; }
+    .dock > .shards { display: flex; flex: none; gap: 8px; overflow: auto hidden; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 0; }
+    .dock > .shards::-webkit-scrollbar { display: none; }
+    .dock > .shards > .shard { flex: 0 0 44%; min-width: 0; scroll-snap-align: start; }
+    .shard .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 40px; }
+    .dock > .shard-hint { display: none; }
+    .news-tabs { overflow-x: auto; scrollbar-width: none; }
+    .news-tabs button { flex: 1 0 auto; padding-inline: 10px; white-space: nowrap; }
+    .news > .fold { top: 0; right: 0; z-index: 1; }
     #home-edit-toggle, .social a[data-url$="/mod/"] { display: none; }
     :root[data-layout="mirrored"] .home > .dock { order: -1; }
     :root[data-layout="mirrored"] .view.home.active { padding: 16px 16px 16px 80px; }
@@ -1984,4 +1992,13 @@ body.game-running :is(.bg-img, .update-chip.ready) { animation-play-state: pause
     .social { gap: 8px; }
     .social a, .scenic-toggle { width: 48px; height: 48px; }
     .progress { padding: 8px 16px 9px; }
+}
+@media (pointer: coarse) and (max-height: 600px) and (max-width: 760px) {
+    .view.home.active { grid-template-columns: minmax(0, 1fr); }
+    .home > .news { display: none; }
+}
+@media (pointer: coarse) and (max-height: 340px) {
+    .view.home.active { padding-top: 8px; padding-bottom: 8px; }
+    .dock { gap: 6px; }
+    .shard .bar { display: none; }
 }
