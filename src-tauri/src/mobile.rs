@@ -159,6 +159,9 @@ pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
     }
     let from = paths::root();
     let internal = paths::default_root();
+    if !internal.is_absolute() {
+        bail!("找不到啟動器的內部資料夾，無法搬移");
+    }
     let to = match target.trim() {
         "" => internal.clone(),
         text => {
@@ -206,10 +209,14 @@ pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
         .context("搬移資料失敗，已收回複製到一半的檔案，原本的資料沒有變動")?;
         paths::rewrite_file(&paths::config_file(), &from, &to);
     }
-    if to == internal {
-        let _ = std::fs::remove_file(paths::location_file());
+    let saved = if to == internal {
+        std::fs::remove_file(paths::location_file()).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(e) })
     } else {
-        paths::write_atomic(&paths::location_file(), to.to_string_lossy().as_bytes()).context("儲存新位置失敗")?;
+        paths::write_atomic(&paths::location_file(), to.to_string_lossy().as_bytes())
+    };
+    if let Err(error) = saved {
+        paths::remove_moved(&to, &names);
+        return Err(anyhow::Error::from(error).context("儲存新位置失敗，已收回複製過去的檔案，原本的資料沒有變動").into());
     }
     *paths::location().lock().unwrap_or_else(|e| e.into_inner()) = (to != internal).then(|| to.clone());
     let _ = app.asset_protocol_scope().allow_directory(&to, true);

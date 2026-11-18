@@ -2,22 +2,16 @@ use std::path::{Path, PathBuf};
 
 pub fn root() -> PathBuf {
     #[cfg(target_os = "android")]
-    if std::env::var_os("BRILLIANT_LAUNCHER_HOME").is_none() {
-        if let Some(dir) = location().lock().unwrap_or_else(|e| e.into_inner()).clone() {
-            return dir;
-        }
-    }
-    private_root()
-}
-
-fn private_root() -> PathBuf {
-    if let Some(custom) = std::env::var_os("BRILLIANT_LAUNCHER_HOME") {
-        return PathBuf::from(custom);
+    if let Some(dir) = location().lock().unwrap_or_else(|e| e.into_inner()).clone() {
+        return dir;
     }
     default_root()
 }
 
 pub fn default_root() -> PathBuf {
+    if let Some(custom) = std::env::var_os("BRILLIANT_LAUNCHER_HOME") {
+        return PathBuf::from(custom);
+    }
     dirs::data_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("BrilliantLauncher")
@@ -25,7 +19,7 @@ pub fn default_root() -> PathBuf {
 
 #[cfg(target_os = "android")]
 pub fn location_file() -> PathBuf {
-    dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("data-location")
+    default_root().with_file_name("data-location")
 }
 
 #[cfg(target_os = "android")]
@@ -50,10 +44,10 @@ pub fn exports() -> PathBuf {
 pub const PRIVATE_FILES: [&str; 2] = ["config.json", "accounts.json"];
 
 pub fn config_file() -> PathBuf {
-    private_root().join(PRIVATE_FILES[0])
+    default_root().join(PRIVATE_FILES[0])
 }
 pub fn accounts_file() -> PathBuf {
-    private_root().join(PRIVATE_FILES[1])
+    default_root().join(PRIVATE_FILES[1])
 }
 
 pub fn shared() -> PathBuf {
