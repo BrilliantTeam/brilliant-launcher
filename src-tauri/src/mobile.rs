@@ -184,6 +184,16 @@ pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
     if to.starts_with(&from) || from.starts_with(&to) {
         bail!("新位置不能在目前的資料夾裡面，也不能包含目前的資料夾");
     }
+    let moving = to.join(".brilliant-moving");
+    if moving.exists() {
+        for entry in std::fs::read_dir(&to).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
+            if paths::PRIVATE_FILES.iter().any(|p| entry.file_name() == *p) {
+                continue;
+            }
+            let path = entry.path();
+            let _ = if path.is_dir() { std::fs::remove_dir_all(&path) } else { std::fs::remove_file(&path) };
+        }
+    }
     let adopt = to.join("instances").is_dir();
     let occupied = std::fs::read_dir(&to).map(|d| d.flatten().any(|e| !paths::PRIVATE_FILES.iter().any(|p| e.file_name() == *p))).unwrap_or(false);
     if occupied && !adopt {
@@ -198,6 +208,7 @@ pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
         if free < need + 256 * 1024 * 1024 {
             bail!("新位置的空間不足：需要約 {} MB，只剩 {} MB", need / 1048576 + 256, free / 1048576);
         }
+        std::fs::write(&moving, b"").context("無法在新位置建立檔案")?;
         let handle = app.clone();
         let (src, dest) = (from.clone(), to.clone());
         let mut step = 0;
@@ -212,6 +223,9 @@ pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
         })
         .await
         .context("搬移工作中斷")?
+        .inspect_err(|_| {
+            let _ = std::fs::remove_file(&moving);
+        })
         .context("搬移資料失敗，已收回複製到一半的檔案，原本的資料沒有變動")?;
         paths::rewrite_file(&paths::config_file(), &from, &to);
     }
@@ -221,9 +235,11 @@ pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
         paths::write_atomic(&paths::location_file(), to.to_string_lossy().as_bytes())
     };
     if let Err(error) = saved {
+        let _ = std::fs::remove_file(&moving);
         paths::remove_moved(&to, &names);
         return Err(anyhow::Error::from(error).context("儲存新位置失敗，已收回複製過去的檔案，原本的資料沒有變動").into());
     }
+    let _ = std::fs::remove_file(&moving);
     *paths::location().lock().unwrap_or_else(|e| e.into_inner()) = (to != internal).then(|| to.clone());
     let _ = app.asset_protocol_scope().allow_directory(&to, true);
     paths::remove_moved(&from, &names);
@@ -244,6 +260,7 @@ pub async fn performance_mods(app: &AppHandle, instance: &Instance, settings: &c
         match crate::modrinth::install(app, &instance.id, crate::modrinth::Kind::Mod, &instance.loader, project, &instance.mc_version, instance.wants_rich_presence(settings), instance.channel(settings)).await {
             Ok(files) if !files.is_empty() => added.push(name),
             Ok(_) => {}
+            Err(e) if format!("{:#}", e.0).contains("沒有支援 Minecraft") => {}
             Err(_) => failed += 1,
         }
     }

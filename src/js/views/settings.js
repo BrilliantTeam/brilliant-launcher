@@ -47,6 +47,7 @@ const FIELDS = {
     debugMode: '#set-debug',
     openLogOnLaunch: '#set-open-log',
     launcherUpdate: '#set-launcher-update',
+    updateOnCellular: '#set-update-cellular',
     updateChannel: '#set-update-channel',
     modUpdate: '#set-mod-update',
     buttonStyle: '#set-buttons',
@@ -612,7 +613,7 @@ async function scanDisk() {
             h('div', { class: 'toolbar desktop-only' }, h('button', { type: 'button', class: 'mc', onclick: () => api.open_instance_folder({ id: inst.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail) }, icon('folder'), '開啟資料夾')))));
 }
 
-const ANDROID_HIDDEN = ['set-width', 'set-height', 'set-window-mode', 'set-window-monitor', 'set-cursor', 'set-content-width', 'set-shard-layout', 'set-play-size', 'set-countdown-title', 'set-countdown-at', 'set-tagline', 'set-clock', 'set-clock-format', 'set-clock-style', 'set-clock-position', 'set-card-view', 'set-cards', 'set-card-hover', 'set-cover-height', 'set-cover-pos', 'set-wrapper', 'set-env', 'set-dgpu', 'set-debug', 'set-brand', 'set-credit', 'set-scale', 'set-thin-scroll', 'set-rail-labels', 'set-account-name', 'rail-editor', 'rail-links'];
+const ANDROID_HIDDEN = ['set-width', 'set-height', 'set-window-mode', 'set-window-monitor', 'set-cursor', 'set-content-width', 'set-shard-layout', 'set-play-size', 'set-countdown-title', 'set-countdown-at', 'set-tagline', 'set-clock', 'set-clock-format', 'set-clock-style', 'set-clock-position', 'set-card-view', 'set-cards', 'set-card-hover', 'set-cover-height', 'set-cover-pos', 'set-wrapper', 'set-env', 'set-dgpu', 'set-debug', 'set-brand', 'set-credit', 'set-scale', 'set-thin-scroll', 'set-rail-labels', 'set-account-name', 'rail-editor', 'rail-links', 'set-clock-seconds'];
 
 let moving = false;
 
@@ -652,6 +653,7 @@ async function renderDataLocation() {
 
 async function moveData(target, shown, info) {
     if (moving) return;
+    if (!$('#progress').hidden) return toast('遊戲正在準備或下載中，完成後再搬移資料', 'warn');
     if (target && !info.granted) {
         if (!(await confirm('要把資料放在手機儲存空間或 SD 卡，需要開啟「所有檔案存取權」。按「前往設定」後，找到輝煌啟動器並開啟，再回到這裡。', '前往設定'))) return;
         await api.request_storage_access().catch(fail);
@@ -1351,7 +1353,7 @@ export function initSettings() {
                 askNotify();
             }
         } catch {}
-        $('#set-launcher-update option[value="auto"]').textContent = '連上 Wi-Fi 時自動下載，由我決定何時安裝（推薦）';
+        $('#set-launcher-update option[value="auto"]').textContent = '自動下載，由我決定何時安裝（推薦）';
         for (const id of ANDROID_HIDDEN) {
             const input = $(`#${id}`);
             input?.closest('.check-row > label, .field')?.classList.add('desktop-only');

@@ -718,6 +718,8 @@ mod update_tests {
         assert!(!stale_update("BrilliantLauncher_1.1.0-beta.1_x64-setup.exe", "1.1.0-alpha.9"));
         assert!(stale_update("BrilliantLauncher_1.1.0-beta.1_x64-setup.exe", "1.1.0"));
         assert!(!stale_update("BrilliantLauncher_1.1.0-alpha.10_x64-setup.exe", "1.1.0-alpha.9"));
+        assert!(!stale_update("BrilliantLauncher_1.3.0-beta.10_arm64.apk", "1.3.0-beta.9"));
+        assert!(stale_update("BrilliantLauncher_1.3.0-beta.10_arm64.apk.sig", "1.3.0-beta.10"));
         assert!(version_of("1.1.0-beta.2") > version_of("1.1.0-alpha.7") && version_of("1.1.0") > version_of("1.1.0-beta.2") && version_of("1.1.0-rc.1").is_none());
     }
 }

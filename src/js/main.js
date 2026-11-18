@@ -563,7 +563,7 @@ async function checkUpdate(manual = false) {
     const first = !pendingUpdate;
     pendingUpdate = { latest, current };
     updateChip();
-    if (canSelfUpdate(latest) && mode === 'auto' && (!ANDROID || navigator.connection?.type === 'wifi')) downloadUpdate();
+    if (canSelfUpdate(latest) && mode === 'auto' && (!ANDROID || store.settings?.updateOnCellular || navigator.connection?.type === 'wifi')) downloadUpdate();
     else notifyOnce(`launcher:${latest.version}`, `輝煌啟動器 v${latest.version} 已推出`, canSelfUpdate(latest) ? '打開啟動器，點右上角的更新按鈕下載並安裝。' : '打開啟動器，點右上角的更新按鈕前往下載。');
     if (!first) return;
     listen('launcher://update-progress', ({ done, total }) => {
@@ -679,6 +679,7 @@ async function boot() {
         if (go === 'go') $('#about-update-link').click();
     });
     on('network', () => { if (store.online !== false) checkUpdate(); });
+    if (ANDROID) navigator.connection?.addEventListener('change', () => { if (navigator.connection.type === 'wifi' && (store.settings?.launcherUpdate || 'auto') === 'auto' && pendingUpdate && !updater.path) downloadUpdate(); });
     $('#about-update-link').addEventListener('click', (e) => {
         e.preventDefault();
         location.hash = '#settings';

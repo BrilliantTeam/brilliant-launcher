@@ -562,6 +562,7 @@ function toggleInstanceMenu(force) {
     const menu = $('#instance-menu');
     const open = force ?? menu.hidden;
     menu.hidden = !open;
+    $('#instance-pick').setAttribute('aria-expanded', String(open));
     if (!open) return;
     const current = selectedInstance();
     clear(menu).append(

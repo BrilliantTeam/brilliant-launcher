@@ -15,6 +15,9 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 
 class LoginActivity : AppCompatActivity() {
   private lateinit var web: WebView
@@ -87,5 +90,13 @@ class LoginActivity : AppCompatActivity() {
     const val EXTRA_TITLE = "title"
     const val EXTRA_CLOSE = "close"
     const val EXTRA_RESULT = "result"
+  }
+
+  override fun onWindowFocusChanged(hasFocus: Boolean) {
+    super.onWindowFocusChanged(hasFocus)
+    if (hasFocus) WindowCompat.getInsetsController(window, window.decorView).apply {
+      systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+      hide(WindowInsetsCompat.Type.systemBars())
+    }
   }
 }
