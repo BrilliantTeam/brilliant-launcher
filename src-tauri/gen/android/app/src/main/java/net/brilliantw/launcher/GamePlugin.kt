@@ -202,4 +202,25 @@ class GamePlugin(private val activity: Activity) : Plugin(activity) {
     while (dir != null && !dir.exists()) dir = dir.parentFile
     invoke.resolve(JSObject().put("free", dir?.usableSpace ?: 0L))
   }
+
+  @Command
+  fun installApk(invoke: Invoke) {
+    try {
+      val file = File(invoke.parseArgs(PathArgs::class.java).path)
+      if (!file.isFile) throw IllegalStateException("找不到已下載的更新檔，請重新下載")
+      if (android.os.Build.VERSION.SDK_INT >= 26 && !activity.packageManager.canRequestPackageInstalls()) {
+        activity.startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}")))
+        invoke.resolve(JSObject().put("status", "permission"))
+        return
+      }
+      val uri = androidx.core.content.FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
+      val install = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(uri, "application/vnd.android.package-archive")
+        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+      activity.startActivity(install)
+      invoke.resolve(JSObject().put("status", "started"))
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: e.toString())
+    }
+  }
 }

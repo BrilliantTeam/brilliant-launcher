@@ -47,7 +47,7 @@ const MODRINTH_PATH = { mod: 'mod', resourcepack: 'resourcepack', shader: 'shade
 const CATEGORIES = {
     mod: [['', '全部'], ['optimization', '效能優化'], ['utility', '實用工具'], ['decoration', '裝飾'], ['storage', '收納'], ['adventure', '冒險'], ['library', '前置函式庫']],
     resourcepack: [['', '全部'], ['vanilla-like', '原版風'], ['simplistic', '簡約'], ['realistic', '寫實'], ['gui', '介面'], ['tweaks', '微調'], ['16x', '16x'], ['32x', '32x']],
-    shader: [['', '全部'], ['vanilla-like', '原版風'], ['semi-realistic', '半寫實'], ['realistic', '寫實'], ['cartoon', '卡通'], ['fantasy', '奇幻'], ['potato', '低配電腦']]
+    shader: [['', '全部'], ['vanilla-like', '原版風'], ['semi-realistic', '半寫實'], ['realistic', '寫實'], ['cartoon', '卡通'], ['fantasy', '奇幻'], ['potato', '低配置']]
 };
 export const PRESETS = [
     {

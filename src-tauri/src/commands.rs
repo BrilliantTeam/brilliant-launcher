@@ -650,11 +650,17 @@ pub async fn launcher_info() -> R<modinject::LauncherInfo> {
 }
 
 fn update_dir() -> std::path::PathBuf {
+    #[cfg(target_os = "android")]
+    if let Some(data) = crate::paths::default_root().parent().and_then(|files| files.parent()) {
+        return data.join("cache").join("BrilliantLauncher-update");
+    }
     std::env::temp_dir().join("BrilliantLauncher-update")
 }
 
 pub fn update_kind() -> &'static str {
-    if cfg!(target_os = "windows") {
+    if cfg!(target_os = "android") {
+        "android"
+    } else if cfg!(target_os = "windows") {
         "windows"
     } else if cfg!(target_os = "macos") {
         "mac"
@@ -670,6 +676,7 @@ pub fn update_suffix(kind: &str) -> Option<&'static str> {
         "windows" => Some("_x64-setup.exe"),
         "mac" => Some("_universal.app.tar.gz"),
         "linux" => Some("_amd64.AppImage"),
+        "android" => Some("_arm64.apk"),
         _ => None,
     }
 }
@@ -696,6 +703,7 @@ mod update_tests {
     fn update_files_match_platform() {
         assert_eq!(update_suffix("mac"), Some("_universal.app.tar.gz"));
         assert_eq!(update_suffix("linux"), Some("_amd64.AppImage"));
+        assert_eq!(update_suffix("android"), Some("_arm64.apk"));
         assert_eq!(update_suffix(""), None);
         if cfg!(target_os = "windows") {
             assert!(update_file_ok("BrilliantLauncher_1.0.27_x64-setup.exe"));
@@ -830,10 +838,6 @@ pub fn cleanup_updates() {
     }
 }
 
-#[cfg(mobile)]
-fn install_update(_: &std::path::Path) -> R<()> {
-    bail!("手機版請到輝煌官網下載新版安裝檔")
-}
 
 #[cfg(target_os = "windows")]
 fn install_update(file: &std::path::Path) -> R<()> {
@@ -896,7 +900,7 @@ pub async fn download_update(app: AppHandle, url: String, file: String, sha256: 
 }
 
 #[tauri::command]
-pub async fn apply_update(app: AppHandle, path: String) -> R<()> {
+pub async fn apply_update(app: AppHandle, path: String) -> R<String> {
     let path = std::path::PathBuf::from(path);
     let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     if path.parent() != Some(update_dir().as_path()) || !update_file_ok(&name) || !path.is_file() {
@@ -908,9 +912,14 @@ pub async fn apply_update(app: AppHandle, path: String) -> R<()> {
         let _ = tokio::fs::remove_file(&path).await;
         bail!("更新檔沒有通過輝煌官方數位簽章驗證，已刪除並取消更新，請重新下載");
     }
-    install_update(&path)?;
-    app.exit(0);
-    Ok(())
+    #[cfg(target_os = "android")]
+    return crate::mobile::install_apk(&app, &path).await;
+    #[cfg(not(target_os = "android"))]
+    {
+        install_update(&path)?;
+        app.exit(0);
+        Ok(String::new())
+    }
 }
 
 #[tauri::command]

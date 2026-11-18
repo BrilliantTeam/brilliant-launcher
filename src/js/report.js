@@ -80,7 +80,7 @@ export async function reportDialog(kind, instance, extra = {}) {
         const base = [summary.message, ...summary.findings, summary.exception, ...summary.log].filter(Boolean).join('\n');
         const items = [{ title: '錯誤摘要與最後 80 行日誌', text: base }, ...sections];
         const total = items.reduce((n, s) => n + new Blob([s.text]).size, 0);
-        clear(preview).append(h('div', { class: 'hint' }, `共 ${items.length} 項，約 ${fmtBytes(total)}。以下就是會送出的內容，帳號權杖與電腦使用者名稱已遮蔽。`),
+        clear(preview).append(h('div', { class: 'hint' }, `共 ${items.length} 項，約 ${fmtBytes(total)}。以下就是會送出的內容，帳號權杖與系統使用者名稱已遮蔽。`),
             ...items.map((s) => h('details', {}, h('summary', {}, `${s.title}（${fmtBytes(new Blob([s.text]).size)}）`), h('pre', {}, s.text.slice(0, 20000) + (s.text.length > 20000 ? '\n⋯（預覽只顯示前 20000 字，送出時是完整內容）' : '')))));
     };
 

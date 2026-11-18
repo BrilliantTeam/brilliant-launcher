@@ -264,7 +264,7 @@ export function fail(error) {
 
 let closeOpenDialog = null;
 
-export const RECYCLE_NOTE = '會移到啟動器的回收資料夾，30 天內都能從「關於 → 回收資料夾」找回。';
+export const RECYCLE_NOTE = ANDROID ? '會先移到啟動器的回收資料夾，30 天後自動清除。' : '會移到啟動器的回收資料夾，30 天內都能從「關於 → 回收資料夾」找回。';
 
 addEventListener('unhandledrejection', (e) => {
     e.preventDefault();

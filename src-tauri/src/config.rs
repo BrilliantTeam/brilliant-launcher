@@ -133,6 +133,7 @@ pub struct Settings {
     pub click_volume: u32,
     pub page_transition: String,
     pub toast_position: String,
+    pub sheet_side: String,
     pub toast_seconds: u32,
     pub launch_splash: bool,
     pub custom_font: String,
@@ -366,6 +367,7 @@ impl Default for Settings {
             click_volume: 50,
             page_transition: "rise".into(),
             toast_position: "bottom-right".into(),
+            sheet_side: "right".into(),
             toast_seconds: 6,
             launch_splash: false,
             custom_font: String::new(),
@@ -607,6 +609,7 @@ impl Settings {
         self.click_volume = self.click_volume.min(100);
         clean_choice(&mut self.page_transition, &["rise", "fade", "slide", "none"], "rise");
         clean_choice(&mut self.toast_position, &["bottom-right", "top-right", "top-center"], "bottom-right");
+        clean_choice(&mut self.sheet_side, &["right", "left"], "right");
         self.toast_seconds = self.toast_seconds.clamp(2, 15);
         self.bg_dim = self.bg_dim.min(80);
         self.tours_seen.retain(|t| t.len() <= 32 && t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));

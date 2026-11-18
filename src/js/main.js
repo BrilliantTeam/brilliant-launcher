@@ -251,7 +251,9 @@ function applyTheme() {
     for (const id of ['walker-toggle', 'font-toggle', 'theme-toggle']) $(`#${id}`).hidden = (look.hiddenTools ?? []).includes(id);
     root.dataset.pagetrans = pick(look.pageTransition, ['rise', 'fade', 'slide', 'none'], 'rise');
     animRate = { fast: 1.6, slow: 0.6 }[look.animSpeed] ?? 1;
-    root.dataset.toastpos = pick(look.toastPosition, ['bottom-right', 'top-right', 'top-center'], 'bottom-right');
+    const toastPos = pick(look.toastPosition, ['bottom-right', 'top-right', 'top-center'], 'bottom-right');
+    root.dataset.toastpos = ANDROID && toastPos === 'bottom-right' ? 'top-right' : toastPos;
+    root.dataset.sheetside = look.sheetSide === 'left' ? 'left' : 'right';
     root.dataset.toastSeconds = String(Math.min(15, Math.max(2, Number(look.toastSeconds) || 6)));
     $('#home-clock').hidden = !look.showClock;
     tickClock();
@@ -339,7 +341,7 @@ function initRailMore() {
             h('button', { type: 'button', role: 'menuitem', 'aria-current': location.hash === `#${view}` ? 'true' : null, onclick: () => { closeMenus(); location.hash = `#${view}`; } }, icon(name), label)));
         if (menu.hidden) return;
         const rect = link.getBoundingClientRect();
-        Object.assign(menu.style, { left: `${rect.right + 6}px`, top: `${Math.max(8, Math.min(rect.top, innerHeight - menu.offsetHeight - 8))}px`, bottom: 'auto' });
+        Object.assign(menu.style, { left: `${document.documentElement.dataset.railside === 'right' ? rect.left - menu.offsetWidth - 6 : rect.right + 6}px`, top: `${Math.max(8, Math.min(rect.top, innerHeight - menu.offsetHeight - 8))}px`, bottom: 'auto' });
     });
     const sync = () => link.classList.toggle('active', RAIL_MORE.some(([view]) => location.hash === `#${view}`));
     addEventListener('hashchange', sync);
@@ -503,7 +505,8 @@ export function newerVersion(latest, current) {
 let pendingUpdate = null;
 const updater = { version: '', path: null, downloading: false };
 
-const UPDATE_ASSET = { windows: 'windows', mac: 'macUpdate', linux: 'linux' };
+const UPDATE_ASSET = { windows: 'windows', mac: 'macUpdate', linux: 'linux', android: 'android' };
+const APPLY_LABEL = ANDROID ? '安裝更新' : '重新啟動以更新';
 let updateKind = null;
 const updateAsset = (latest) => (updateKind ? latest.platforms?.[UPDATE_ASSET[updateKind]] ?? (updateKind === 'windows' ? latest : null) : null);
 const canSelfUpdate = (latest) => !!updateAsset(latest)?.sha256 && !!updateAsset(latest)?.signature;
@@ -514,7 +517,7 @@ function updateChip() {
     const chip = $('#update-chip');
     chip.hidden = false;
     chip.classList.toggle('ready', !!updater.path);
-    if (!updater.downloading) $('#update-label').textContent = updater.path ? `重新啟動以更新 v${latest.version}` : `更新 v${latest.version}`;
+    if (!updater.downloading) $('#update-label').textContent = updater.path ? `${APPLY_LABEL} v${latest.version}` : `更新 v${latest.version}`;
 }
 
 async function downloadUpdate(manual = false) {
@@ -527,7 +530,7 @@ async function downloadUpdate(manual = false) {
     try {
         const asset = updateAsset(latest);
         updater.path = await api.download_update({ url: asset.url, file: asset.file, sha256: asset.sha256, signature: asset.signature });
-        notifyOnce(`launcher-ready:${latest.version}`, `輝煌啟動器 v${latest.version} 已準備好`, '點右上角「重新啟動以更新」，幾秒內就會完成並重新開啟。');
+        notifyOnce(`launcher-ready:${latest.version}`, `輝煌啟動器 v${latest.version} 已準備好`, ANDROID ? '打開啟動器，點右上角「安裝更新」，再在系統畫面按「安裝」即可。' : '點右上角「重新啟動以更新」，幾秒內就會完成並重新開啟。');
     } catch (error) {
         updater.path = null;
         if (manual || /簽章/.test(String(error?.message ?? error))) fail(error);
@@ -539,12 +542,13 @@ async function downloadUpdate(manual = false) {
 
 async function applyUpdate() {
     if (store.running.length) return toast('遊戲還在執行中，關閉遊戲後再更新', 'warn');
-    toast('正在更新，啟動器會自動重新開啟⋯');
-    await api.apply_update({ path: updater.path }).catch((error) => {
+    if (!ANDROID) toast('正在更新，啟動器會自動重新開啟⋯');
+    const result = await api.apply_update({ path: updater.path }).catch((error) => {
         updater.path = null;
         updateChip();
         fail(error);
     });
+    if (result === 'permission') toast('請在剛打開的設定頁允許「輝煌啟動器」安裝應用程式，回到啟動器後再按一次「安裝更新」。', 'warn');
 }
 
 async function checkUpdate(manual = false) {
@@ -559,8 +563,8 @@ async function checkUpdate(manual = false) {
     const first = !pendingUpdate;
     pendingUpdate = { latest, current };
     updateChip();
-    if (canSelfUpdate(latest) && mode === 'auto') downloadUpdate();
-    else notifyOnce(`launcher:${latest.version}`, `輝煌啟動器 v${latest.version} 已推出`, '打開啟動器，點右上角的更新按鈕前往下載。');
+    if (canSelfUpdate(latest) && mode === 'auto' && (!ANDROID || navigator.connection?.type === 'wifi')) downloadUpdate();
+    else notifyOnce(`launcher:${latest.version}`, `輝煌啟動器 v${latest.version} 已推出`, canSelfUpdate(latest) ? '打開啟動器，點右上角的更新按鈕下載並安裝。' : '打開啟動器，點右上角的更新按鈕前往下載。');
     if (!first) return;
     listen('launcher://update-progress', ({ done, total }) => {
         if (updater.downloading && total) $('#update-label').textContent = `下載更新 ${Math.floor((done * 100) / total)}%`;
@@ -570,12 +574,12 @@ async function checkUpdate(manual = false) {
         const self = canSelfUpdate(latest);
         const ready = !!updater.path;
         const status = !self ? '這個平台需要到官網下載新版。'
-            : ready ? '新版已下載完成。按「重新啟動並更新」，啟動器會在背景完成安裝並自動重新開啟，不會出現安裝精靈，設定與遊戲資料都會保留。'
-            : updater.downloading ? '正在背景下載新版，完成後右上角會變成「重新啟動以更新」。'
+            : ready ? (ANDROID ? '新版已下載完成，也通過了輝煌官方數位簽章驗證。按「安裝更新」後，Android 會跳出安裝確認，按「安裝」即可；設定與遊戲資料都會保留。第一次更新時，系統會先請你允許輝煌啟動器安裝應用程式。' : '新版已下載完成。按「重新啟動並更新」，啟動器會在背景完成安裝並自動重新開啟，不會出現安裝精靈，設定與遊戲資料都會保留。')
+            : updater.downloading ? `正在背景下載新版，完成後右上角會變成「${APPLY_LABEL}」。`
             : updater.version === latest.version ? '下載失敗了，可以再試一次，或到官網手動下載。'
-            : '按「下載更新」會在背景下載，並先驗證輝煌官方數位簽章，完成後再由你決定何時重新啟動。';
+            : ANDROID ? '按「下載更新」會在背景下載並驗證輝煌官方數位簽章，完成後再由你決定何時安裝。安裝檔比較大，建議連上 Wi-Fi 再下載。' : '按「下載更新」會在背景下載，並先驗證輝煌官方數位簽章，完成後再由你決定何時重新啟動。';
         const buttons = !self ? [{ label: '稍後', value: null }, { label: '前往官網下載', value: 'web' }]
-            : ready ? [{ label: '稍後', value: null }, { label: '重新啟動並更新', value: 'apply' }]
+            : ready ? [{ label: '稍後', value: null }, { label: ANDROID ? '安裝更新' : '重新啟動並更新', value: 'apply' }]
             : updater.downloading ? [{ label: '關閉', value: null }]
             : [{ label: '前往官網', value: 'web' }, { label: updater.version === latest.version ? '重新下載' : '下載更新', value: 'retry' }];
         const go = await dialog({

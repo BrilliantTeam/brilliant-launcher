@@ -713,7 +713,7 @@ async function showWorlds(instance) {
                 h('button', { type: 'button', class: 'mc desktop-only', onclick: () => openFolder(instance, 'saves') }, icon('folder'), '開啟存檔資料夾')),
             notice,
             list,
-            h('div', { class: 'hint' }, '可以把世界 zip 直接拖進這個視窗匯入。遊戲執行中無法匯入、複製或刪除世界。')), 'world', (path) => importWorld(false, path))
+            h('div', { class: 'hint' }, `${ANDROID ? '' : '可以把世界 zip 直接拖進這個視窗匯入。'}遊戲執行中無法匯入、複製或刪除世界。`)), 'world', (path) => importWorld(false, path))
     });
 }
 
@@ -1080,7 +1080,7 @@ function iconChooser(initial, names) {
     const custom = h('button', {
         type: 'button',
         class: 'mc',
-        title: `自訂圖片（${FILE_TYPES.icon.extensions.map((e) => e.toUpperCase()).join('、')}），也可以直接把圖片拖到這一區`,
+        title: `自訂圖片（${FILE_TYPES.icon.extensions.map((e) => e.toUpperCase()).join('、')}）${ANDROID ? '' : '，也可以直接把圖片拖到這一區'}`,
         'aria-label': '自訂圖片',
         onclick: async () => useCustom(await pickFile('icon').catch(fail))
     }, icon('plus'));
@@ -1375,7 +1375,7 @@ function groupHeader(group, members, closed) {
         },
         onpointerdown: (e) => group.name && startDrag(e, header, { kind: 'group', name: group.name, label: group.name })
     },
-    h('button', { type: 'button', class: 'inst-group-name', 'aria-expanded': String(!closed), title: group.name ? '點一下收合；右鍵可編輯、置頂；拖曳可調整順序' : '', onclick: () => { if (!dragged()) toggleFold(group.name); } },
+    h('button', { type: 'button', class: 'inst-group-name', 'aria-expanded': String(!closed), title: group.name ? (ANDROID ? '點一下收合；長按可拖曳調整順序' : '點一下收合；右鍵可編輯、置頂；拖曳可調整順序') : '', onclick: () => { if (!dragged()) toggleFold(group.name); } },
         icon('chevron-down', 'ico fold'), iconOf(group.name ? group.icon || 'folder' : 'folder'), h('b', {}, group.name || '未分組'),
         pinned ? h('span', { class: 'badge' }, '置頂') : null,
         sharedNames(group).length ? h('span', { class: 'badge share-badge', title: '這個分組的實例共用這些資料夾；後面的數字是已經套用的實例數' }, `共用 ${sharedNames(group).join('、')}${members.length ? `・${members.filter((m) => !shareState.get(m.id)?.pending.length).length}/${members.length} 已套用` : ''}`) : null,

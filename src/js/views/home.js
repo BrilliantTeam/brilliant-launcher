@@ -108,7 +108,7 @@ function renderEvent() {
                 class: `mc ${on ? '' : 'primary'}`,
                 onclick: () => {
                     setReminders(on ? reminders().filter((id) => id !== e.id) : [...reminders(), e.id]);
-                    toast(on ? '已取消提醒' : '活動開始前 10 分鐘會通知你（啟動器要開著或縮在系統匣）');
+                    toast(on ? '已取消提醒' : `活動開始前 10 分鐘會通知你（啟動器要開著或${ANDROID ? '在背景執行' : '縮在系統匣'}）`);
                     renderEvent();
                 }
             }, on ? '已設定提醒' : '提醒我'),
@@ -261,7 +261,7 @@ async function splash(title, sub) {
 }
 
 async function forceStop(instance) {
-    if (!(await confirm(`要強制結束「${instance.name}」嗎？\n強制結束不會存檔，單人世界最近的進度可能遺失；建議先在遊戲裡按「儲存並離開」或關閉遊戲視窗。`, '強制結束'))) return;
+    if (!(await confirm(`要強制結束「${instance.name}」嗎？\n強制結束不會存檔，單人世界最近的進度可能遺失；建議先在遊戲裡按「儲存並離開」${ANDROID ? '' : '或關閉遊戲視窗'}。`, '強制結束'))) return;
     await api.stop_game({ id: instance.id }).then(() => toast(`已強制結束「${instance.name}」`), fail);
 }
 

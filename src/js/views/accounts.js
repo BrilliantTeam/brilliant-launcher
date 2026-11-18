@@ -1,4 +1,4 @@
-import { api, fileSrc, listen, openUrl, pickFile } from '../api.js';
+import { ANDROID, api, fileSrc, listen, openUrl, pickFile } from '../api.js';
 import { $, acceptFiles, clear, confirm, dialog, dismissDialog, fail, h, toast, guard, RECYCLE_NOTE } from '../ui.js';
 import { icon } from '../icons.js';
 import { avatarUrl, emit, loadAccounts, loadInstances, on, refreshAvatar, selectedAccount, store } from '../store.js';
@@ -12,7 +12,7 @@ export async function loginMicrosoft(mode) {
         return;
     }
     if (mode === 'device') return loginDevice();
-    const browser = mode !== false;
+    const browser = mode !== false && !ANDROID;
     let account;
     let waiting = browser;
     let switchTo = '';
@@ -476,7 +476,7 @@ async function renderPanel() {
     const library = await api.skin_library().catch(() => []);
     if (seq !== panelSeq) return;
     const wardrobe = h('div', { class: 'wardrobe' },
-        acceptFiles(h('button', { type: 'button', class: 'wardrobe-item wardrobe-add', title: '點一下選擇，或把皮膚 PNG 拖到這裡', onclick: () => uploadSkin(account) }, icon('plus'), '加入皮膚'), 'skin', (path) => uploadSkin(account, path)),
+        acceptFiles(h('button', { type: 'button', class: 'wardrobe-item wardrobe-add', title: ANDROID ? '點一下選擇皮膚 PNG' : '點一下選擇，或把皮膚 PNG 拖到這裡', onclick: () => uploadSkin(account) }, icon('plus'), '加入皮膚'), 'skin', (path) => uploadSkin(account, path)),
         ...library.map((entry) => wardrobeItem(account, entry)));
     const wardrobeSection = [h('h2', {}, '衣櫃'), h('p', { class: 'hint' }, '點皮膚可以先在上方 3D 預覽試穿，滿意再換上。'), wardrobe];
 

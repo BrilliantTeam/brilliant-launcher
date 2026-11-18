@@ -31,11 +31,12 @@ async fn call(app: &AppHandle, command: &'static str, payload: Value) -> anyhow:
     unreachable!()
 }
 
-pub async fn launch(app: &AppHandle, instance: &Instance, account: &Account, language: &str, join: &str) -> R<()> {
+pub async fn launch(app: &AppHandle, instance: &Instance, account: &Account, language: &str, join: &str, proxy: &[String]) -> R<()> {
     if crate::forge::is_forge_like(&instance.loader) {
         bail!("手機版目前只支援原版與 Fabric 實例");
     }
     let msa = account.kind == "msa";
+    let jvm_args = std::iter::once(format!("-Dbrilliant.launcher={} -Dbrilliant.android=true", env!("CARGO_PKG_VERSION"))).chain(proxy.iter().cloned()).collect::<Vec<_>>().join(" ");
     call(app, "launch", json!({
         "versionId": instance.version_id,
         "gameDir": crate::paths::game_dir(&instance.id).strip_prefix(crate::paths::root()).context("遊戲資料夾不在啟動器資料夾內")?.to_string_lossy().replace('\\', "/"),
@@ -45,7 +46,7 @@ pub async fn launch(app: &AppHandle, instance: &Instance, account: &Account, lan
         "xuid": account.xuid,
         "language": language,
         "join": join,
-        "jvmArgs": format!("-Dbrilliant.launcher={} -Dbrilliant.android=true", env!("CARGO_PKG_VERSION")),
+        "jvmArgs": jvm_args,
     }))
     .await
     .context("遊戲執行環境啟動失敗")?;
@@ -250,4 +251,9 @@ pub async fn performance_mods(app: &AppHandle, instance: &Instance, settings: &c
         let _ = std::fs::write(&marker, b"");
     }
     (!added.is_empty()).then(|| format!("已為手機版安裝效能模組：{}，不需要可以到「模組」頁移除", added.join("、")))
+}
+
+pub async fn install_apk(app: &AppHandle, path: &std::path::Path) -> R<String> {
+    let value = call(app, "installApk", json!({ "path": path.to_string_lossy() })).await.context("無法開啟安裝畫面")?;
+    Ok(value["status"].as_str().unwrap_or("started").to_string())
 }

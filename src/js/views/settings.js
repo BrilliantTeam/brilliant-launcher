@@ -109,6 +109,7 @@ const FIELDS = {
     clickSoundType: '#set-click-type',
     clickVolume: '#set-click-volume',
     toastPosition: '#set-toast-pos',
+    sheetSide: '#set-sheet-side',
     toastSeconds: '#set-toast-seconds',
     launchSplash: '#set-launch-splash',
     streamerMode: '#set-streamer',
@@ -124,8 +125,8 @@ const LOOK_PRESETS = [
     ['輝煌經典', 'Minecraft 方塊按鈕、金色邊條，原汁原味', {}],
     ['現代玻璃', '扁平按鈕、圓角、霧化面板與緩慢縮放的背景', { buttonStyle: 'flat', corners: 'rounded', panelOpacity: 75, bgDim: 20, bgBlur: 4, bgMotion: true, accentBar: 'thin' }],
     ['極簡', '收起標誌與公告，只留下必要的資訊', { buttonStyle: 'flat', corners: 'rounded', accentBar: 'none', showNews: false, showBrand: false, railLabels: false, cardDetails: false }],
-    ['緊湊效率', '寬版、緊湊間距，一次看到更多實例與模組', { contentWidth: 'wide', density: 'compact', cardSize: 'compact', railLabels: false, thinScrollbars: true, coverHeight: 'short' }],
-    ['像素懷舊', '方塊按鈕、懷舊色調、像素游標與點擊音效', { bgFilter: 'sepia', cursorStyle: 'pixel', clickSound: true, railStyle: 'solid', coverHeight: 'tall', bgDim: 15 }]
+    ['緊湊效率', ANDROID ? '緊湊間距，一次看到更多實例與模組' : '寬版、緊湊間距，一次看到更多實例與模組', { contentWidth: 'wide', density: 'compact', cardSize: 'compact', railLabels: false, thinScrollbars: true, coverHeight: 'short' }],
+    ['像素懷舊', ANDROID ? '方塊按鈕、懷舊色調與點擊音效' : '方塊按鈕、懷舊色調、像素游標與點擊音效', { bgFilter: 'sepia', cursorStyle: 'pixel', clickSound: true, railStyle: 'solid', coverHeight: 'tall', bgDim: 15 }]
 ];
 
 const LOOK_DEFAULTS = {
@@ -139,7 +140,7 @@ const LOOK_DEFAULTS = {
     clockFormat: '24', clockStyle: 'bold', clockPosition: 'right', clockSeconds: false,
     cardView: 'grid', instanceSort: 'manual', cardHover: 'lift', coverPosition: 'center', coverShade: 35, pageStats: true,
     railSide: 'left', railOrder: [], railHidden: [], hideAccountName: false, hiddenTools: [], startPage: 'home',
-    animSpeed: 'normal', pageTransition: 'rise', clickSoundType: 'block', clickVolume: 50, toastPosition: 'bottom-right', toastSeconds: 6, launchSplash: false
+    animSpeed: 'normal', pageTransition: 'rise', clickSoundType: 'block', clickVolume: 50, toastPosition: 'bottom-right', toastSeconds: 6, launchSplash: false, sheetSide: 'right'
 };
 
 const STYLE_KEYS = ['buttonStyle', 'corners', 'cardSize', 'panelOpacity', 'bgDim', 'railLabels', 'showNews', 'contentWidth', 'density', 'accentBar', 'bgBlur', 'bgMotion',
@@ -291,7 +292,7 @@ function renderSavedLooks() {
     if (!box) return;
     const saved = store.settings?.savedLooks ?? [];
     if (!saved.length) {
-        clear(box).append(h('div', { class: 'hint' }, '還沒有存起來的外觀。按「匯出外觀」或「匯入外觀」就會加進來，也可以直接把 .brlook 檔拖到這裡。'));
+        clear(box).append(h('div', { class: 'hint' }, `還沒有存起來的外觀。按「匯出外觀」或「匯入外觀」就會加進來${ANDROID ? '' : '，也可以直接把 .brlook 檔拖到這裡'}。`));
         return;
     }
     clear(box).append(...saved.map((entry) => {
@@ -336,7 +337,7 @@ async function exportLook() {
                 h('label', {}, withBackground, hasBackground && isVideo(settings.background) ? '包含背景影片' : '包含背景圖片'),
                 h('label', {}, withTracks, tracks.length ? `包含背景音樂（${tracks.length} 首）` : '包含背景音樂'),
                 h('div', { class: 'hint' }, hasBackground ? '背景與音樂都保持原檔，不會重新壓縮。' : '目前沒有自訂背景。')),
-            h('div', { class: 'hint' }, '會在「下載」資料夾存成一個 .brlook 外觀檔，朋友在「匯入外觀」選這個檔案，或直接拖進啟動器就能完整套用。也會存進「我的外觀」。側欄排序不會包含在內。')),
+            h('div', { class: 'hint' }, `會在「下載」資料夾存成一個 .brlook 外觀檔，朋友在「匯入外觀」選這個檔案${ANDROID ? '' : '，或直接拖進啟動器'}就能完整套用。也會存進「我的外觀」。側欄排序不會包含在內。`)),
         buttons: [{ label: '取消', value: false }, { label: '匯出外觀檔', value: true }]
     });
     if (ok !== true) return;
@@ -611,7 +612,7 @@ async function scanDisk() {
             h('div', { class: 'toolbar desktop-only' }, h('button', { type: 'button', class: 'mc', onclick: () => api.open_instance_folder({ id: inst.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail) }, icon('folder'), '開啟資料夾')))));
 }
 
-const ANDROID_HIDDEN = ['set-width', 'set-height', 'set-window-mode', 'set-window-monitor', 'set-cursor', 'set-content-width', 'set-shard-layout', 'set-play-size', 'set-countdown-title', 'set-countdown-at', 'set-tagline', 'set-clock', 'set-clock-format', 'set-clock-style', 'set-clock-position', 'set-card-view', 'set-cards', 'set-card-hover', 'set-cover-height', 'set-cover-pos', 'set-wrapper', 'set-env', 'set-dgpu', 'set-debug', 'set-brand', 'set-credit'];
+const ANDROID_HIDDEN = ['set-width', 'set-height', 'set-window-mode', 'set-window-monitor', 'set-cursor', 'set-content-width', 'set-shard-layout', 'set-play-size', 'set-countdown-title', 'set-countdown-at', 'set-tagline', 'set-clock', 'set-clock-format', 'set-clock-style', 'set-clock-position', 'set-card-view', 'set-cards', 'set-card-hover', 'set-cover-height', 'set-cover-pos', 'set-wrapper', 'set-env', 'set-dgpu', 'set-debug', 'set-brand', 'set-credit', 'set-scale', 'set-thin-scroll', 'set-rail-labels', 'set-account-name', 'rail-editor', 'rail-links'];
 
 let moving = false;
 
@@ -1336,6 +1337,21 @@ export function initSettings() {
         await api.open_path({ path: paths[0][1] }).catch(fail);
     }));
     if (ANDROID) {
+        const toastPos = $('#set-toast-pos');
+        toastPos.querySelector('option[value="bottom-right"]')?.remove();
+        const syncToastPos = () => setTimeout(() => { if (toastPos.selectedIndex < 0) toastPos.value = 'top-right'; });
+        on('settings', syncToastPos);
+        syncToastPos();
+        const notifier = window.__TAURI__?.notification;
+        const askNotify = () => notifier?.isPermissionGranted().then((ok) => ok || notifier.requestPermission()).catch(() => {});
+        $('#set-notify').addEventListener('change', (e) => { if (e.target.checked) askNotify(); });
+        try {
+            if (store.settings?.notifications !== false && !localStorage.getItem('brilliant.notifyAsked')) {
+                localStorage.setItem('brilliant.notifyAsked', '1');
+                askNotify();
+            }
+        } catch {}
+        $('#set-launcher-update option[value="auto"]').textContent = '連上 Wi-Fi 時自動下載，由我決定何時安裝（推薦）';
         for (const id of ANDROID_HIDDEN) {
             const input = $(`#${id}`);
             input?.closest('.check-row > label, .field')?.classList.add('desktop-only');
@@ -1368,10 +1384,12 @@ export function initSettings() {
         const integrated = isIntegratedGpu(gpu);
         clear($('#hardware')).append(
             h('div', { class: 'grow' },
-                h('b', {}, '你的電腦'),
+                h('b', {}, ANDROID ? '你的手機' : '你的電腦'),
                 h('small', {}, `記憶體 ${Math.round(info.memoryMb / 1024)} GB｜${info.cpus} 執行緒｜${gpu || '顯示卡未知'}`),
-                h('small', {}, `建議遊戲記憶體 ${info.recommendedMb} MB${integrated ? '；內建顯示卡建議安裝「效能優化包」，不建議開光影' : ''}`)),
-            h('button', {
+                ANDROID
+                    ? h('small', {}, info.memoryMb < 5120 ? '記憶體低於 6 GB，遊戲可能會卡頓或閃退，建議關閉其他 App 後再開始遊戲' : '遊戲記憶體會依手機自動分配')
+                    : h('small', {}, `建議遊戲記憶體 ${info.recommendedMb} MB${integrated ? '；內建顯示卡建議安裝「效能優化包」，不建議開光影' : ''}`)),
+            ANDROID ? null : h('button', {
                 type: 'button',
                 class: 'mc',
                 onclick: () => persist({ memoryMb: info.recommendedMb })

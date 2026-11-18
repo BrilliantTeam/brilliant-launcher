@@ -1,18 +1,20 @@
+import { ANDROID } from './api.js';
+
 const RULES = [
     {
         test: /Could not reserve enough space for .*object heap|Invalid maximum heap size|Initial heap size set to a larger value than the maximum/,
         title: '記憶體上限設得太高',
-        detail: () => '電腦無法提供這麼多記憶體給遊戲。請到「設定」把記憶體上限調低（一般 4096～6144 MB 就夠用）。'
+        detail: () => (ANDROID ? '手機目前無法提供遊戲需要的記憶體。請關閉其他 App 後再試；記憶體 6 GB 以下的手機建議降低視野距離。' : '電腦無法提供這麼多記憶體給遊戲。請到「設定」把記憶體上限調低（一般 4096～6144 MB 就夠用）。')
     },
     {
         test: /java\.lang\.OutOfMemoryError/,
         title: '記憶體不足',
-        detail: () => '遊戲用完了分配的記憶體。請到「設定」把記憶體上限調高（建議 4096～8192 MB），或減少光影、材質包與高耗能模組。'
+        detail: () => (ANDROID ? '遊戲用完了可用的記憶體。請關閉其他 App、減少材質包與高耗能模組，或降低視野距離。' : '遊戲用完了分配的記憶體。請到「設定」把記憶體上限調高（建議 4096～8192 MB），或減少光影、材質包與高耗能模組。')
     },
     {
         test: /UnsupportedClassVersionError|has been compiled by a more recent version of the Java Runtime/,
         title: 'Java 版本太舊',
-        detail: () => '這個 Minecraft 版本需要更新的 Java。請到「設定 → Java 執行檔」選「自動」，讓啟動器下載正確的版本。'
+        detail: () => (ANDROID ? '這個 Minecraft 版本需要更新的 Java。請重新開啟啟動器再開始遊戲，讓它自動補上正確的版本；仍然不行請回報給管理員。' : '這個 Minecraft 版本需要更新的 Java。請到「設定 → Java 執行檔」選「自動」，讓啟動器下載正確的版本。')
     },
     {
         test: /Incompatible mods? found|incompatible mod set|requires (?:version|any version)/i,
@@ -48,8 +50,8 @@ const RULES = [
     },
     {
         test: /GLFW error 65542|WGL: The driver does not appear to support OpenGL|Pixel format not accelerated|Failed to create window|OpenGL [0-9.]+ is not supported/,
-        title: '顯示卡驅動程式問題',
-        detail: () => '遊戲無法建立 OpenGL 視窗。請更新顯示卡驅動程式；筆電請確認遊戲使用獨立顯示卡。'
+        title: ANDROID ? '繪圖相容性問題' : '顯示卡驅動程式問題',
+        detail: () => (ANDROID ? '遊戲無法建立繪圖畫面，這支手機的顯示晶片可能不受支援。請更新手機系統後再試，並把手機型號回報給管理員。' : '遊戲無法建立 OpenGL 視窗。請更新顯示卡驅動程式；筆電請確認遊戲使用獨立顯示卡。')
     }
 ];
 
@@ -139,8 +141,8 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
     }
     const gpu = GPU_DLL.exec(native);
     if (gpu) findings.push({ title: '顯示卡驅動程式崩潰', detail: `Java 在顯示卡驅動（${gpu[0]}）裡當機了。請到顯示卡官網更新驅動程式；若使用光影，可先換成較輕量的光影或關閉。` });
-    else if (native && !findings.length) findings.push({ title: 'Java 虛擬機崩潰', detail: 'Java 本身意外結束，常見原因是驅動程式、防毒軟體或記憶體設定。請先更新顯示卡驅動、調低記憶體上限再試。' });
-    if ((gpu || /GLFW error 65542|WGL: The driver does not appear|Pixel format not accelerated|OpenGL [0-9.]+ is not supported/.test(text)) && !preferDgpu) {
+    else if (native && !findings.length) findings.push({ title: 'Java 虛擬機崩潰', detail: ANDROID ? 'Java 本身意外結束，常見原因是手機記憶體不足或遊戲被系統關閉。請關閉其他 App 後再試。' : 'Java 本身意外結束，常見原因是驅動程式、防毒軟體或記憶體設定。請先更新顯示卡驅動、調低記憶體上限再試。' });
+    if ((gpu || /GLFW error 65542|WGL: The driver does not appear|Pixel format not accelerated|OpenGL [0-9.]+ is not supported/.test(text)) && !preferDgpu && !ANDROID) {
         add({ kind: 'dgpu', target: '', label: '改用獨立顯示卡執行遊戲' });
     }
     return { findings, exception, fixes };

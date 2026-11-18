@@ -1,7 +1,7 @@
 :root {
     --chrome-bg: rgba(248, 249, 250, 0.88);
     --chrome-ink: #202122;
-    --chrome-dim: rgba(32, 33, 34, 0.62);
+    --chrome-dim: rgba(32, 33, 34, 0.72);
     --chrome-line: rgba(0, 0, 0, 0.1);
     --chrome-hover: rgba(0, 0, 0, 0.05);
     --chrome-hover-strong: rgba(0, 0, 0, 0.1);
@@ -374,7 +374,7 @@ dialog.wide { max-width: min(760px, 94vw); }
 .shard.pending .dot { background: var(--glass-faint); }
 .shard .bar { height: 3px; margin-top: 6px; background: var(--glass-line); }
 .shard .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.4s ease; }
-.shard .check { position: absolute; top: 7px; right: 9px; display: flex; align-items: center; gap: 3px; font-size: calc(12px * var(--fs, 1)); color: color-mix(in srgb, var(--accent) 55%, var(--glass-ink)); visibility: hidden; }
+.shard .check { position: absolute; top: 7px; right: 9px; display: flex; align-items: center; gap: 3px; font-size: calc(12px * var(--fs, 1)); color: var(--accent-text); visibility: hidden; }
 .shard[aria-pressed="true"] .check { visibility: visible; }
 
 .shard-hint { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; font-size: calc(12px * var(--fs, 1)); color: rgba(255, 255, 255, 0.86); text-shadow: 0 1px 2px #000; }
@@ -594,6 +594,7 @@ button.mc.icon-btn.danger:hover { color: var(--danger); }
 .card .body { min-width: 0; flex: 1 1 auto; }
 .card .title { font-weight: 700; font-size: calc(14px * var(--fs, 1)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card .meta { font-size: calc(12px * var(--fs, 1)); color: var(--text-subtle); }
+.card.selected .meta { color: color-mix(in srgb, var(--text-subtle) 60%, var(--text)); }
 .card .actions { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 8px; }
 .card .actions button { font-size: calc(12px * var(--fs, 1)); padding: 4px 8px; border-bottom-width: 3px; }
 
@@ -622,7 +623,7 @@ button.mc.icon-btn.danger:hover { color: var(--danger); }
     color: var(--accent-ink);
     background: var(--accent);
 }
-.badge.grey { background: var(--border); color: var(--content-bg); }
+.badge.grey { background: var(--text-subtle); color: var(--content-bg); }
 .badge.warn { background: var(--warning); color: var(--warning-ink); }
 
 .store-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -1975,7 +1976,6 @@ body.game-running :is(.bg-img, .update-chip.ready) { animation-play-state: pause
     & :is(button.mc, .rail a, .tool, .shard-pick, .account-chip, .account-more, .social a, .social .scenic-toggle, #view-settings .settings-nav a) { position: relative; }
     & :is(button.mc, .rail a, .tool, .shard-pick, .account-chip, .account-more, .social a, .social .scenic-toggle, #view-settings .settings-nav a)::before { content: ''; position: absolute; inset: -4px; }
     & .field:has(> .hint-tip) > :first-child { padding-right: 36px; }
-    &:not([data-toastpos="top-center"]) .toasts { top: 44px; bottom: auto; }
     & .inst-menu button[aria-current="true"] { color: var(--accent-text); }
 
     & .home :is(.home-brand, .home-clock, .credit, .widget, .dock-head, .shards, .shard-hint, #home-edit-toggle, .news > .fold) { display: none; }
@@ -2037,6 +2037,12 @@ body.game-running :is(.bg-img, .update-chip.ready) { animation-play-state: pause
     & dialog .dlg-foot { flex: none; padding: 10px 16px; border-top: 1px solid var(--border-soft); background: var(--content-bg); }
     & dialog h2, & dialog::backdrop { cursor: default; }
     @starting-style { & dialog[open] { opacity: 0; transform: translateX(32px); } }
+    &[data-sheetside="left"] dialog { inset: 0 auto 0 0; border-left: 0; border-right: 4px solid var(--accent); transform: translateX(-32px); }
+    &[data-sheetside="left"] dialog[open] { transform: none; }
+    &[data-sheetside="left"] dialog .dlg-foot { justify-content: flex-start; }
+    @starting-style { &[data-sheetside="left"] dialog[open] { transform: translateX(-32px); } }
+    &[data-news="off"] #news-toggle { display: none; }
+    &[data-shardstats="off"] :is(.shard-pick, .shard-item) .sub { display: none; }
 
     & .inst-banner { flex-basis: 96px; min-height: 64px; }
 }

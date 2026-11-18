@@ -410,7 +410,7 @@
                 <div class="field">
                     <label>我的外觀</label>
                     <div class="look-presets" id="look-saved"></div>
-                    <div class="hint">匯出或匯入的外觀會存在這裡，點一下就能切換；也可以把 .brlook 外觀檔拖到這裡匯入。</div>
+                    <div class="hint">匯出或匯入的外觀會存在這裡，點一下就能切換<span class="desktop-only">；也可以把 .brlook 外觀檔拖到這裡匯入</span>。</div>
                 </div>
                 <div class="field">
                     <label>社群風格</label>
@@ -875,6 +875,13 @@
                         </select>
                     </div>
                 </div>
+                <div class="field android-only">
+                    <label for="set-sheet-side">對話框位置</label>
+                    <select id="set-sheet-side">
+                        <option value="right">從右側滑出</option>
+                        <option value="left">從左側滑出（左手操作）</option>
+                    </select>
+                </div>
                 <div class="field">
                     <label><input type="checkbox" id="set-rail-labels">側欄顯示文字</label>
                 </div>
@@ -1023,7 +1030,7 @@
                     <div class="hint" id="channel-hint">只影響輝煌啟動器本身，輝煌模組不分通道、一律使用最新版。正式版的每個版本都先經過 Beta 測試；從 Beta 換回正式版時，會在下一個正式版推出時自動換回，不會降級。還沒有正式版或 Beta 時，會先拿到最新的 Alpha。</div>
                 </div>
                 <div class="field-row">
-                    <div class="field desktop-only">
+                    <div class="field">
                         <label for="set-launcher-update">啟動器更新</label>
                         <select id="set-launcher-update">
                             <option value="auto">自動下載，重新啟動時安裝（推薦）</option>
@@ -1085,11 +1092,11 @@
                         <input type="text" id="profile-name" maxlength="24" placeholder="方案名稱，例如：筆電省電、桌機全開、直播用" aria-label="方案名稱">
                         <button type="button" class="mc primary" id="btn-profile-save"><i data-icon="save"></i>把目前設定存成方案</button>
                     </div>
-                    <div class="hint">方案會記住記憶體、JVM 參數、啟動流程與所有外觀設定，一鍵切換；帳號、實例、分組與下載的檔案不受影響。也可以在指令面板搜尋「方案」快速套用。</div>
+                    <div class="hint">方案會記住<span class="desktop-only">記憶體、JVM 參數、</span>啟動流程與所有外觀設定，一鍵切換；帳號、實例、分組與下載的檔案不受影響。<span class="desktop-only">也可以在指令面板搜尋「方案」快速套用。</span></div>
                 </div>
                 <div class="field">
                     <label><input type="checkbox" id="set-streamer">直播模式</label>
-                    <div class="hint">隱藏畫面上的帳號名稱、信箱、伺服器 IP、電腦路徑與截圖座標；上傳日誌、匯出診斷包時也會一併遮蔽 IP、信箱與玩家名稱。</div>
+                    <div class="hint">隱藏畫面上的帳號名稱、信箱、伺服器 IP、檔案路徑與截圖座標；上傳日誌、匯出診斷包時也會一併遮蔽 IP、信箱與玩家名稱。</div>
                 </div>
                 <div class="field android-only">
                     <label>資料位置</label>
@@ -1115,7 +1122,7 @@
                     <button type="button" class="mc" id="btn-config-export"><i data-icon="download"></i>匯出設定</button>
                     <button type="button" class="mc" id="btn-config-import"><i data-icon="archive"></i>匯入設定</button>
                 </div>
-                <div class="hint">清理快取會刪除可自動重建的 natives、7 天前的日誌，以及回收資料夾裡超過 30 天的項目，不會動到存檔、模組與設定。<br>匯出設定會把啟動器設定與所有實例的設定打包到「下載」資料夾（不含帳號登入資料與遊戲檔案），換電腦時匯入就能還原，遊戲檔案會在第一次開始遊戲時自動下載。</div>
+                <div class="hint">清理快取會刪除可自動重建的 natives、7 天前的日誌，以及回收資料夾裡超過 30 天的項目，不會動到存檔、模組與設定。<br>匯出設定會把啟動器設定與所有實例的設定打包到「下載」資料夾（不含帳號登入資料與遊戲檔案），換電腦或手機時匯入就能還原，遊戲檔案會在第一次開始遊戲時自動下載。</div>
 
                 <h2 id="set-keys" class="desktop-only">快捷鍵</h2>
                 <div class="field desktop-only">

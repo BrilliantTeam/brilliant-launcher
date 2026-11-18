@@ -485,7 +485,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         if !instance.general && instance.loader == "fabric" {
             notes.extend(crate::mobile::performance_mods(app, &instance, &settings).await);
         }
-        crate::mobile::launch(app, &instance, &account, &settings.language, settings.quick_join.trim()).await?;
+        crate::mobile::launch(app, &instance, &account, &settings.language, settings.quick_join.trim(), &crate::advanced::proxy_props(&settings.proxy)).await?;
         let _ = game_dir;
         let begun = now_secs();
         let stop = watch_mobile(app, &instance, begun).await;
