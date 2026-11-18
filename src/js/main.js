@@ -346,18 +346,7 @@ function initRailMore() {
     sync();
 }
 
-function initChrome() {
-    const editable = 'input, textarea, select, .console, .crash-exception';
-    document.addEventListener('contextmenu', (e) => {
-        if (!e.target.closest?.(editable)) e.preventDefault();
-    });
-    document.addEventListener('dragstart', (e) => {
-        if (!e.target.closest?.(editable)) e.preventDefault();
-    });
-    document.addEventListener('input', (e) => {
-        if (e.target.matches?.('input[type="range"]')) rangeFill(e.target);
-    });
-    mountIcons();
+function initWindowChrome() {
     const win = appWindow();
     $('#win-min').addEventListener('click', () => win.minimize());
     $('#win-max').addEventListener('click', () => win.toggleMaximize());
@@ -398,6 +387,21 @@ function initChrome() {
         if (e.detail === 2) win.toggleMaximize();
         else win.startDragging?.();
     });
+}
+
+function initChrome() {
+    const editable = 'input, textarea, select, .console, .crash-exception';
+    document.addEventListener('contextmenu', (e) => {
+        if (!e.target.closest?.(editable)) e.preventDefault();
+    });
+    document.addEventListener('dragstart', (e) => {
+        if (!e.target.closest?.(editable)) e.preventDefault();
+    });
+    document.addEventListener('input', (e) => {
+        if (e.target.matches?.('input[type="range"]')) rangeFill(e.target);
+    });
+    mountIcons();
+    if (!ANDROID) initWindowChrome();
 
     const mac = navigator.userAgent.includes('Mac');
     if (mac) $$('kbd.mod-key').forEach((k) => { k.textContent = '⌘'; });

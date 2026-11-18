@@ -612,8 +612,8 @@ function setFold(patch) {
 
 function applyFold(fold = readFold()) {
     const body = document.body;
-    body.classList.toggle('fold-news', !!fold.news);
-    body.classList.toggle('fold-dock', !!fold.dock);
+    body.classList.toggle('fold-news', !ANDROID && !!fold.news);
+    body.classList.toggle('fold-dock', !ANDROID && !!fold.dock);
     body.classList.toggle('scenic', !!fold.scenic);
     $('#fold-news').setAttribute('aria-expanded', String(!fold.news));
     $('#fold-dock').setAttribute('aria-expanded', String(!fold.dock));
@@ -659,8 +659,9 @@ export function initHome() {
             $('#social-more').setAttribute('aria-expanded', String(open));
         });
         document.addEventListener('click', (e) => {
-            if (!e.target.closest('.news, #news-toggle')) setNewsOpen(false);
-            if (!e.target.closest('.social')) {
+            const inside = (selector) => e.composedPath().some((el) => el instanceof Element && el.matches(selector));
+            if (!inside('.news, #news-toggle')) setNewsOpen(false);
+            if (!inside('.social')) {
                 $('.social').classList.remove('open');
                 $('#social-more').setAttribute('aria-expanded', 'false');
             }

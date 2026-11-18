@@ -2003,7 +2003,7 @@ body.game-running :is(.bg-img, .update-chip.ready) { animation-play-state: pause
     & .news-list button { min-height: 40px; }
     & .news-more { display: flex; align-items: center; min-height: 40px; padding: 0 14px; }
 
-    & .home > .social { inset: 8px 12px auto auto; transform: none; gap: 6px; }
+    & .home > .social { inset: 8px 12px auto auto; transform: none; flex-direction: row-reverse; gap: 6px; }
     & .social > :not(#social-more) { display: none; }
     & .social.open > :is(a, .scenic-toggle):not(#home-edit-toggle, [data-url$="/mod/"]) { display: grid; }
     & .social :is(a, .scenic-toggle) { width: 40px; height: 40px; place-items: center; }
