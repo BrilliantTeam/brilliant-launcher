@@ -24,7 +24,7 @@
         <span data-tauri-drag-region>輝煌啟動器</span>
     </div>
     <div class="titlebar-tools">
-        <button type="button" class="channel-chip" id="channel-chip" hidden></button>
+        <button type="button" class="channel-chip desktop-only" id="channel-chip" hidden></button>
         <button type="button" class="net-chip" id="net-chip" hidden><i data-icon="warning-box"></i>離線模式</button>
         <button type="button" class="update-chip" id="update-chip" hidden><i data-icon="download"></i><span id="update-label">有新版本</span></button>
         <div class="account-switch">
@@ -35,8 +35,9 @@
             <button type="button" class="account-more" id="account-more" title="快速切換帳號" aria-label="快速切換帳號" aria-haspopup="menu" aria-expanded="false"><i data-icon="chevron-down"></i></button>
             <div class="account-menu glass" id="account-menu" role="menu" hidden></div>
         </div>
-        <button type="button" class="tool" id="tour-btn" title="這一頁的操作教學" aria-label="這一頁的操作教學" hidden><i data-icon="book"></i></button>
+        <button type="button" class="tool desktop-only" id="tour-btn" title="這一頁的操作教學" aria-label="這一頁的操作教學" hidden><i data-icon="book"></i></button>
         <button type="button" class="tool" id="walker-toggle" aria-pressed="false" title="開啟虛擬夥伴" aria-label="開啟虛擬夥伴"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 1h6v6H5zM4 8h8v4H4zM5 12h2v3H5zM9 12h2v3H9zM2 8h2v3H2zM12 8h2v3h-2z"/></svg></button>
+        <button type="button" class="tool android-only" id="news-toggle" title="公告" aria-label="公告" aria-expanded="false"><i data-icon="notification"></i></button>
         <button type="button" class="tool" id="font-toggle" title="切換點陣／系統字型" aria-label="切換點陣／系統字型"><i data-icon="art-text"></i></button>
         <button type="button" class="tool" id="theme-toggle" title="主題" aria-label="主題"></button>
         <span class="win-sep"></span>
@@ -55,6 +56,8 @@
         <a href="#accounts" data-view="accounts" title="帳號"><i data-icon="user"></i><span>帳號</span></a>
         <a href="#settings" data-view="settings" title="設定"><i data-icon="sliders"></i><span>設定</span></a>
         <a href="#log" data-view="log" title="日誌" class="desktop-only"><i data-icon="script-text"></i><span>日誌</span></a>
+        <a href="#" id="rail-more" class="android-only" title="更多" aria-haspopup="menu" aria-expanded="false"><i data-icon="more-horizontal"></i><span>更多</span></a>
+        <div class="inst-menu" id="rail-more-menu" role="menu" aria-label="更多頁面" data-align="left" popover="manual" hidden></div>
         <span class="rail-spacer"></span>
         <a href="#about" data-view="about" title="關於"><i data-icon="info-box"></i><span>關於</span></a>
 </nav>
@@ -89,6 +92,8 @@
             <div class="event-card glass" id="event-card" hidden></div>
             <div class="upgrade-banner glass" id="upgrade-banner" hidden></div>
             <div class="setup glass" id="setup" hidden></div>
+            <button type="button" class="shard-pick android-only" id="shard-pick" aria-haspopup="menu" aria-expanded="false"></button>
+            <div class="inst-menu" id="shard-menu" role="menu" aria-label="選擇分流" popover="manual" hidden></div>
             <div class="launch">
                 <button type="button" class="instance-pick" id="instance-pick" aria-haspopup="true" title="切換遊戲實例">
                     <span class="inst-thumb" id="home-thumb"></span>
@@ -104,6 +109,7 @@
         </aside>
 
         <div class="social">
+            <button type="button" class="scenic-toggle android-only" id="social-more" title="更多" aria-label="更多" aria-expanded="false"><i data-icon="more-horizontal"></i></button>
             <button type="button" class="scenic-toggle" id="scenic-toggle" title="賞景模式：收起所有面板（Esc 還原）" aria-pressed="false"><i data-icon="eye"></i></button>
             <button type="button" class="scenic-toggle" id="home-edit-toggle" title="編輯主頁版面：拖曳元件、調整大小、開關小工具" aria-label="編輯主頁版面"><i data-icon="edit"></i></button>
             <a href="#" data-url="https://www.brilliantw.net/" title="輝煌官網"><i data-icon="external-link"></i></a>

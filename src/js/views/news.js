@@ -153,6 +153,7 @@ async function select(key) {
     if (!pages.has(key) || pages.get(key) === null) {
         const page = await api.site_json({ path: `/api/announcements/plain?ch=${key}` }).catch(() => null);
         pages.set(key, page);
+        syncUnread();
         if (board === key) renderList();
     }
 }
@@ -333,6 +334,26 @@ function syncVideo() {
     if (!video.getAttribute('src')) return;
     if (idle()) video.pause();
     else video.play().catch(() => {});
+}
+
+const SEEN_KEY = 'brilliant.newsSeen';
+
+function syncUnread() {
+    const newest = Math.max(0, ...[...pages.values()].filter(Boolean).flatMap((page) => (page.messages || []).map((m) => +new Date(m.time) || 0)));
+    let seen = 0;
+    try {
+        seen = Number(localStorage.getItem(SEEN_KEY)) || 0;
+    } catch {}
+    document.body.classList.toggle('news-unread', newest > seen);
+    return newest;
+}
+
+export function markNewsSeen() {
+    const newest = syncUnread();
+    try {
+        localStorage.setItem(SEEN_KEY, String(newest));
+    } catch {}
+    document.body.classList.remove('news-unread');
 }
 
 export function initNews() {

@@ -344,10 +344,17 @@ input[type="range"]::-webkit-slider-thumb {
 }
 input[type="range"]:hover::-webkit-slider-thumb { background: var(--btn-face-hover); }
 input[type="range"]:focus-visible { outline: 3px solid var(--accent-text); outline-offset: 2px; }
-.field { margin-bottom: 14px; }
+.field { position: relative; margin-bottom: 12px; }
 .field-row { display: flex; gap: 12px; flex-wrap: wrap; }
-.field-row > .field { flex: 1 1 180px; margin-bottom: 14px; }
+.field-row > .field { flex: 1 1 180px; margin-bottom: 12px; }
 .hint { font-size: calc(12px * var(--fs, 1)); color: var(--text-faint); margin-top: 4px; line-height: 1.6; }
+.hint-tip { margin: 0; }
+.hint-tip > summary { position: absolute; top: -2px; right: 0; width: 24px; height: 24px; display: grid; place-items: center; list-style: none; cursor: pointer; color: var(--text-faint); }
+.hint-tip > summary::-webkit-details-marker { display: none; }
+.hint-tip > summary .ico { width: 16px; height: 16px; }
+.hint-tip > summary:hover, .hint-tip[open] > summary { color: var(--accent-text); }
+.hint-tip[open] > div { margin-top: 4px; }
+.field:has(> .hint-tip) > :first-child { padding-right: 28px; }
 
 .panel {
     background: var(--panel-face);

@@ -917,7 +917,7 @@ export function moreMenu(instance) {
     return h('div', { class: 'inst-more' }, toggle, menu);
 }
 
-function openMenu(e, menu, anchor, items) {
+export function openMenu(e, menu, anchor, items) {
     e.stopPropagation();
     const open = menu.hidden;
     closeMenus();
@@ -976,7 +976,7 @@ addEventListener('keydown', (e) => {
     menu.previousElementSibling?.focus();
 }, true);
 
-function closeMenus() {
+export function closeMenus() {
     document.querySelectorAll('.inst-menu').forEach((m) => {
         m.hidden = true;
         if (m.matches(':popover-open')) m.hidePopover();

@@ -1,10 +1,10 @@
 import { ANDROID, api, listen, openUrl } from '../api.js';
 import { $, clear, confirm, dialog, fail, fmtBytes, h, lowMemoryOk, toast } from '../ui.js';
 import { accountFor, avatarUrl, emit, isRunning, loaderLabel, loadAccounts, loadInstances, modded, on, selectedAccount, selectedInstance, store, saveSettings } from '../store.js';
-import { initNews } from './news.js';
+import { initNews, markNewsSeen } from './news.js';
 import { icon, instanceIconName, instanceVisual } from '../icons.js';
 import { addOffline, loginMicrosoft, select } from './accounts.js';
-import { createGeneralInstance, quickCreate, upgradeFlow, versionData } from './instances.js';
+import { closeMenus, createGeneralInstance, openMenu, quickCreate, upgradeFlow, versionData } from './instances.js';
 import { notifyOnce, ready, upgradeTarget } from '../services.js';
 import { clearRecentLog, recentLog } from './logview.js';
 import { plan } from '../crash.js';
@@ -198,17 +198,17 @@ function renderSetup(account, instance) {
     if (box.hidden) return;
     const step = (n, title, text, ...actions) =>
         clear(box).append(
-            h('div', { class: 'setup-step' }, `第 ${n} 步（共 2 步）`),
+            h('div', { class: 'setup-steps', role: 'img', 'aria-label': `第 ${n} 步，共 2 步` }, h('span', { class: 'on' }), h('span', { class: n > 1 ? 'on' : '' })),
             h('div', { class: 'setup-title' }, title),
             h('div', { class: 'setup-text' }, text),
             h('div', { class: 'setup-actions' }, ...actions)
         );
     if (!account) {
-        step(1, '登入帳號', '用微軟帳號登入，就能直接連上輝煌的各個分流。',
+        step(1, '登入帳號', '登入後就能直接連上輝煌的各個分流。',
             h('button', { type: 'button', class: 'mc primary', onclick: loginMicrosoft }, '微軟正版登入'),
             h('button', { type: 'button', class: 'mc', onclick: addOffline }, '離線帳號'));
     } else {
-        step(2, '建立遊戲實例', '一鍵安裝輝煌推薦的 Minecraft 版本、Fabric 與 Brilliant-Server-Mod。想玩合作伺服器或單人遊戲，也可以建立一般實例。',
+        step(2, '建立遊戲實例', '一鍵安裝輝煌推薦的版本與模組。',
             h('button', {
                 type: 'button',
                 class: 'mc primary',
@@ -463,10 +463,46 @@ function shardTile(shard, status) {
     );
 }
 
+function shardItems() {
+    const hidden = store.settings?.hiddenShards ?? [];
+    const pick = async (host) => {
+        closeMenus();
+        await saveSettings({ quickJoin: host }).catch(fail);
+        renderShards();
+        renderPlayBar();
+    };
+    const current = store.settings?.quickJoin || '';
+    return [
+        ...SHARDS.map((shard, i) => {
+            if (hidden.includes(shard.host)) return null;
+            const status = statuses[i];
+            const state = status === undefined ? 'pending' : status ? 'up' : 'down';
+            const detail = state === 'pending' ? '查詢中' : status ? (status.online != null ? `${status.online} 人` : '可連線') : '連不上';
+            return h('button', { type: 'button', role: 'menuitem', class: `shard-item ${state}`, 'aria-current': current === shard.host ? 'true' : null, onclick: () => pick(shard.host) },
+                h('span', { class: 'dot' }), shard.label, h('span', { class: 'sub' }, detail));
+        }),
+        h('button', { type: 'button', role: 'menuitem', class: 'shard-item', 'aria-current': current ? null : 'true', onclick: () => pick('') }, h('span', { class: 'dot none' }), '不直連', h('span', { class: 'sub' }, '停在主畫面'))
+    ];
+}
+
+function renderShardPick(target) {
+    const index = target ? SHARDS.indexOf(target) : -1;
+    const status = index >= 0 ? statuses[index] : null;
+    const state = !target ? 'none' : status === undefined ? 'pending' : status ? 'up' : 'down';
+    clear($('#shard-pick')).append(
+        h('span', { class: `dot ${state}` }),
+        h('span', { class: 'grow' }, target ? `直連：${target.label}` : '不直連（主畫面）'),
+        status?.online != null ? h('span', { class: 'sub' }, `${status.online} 人`) : null,
+        icon('chevron-down')
+    );
+    $('#shard-pick').hidden = !!selectedInstance()?.general;
+}
+
 function renderShards() {
     const hidden = store.settings?.hiddenShards ?? [];
     clear($('#shards')).append(...SHARDS.map((shard, i) => (hidden.includes(shard.host) ? null : shardTile(shard, statuses[i]))).filter(Boolean));
     const target = shardOf(store.settings?.quickJoin);
+    renderShardPick(target);
     clear($('#shard-hint')).append(...(selectedInstance()?.general
         ? ['這是一般實例，開始遊戲後會停在主畫面；分流選擇只套用在輝煌實例。']
         : target
@@ -596,8 +632,41 @@ function initFold() {
     applyFold();
 }
 
+function setNewsOpen(open) {
+    document.body.classList.toggle('news-open', open);
+    $('#news-toggle').setAttribute('aria-expanded', String(open));
+    if (open) {
+        if (location.hash !== '#home') location.hash = '#home';
+        markNewsSeen();
+    }
+}
+
 export function initHome() {
     initFold();
+    if (ANDROID) {
+        $('#shard-pick').addEventListener('click', (e) => {
+            if ($('#shard-menu').hidden) clear($('#shard-menu'));
+            openMenu(e, $('#shard-menu'), $('#shard-pick'), shardItems);
+        });
+        $('#news-toggle').addEventListener('click', (e) => {
+            e.stopPropagation();
+            setNewsOpen(!document.body.classList.contains('news-open'));
+        });
+        $('#social-more').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const open = !$('.social').classList.contains('open');
+            $('.social').classList.toggle('open', open);
+            $('#social-more').setAttribute('aria-expanded', String(open));
+        });
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.news, #news-toggle')) setNewsOpen(false);
+            if (!e.target.closest('.social')) {
+                $('.social').classList.remove('open');
+                $('#social-more').setAttribute('aria-expanded', 'false');
+            }
+        });
+        addEventListener('hashchange', () => { if (location.hash !== '#home') setNewsOpen(false); });
+    }
     $('#btn-play').addEventListener('click', () => {
         const action = $('#btn-play').dataset.action;
         if (action === 'create') return quickCreate().catch(fail);

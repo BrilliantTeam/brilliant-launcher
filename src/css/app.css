@@ -383,7 +383,9 @@ dialog.wide { max-width: min(760px, 94vw); }
 .shard-hint button:hover { background: rgba(0, 0, 0, 0.7); }
 .setup { padding: 12px 14px; border-top: 3px solid var(--accent); }
 .setup[hidden] { display: none; }
-.setup-step { font-size: calc(12px * var(--fs, 1)); color: var(--accent-text); letter-spacing: 1px; }
+.setup-steps { display: flex; gap: 6px; margin-bottom: 10px; }
+.setup-steps span { flex: 1; height: 4px; background: var(--glass-line, rgba(255, 255, 255, 0.15)); }
+.setup-steps span.on { background: var(--accent); }
 .setup-title { font-size: calc(16px * var(--fs, 1)); font-weight: 700; }
 .setup-text { font-size: calc(12px * var(--fs, 1)); opacity: 0.8; margin: 2px 0 10px; }
 .setup-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -1937,68 +1939,90 @@ body.game-running :is(.bg-img, .update-chip.ready) { animation-play-state: pause
 :root .split-btn > button.mc:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 :root .split-btn > button.mc + button.mc { border-top-left-radius: 0; border-bottom-left-radius: 0; }
 
-@media (pointer: coarse) and (max-height: 600px) {
-    body { grid-template-rows: 36px 1fr; }
-    .titlebar-brand span, .win, .win-sep, #walker-toggle { display: none; }
-    .tool { width: 40px; height: 32px; }
-    .titlebar-tools { gap: 8px; padding-right: 4px; }
-    .account-chip, .channel-chip, .net-chip, .update-chip { min-height: 32px; }
-    .account-more { min-width: 40px; justify-content: center; }
-    :root[lang] body { grid-template-columns: 80px 1fr; }
-    :root[lang][data-railside="right"] body { grid-template-columns: 1fr 80px; }
-    .rail { overflow: hidden auto; scrollbar-width: none; padding: 8px 0; gap: 4px; }
-    .rail::-webkit-scrollbar { display: none; }
-    .inst-actions, .wardrobe-actions, .log-bar, .pick-tools, .preset-actions, .profile-bar, .setup-actions, .dock-head, .link-actions, .toolbar, .split-btn + .toolbar { gap: 8px; }
-    .rail-spacer { flex: none; }
-    :root[lang] .rail a { flex: none; width: 72px; min-height: 56px; padding: 6px 0 4px; justify-content: center; }
-    .rail a svg { width: 24px; height: 24px; }
-    .page-wrap { padding: 16px 16px 24px; }
-    button.mc, select, input:not([type="checkbox"], [type="radio"], [type="range"]), .settings-nav a, [role="tab"], .inst-group-name, .inst-page-name, .instance-menu button, .account-menu button, [role="menuitem"] { min-height: 48px; }
-    button.mc.icon-btn, .split-btn > #btn-create-more { min-width: 48px; min-height: 48px; }
-    .row button.mc.icon-btn, .world-row button.mc.icon-btn, .wardrobe-actions button.mc.icon-btn { min-width: 48px; min-height: 48px; }
-    .stage-anims .chip, #shard-hint button { min-width: 48px; min-height: 48px; }
-    .settings-nav a { display: inline-flex; align-items: center; }
-    input[type="range"] { height: 48px; }
-    input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; }
-    label:has(> input[type="checkbox"], > input[type="radio"]) { min-height: 48px; display: flex; align-items: center; gap: 8px; }
-    .news-more { display: flex; align-items: center; min-height: 48px; padding: 0 14px; }
+:root[data-platform="android"] {
+    & body { grid-template-columns: 56px 1fr; grid-template-rows: 40px 1fr; }
+    &[data-railside="right"] body { grid-template-columns: 1fr 56px; }
+    & :is(.titlebar-brand span, .win, .win-sep, #walker-toggle, #chip-name) { display: none; }
+    & .titlebar-tools { gap: 4px; padding-right: 4px; }
+    & .tool { width: 40px; height: 36px; }
+    & .account-chip { min-height: 36px; padding: 0 6px; }
+    & .account-more { min-width: 36px; justify-content: center; }
+    & :is(.channel-chip, .net-chip, .update-chip) { min-height: 32px; }
+    & #news-toggle { position: relative; }
+    & body.news-unread #news-toggle::after { content: ''; position: absolute; top: 7px; right: 9px; width: 7px; height: 7px; background: var(--danger); box-shadow: 0 0 0 2px var(--chrome-bg); }
 
-    .view.home.active { overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 360px); grid-template-rows: minmax(0, 1fr); column-gap: 16px; padding: 16px 80px 16px 16px; }
-    .view.home.active:has(> .progress:not([hidden])) { padding-bottom: 72px; }
-    .home-brand, .home-clock, .credit, .widget { display: none; }
-    .home > :is(.news, .dock) { position: relative; inset: auto !important; width: auto; grid-row: 1; align-self: end; max-height: 100%; min-height: 0; }
-    .news > *, .dock > * { flex: none; }
-    .news > .news-list, .dock > .shards, .dock > .setup { flex: 0 1 auto; min-height: 0; overflow-y: auto; scrollbar-width: thin; overscroll-behavior: contain; }
-    :root:not([data-toastpos="top-center"]) .toasts { top: 44px; bottom: auto; }
-    .dock:has(> .setup:not([hidden])) > :is(.dock-head, .shards, .shard-hint) { display: none; }
-    .dock > .shards { display: flex; flex: none; gap: 8px; overflow: auto hidden; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 0; }
-    .dock > .shards::-webkit-scrollbar { display: none; }
-    .dock > .shards > .shard { flex: 0 0 44%; min-width: 0; scroll-snap-align: start; }
-    .shard .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 40px; }
-    .dock > .shard-hint { display: none; }
-    .news-tabs { overflow-x: auto; scrollbar-width: none; }
-    .news-tabs button { flex: 1 0 auto; padding-inline: 10px; white-space: nowrap; }
-    .news > .fold { top: 0; right: 0; z-index: 1; }
-    #home-edit-toggle, .social a[data-url$="/mod/"] { display: none; }
-    :root[data-layout="mirrored"] .home > .dock { order: -1; }
-    :root[data-layout="mirrored"] .view.home.active { padding: 16px 16px 16px 80px; }
-    .social { right: 16px; }
-    :root[data-layout="mirrored"] .social { left: 16px; }
-    .news-list { min-height: 0; }
-    .news-tabs button, .news-list button { min-height: 48px; }
-    .news-tabs { padding-right: 48px; }
-    .shard { padding: 8px 12px; min-height: 48px; }
-    .fold { width: 48px; height: 48px; }
-    .social { gap: 8px; }
-    .social a, .scenic-toggle { width: 48px; height: 48px; }
-    .progress { padding: 8px 16px 9px; }
-}
-@media (pointer: coarse) and (max-height: 600px) and (max-width: 760px) {
-    .view.home.active { grid-template-columns: minmax(0, 1fr); }
-    .home > .news { display: none; }
-}
-@media (pointer: coarse) and (max-height: 340px) {
-    .view.home.active { padding-top: 8px; padding-bottom: 8px; }
-    .dock { gap: 6px; }
-    .shard .bar { display: none; }
+    & .rail { overflow: hidden auto; scrollbar-width: none; padding: 6px 0; gap: 2px; }
+    & .rail::-webkit-scrollbar { display: none; }
+    &[lang] .rail a { flex: none; width: 44px; min-height: 44px; padding: 0; justify-content: center; }
+    & .rail a > span { display: none; }
+    & .rail a svg { width: 22px; height: 22px; }
+    & .rail :is(a[data-view="profile"], a[data-view="album"], a[data-view="explore"], a[data-view="about"], .rail-custom) { display: none; }
+    & #rail-more { order: 98; }
+    & .rail-spacer { flex: none; }
+
+    & .page-wrap { padding: 12px 16px 24px; }
+    & :is(.inst-actions, .wardrobe-actions, .log-bar, .pick-tools, .preset-actions, .profile-bar, .setup-actions, .link-actions, .toolbar, .split-btn + .toolbar) { gap: 8px; }
+    & :is(button.mc, select, input:not([type="checkbox"], [type="radio"], [type="range"]), [role="tab"], .inst-group-name, .inst-page-name, .instance-menu button, .account-menu button, [role="menuitem"]) { min-height: 40px; }
+    & :is(button.mc.icon-btn, .split-btn > #btn-create-more, .stage-anims .chip) { min-width: 40px; min-height: 40px; }
+    & input[type="range"] { height: 40px; }
+    & :is(input[type="checkbox"], input[type="radio"]) { width: 18px; height: 18px; }
+    & label:has(> input[type="checkbox"], > input[type="radio"]) { min-height: 40px; display: flex; align-items: center; gap: 8px; }
+    & .hint-tip > summary { top: -10px; right: -8px; width: 40px; height: 40px; }
+    & :is(button.mc, .rail a, .tool, .shard-pick, .account-chip, .account-more, .social a, .social .scenic-toggle, #view-settings .settings-nav a) { position: relative; }
+    & :is(button.mc, .rail a, .tool, .shard-pick, .account-chip, .account-more, .social a, .social .scenic-toggle, #view-settings .settings-nav a)::before { content: ''; position: absolute; inset: -4px; }
+    & .field:has(> .hint-tip) > :first-child { padding-right: 36px; }
+    &:not([data-toastpos="top-center"]) .toasts { top: 44px; bottom: auto; }
+    & .inst-menu button[aria-current="true"] { color: var(--accent-text); }
+
+    & .home :is(.home-brand, .home-clock, .credit, .widget, .dock-head, .shards, .shard-hint, #home-edit-toggle, .news > .fold) { display: none; }
+    & .home .social a[data-url$="/mod/"] { display: none; }
+    & .home > .dock { position: absolute; inset: auto 12px 12px auto; width: 300px; display: flex; flex-direction: column; gap: 8px; padding: 10px; background: var(--glass-bg); border: 1px solid var(--glass-line); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+    &[data-layout="mirrored"] .home > .dock { inset: auto auto 12px 12px; }
+    & .home:has(> .progress:not([hidden])) > .dock { bottom: 64px; }
+    & .dock > .launch { display: contents; }
+    & .dock .instance-pick { order: 1; flex: none; padding: 0 28px 0 0; background: none; border: 0; box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; }
+    & .dock .shard-pick { order: 2; }
+    & .dock button.play { order: 3; min-height: 56px; width: 100%; min-width: 0; padding: 6px 12px; }
+    & .dock > .instance-menu { bottom: calc(100% + 6px); }
+    & .shard-pick { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 10px; font: inherit; font-size: calc(13px * var(--fs, 1)); text-align: left; color: var(--glass-ink); background: rgba(255, 255, 255, 0.08); border: 1px solid var(--glass-line); cursor: pointer; }
+    & .shard-pick[hidden] { display: none; }
+    & .shard-pick .grow { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    & :is(.shard-pick, .shard-item) .sub { margin-left: auto; font-size: calc(12px * var(--fs, 1)); color: var(--glass-dim); }
+    & .shard-pick .ico { width: 14px; height: 14px; flex: none; }
+    & :is(.shard-pick, .shard-item) .dot { flex: none; width: 7px; height: 7px; background: var(--accent); }
+    & :is(.shard-pick .dot.down, .shard-item.down .dot) { background: var(--danger); }
+    & :is(.shard-pick .dot.pending, .shard-item.pending .dot, .dot.none) { background: var(--text-faint); }
+    & .shard-item .sub { color: var(--text-subtle); }
+    & #shard-menu { min-width: 260px; }
+
+    & .home > .news { display: none; }
+    & body.news-open .home > .news { display: flex; position: absolute; inset: 8px auto 8px 12px; width: min(340px, calc(100% - 24px)); z-index: 5; }
+    & .news > .news-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+    & .news-tabs { overflow-x: auto; scrollbar-width: none; }
+    & .news-tabs button { flex: 1 0 auto; padding-inline: 10px; white-space: nowrap; min-height: 40px; }
+    & .news-list button { min-height: 40px; }
+    & .news-more { display: flex; align-items: center; min-height: 40px; padding: 0 14px; }
+
+    & .home > .social { inset: 8px 12px auto auto; transform: none; gap: 6px; }
+    & .social > :not(#social-more) { display: none; }
+    & .social.open > :is(a, .scenic-toggle):not(#home-edit-toggle, [data-url$="/mod/"]) { display: grid; }
+    & .social :is(a, .scenic-toggle) { width: 40px; height: 40px; place-items: center; }
+
+    & .home > .dock:has(> .setup:not([hidden])) { inset: 50% auto auto 50%; transform: translate(-50%, -50%); width: min(340px, calc(100% - 32px)); padding: 0; background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; z-index: 4; }
+    & .dock:has(> .setup:not([hidden])) > :not(.setup) { display: none; }
+    & .home:has(.setup:not([hidden]))::before { content: ''; position: absolute; inset: 0; background: rgba(0, 0, 0, 0.4); z-index: 3; }
+    & .dock > .setup { padding: 18px; background: var(--panel-face); border: 1px solid var(--glass-line); border-top: 0; }
+    & .setup .setup-actions { flex-direction: column; align-items: stretch; }
+    & .setup .setup-actions .mc.primary { min-height: 44px; }
+    & .setup .setup-actions .mc:not(.primary) { min-height: 40px; color: var(--text-subtle); text-decoration: underline; background: none; border: 0; box-shadow: none; }
+
+    & #view-settings.active { display: grid; grid-template-columns: 160px minmax(0, 1fr); column-gap: 16px; align-items: start; }
+    & #view-settings .settings-head { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    & #view-settings .settings-nav { grid-column: 1; grid-row: 1 / span 40; position: sticky; top: 0; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 2px; margin: 0; padding: 0; background: none; border: 0; }
+    & #view-settings .settings-nav a { display: flex; align-items: center; min-height: 40px; padding: 0 12px; }
+    & #view-settings .settings-nav a[aria-current="true"] { color: var(--accent-text); background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+    & #view-settings .settings-search { order: -1; width: 100%; flex: none; margin: 0 0 6px; }
+    & #view-settings > :not(.settings-nav, .settings-head) { grid-column: 2; min-width: 0; }
+
+    & .progress { padding: 8px 16px 9px; }
 }

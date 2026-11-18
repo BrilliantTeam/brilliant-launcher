@@ -20,10 +20,15 @@ pub fn init() -> TauriPlugin<Wry> {
 
 async fn call(app: &AppHandle, command: &'static str, payload: Value) -> anyhow::Result<Value> {
     let handle = app.state::<Game>().0.clone();
-    tokio::task::spawn_blocking(move || handle.run_mobile_plugin::<Value>(command, payload))
-        .await
-        .context("手機端工作中斷")?
-        .map_err(|e| anyhow::anyhow!("{e}"))
+    for attempt in 0.. {
+        let (handle, payload) = (handle.clone(), payload.clone());
+        let result = tokio::task::spawn_blocking(move || handle.run_mobile_plugin::<Value>(command, payload)).await.context("手機端工作中斷")?;
+        match result {
+            Err(e) if attempt < 20 && e.to_string().contains("not initialized") => tokio::time::sleep(std::time::Duration::from_millis(150)).await,
+            other => return other.map_err(|e| anyhow::anyhow!("{command}：{e}")),
+        }
+    }
+    unreachable!()
 }
 
 pub async fn launch(app: &AppHandle, instance: &Instance, account: &Account, language: &str, join: &str) -> R<()> {

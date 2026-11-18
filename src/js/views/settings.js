@@ -630,6 +630,7 @@ async function renderDataLocation() {
         $('#data-location-status').textContent = String(error?.message ?? error);
         return null;
     }
+    if (!info?.volumes) return null;
     const gb = (n) => `剩 ${fmtBytes(n)}`;
     const places = [
         { label: '手機內部（預設，最快）', path: info.internal, target: '', free: info.internalFree },

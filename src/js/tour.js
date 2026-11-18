@@ -1,3 +1,4 @@
+import { ANDROID } from './api.js';
 import { $, h, modalOpen } from './ui.js';
 import { saveSettings, store } from './store.js';
 
@@ -132,6 +133,7 @@ export function initTours() {
     button.addEventListener('click', () => startTour());
     const auto = () => {
         sync();
+        if (ANDROID) return;
         const view = document.body.dataset.view;
         const id = Object.entries(TOURS).find(([, t]) => t.view === view)?.[0];
         if (!id || !store.settings || (store.settings.toursSeen ?? []).includes(id)) return;

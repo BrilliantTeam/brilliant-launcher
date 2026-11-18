@@ -3,7 +3,7 @@ import { icon } from './icons.js';
 import { $, $$, autoTokens, confirm, dialog, fail, h, modalOpen, rangeFill, toast, guard, workPending } from './ui.js';
 import { emit, loadAccounts, loadInstances, loadSettings, on, saveSettings, selectedAccount, store } from './store.js';
 import { initHome } from './views/home.js';
-import { initInstances } from './views/instances.js';
+import { closeMenus, initInstances, openMenu } from './views/instances.js';
 import { initMods } from './views/mods.js';
 import { initAccounts } from './views/accounts.js';
 import { initSettings } from './views/settings.js';
@@ -218,7 +218,7 @@ function applyTheme() {
         else root.style.removeProperty(`--${name}`);
     }
     root.dataset.heading = look.headingStyle === 'modern' ? 'modern' : 'game';
-    root.style.setProperty('--fs', String(Math.min(130, Math.max(90, Number(look.fontScale) || 100)) / 100 * (ANDROID ? 1.15 : 1)));
+    root.style.setProperty('--fs', String(Math.min(130, Math.max(90, Number(look.fontScale) || 100)) / 100));
     const solid = look.bgSource === 'color';
     root.dataset.bgsource = solid ? 'color' : 'auto';
     const c1 = HEX.test(look.bgColor ?? '') ? look.bgColor : '#1b2027';
@@ -321,6 +321,29 @@ function mountIcons() {
     for (const el of document.querySelectorAll('i[data-icon]')) {
         el.replaceWith(icon(el.dataset.icon, ['ico', el.className].filter(Boolean).join(' ')));
     }
+    for (const hint of document.querySelectorAll('.field > .hint:not([id]):not(.warn)')) {
+        if (hint.textContent.trim().length < 28) continue;
+        hint.replaceWith(h('details', { class: 'hint hint-tip' }, h('summary', { title: '說明', 'aria-label': '說明' }, icon('info-box')), h('div', {}, ...hint.childNodes)));
+    }
+}
+
+const RAIL_MORE = [['profile', 'trophy', '我的輝煌'], ['album', 'image', '相簿與回顧'], ['explore', 'map', '探索'], ['about', 'info-box', '關於']];
+
+function initRailMore() {
+    const menu = $('#rail-more-menu');
+    const link = $('#rail-more');
+    link.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (menu.hidden) menu.replaceChildren();
+        openMenu(e, menu, link, () => RAIL_MORE.map(([view, name, label]) =>
+            h('button', { type: 'button', role: 'menuitem', 'aria-current': location.hash === `#${view}` ? 'true' : null, onclick: () => { closeMenus(); location.hash = `#${view}`; } }, icon(name), label)));
+        if (menu.hidden) return;
+        const rect = link.getBoundingClientRect();
+        Object.assign(menu.style, { left: `${rect.right + 6}px`, top: `${Math.max(8, Math.min(rect.top, innerHeight - menu.offsetHeight - 8))}px`, bottom: 'auto' });
+    });
+    const sync = () => link.classList.toggle('active', RAIL_MORE.some(([view]) => location.hash === `#${view}`));
+    addEventListener('hashchange', sync);
+    sync();
 }
 
 function initChrome() {
@@ -576,6 +599,7 @@ async function boot() {
     window.addEventListener('focus', () => loadAccounts().catch(() => {}));
 
     initHome();
+    if (ANDROID) initRailMore();
     initInstances();
     initMods();
     initAccounts();
@@ -646,9 +670,6 @@ async function boot() {
     });
     startServices();
 
-    if (!store.accounts.length) {
-        toast('第一次使用：請先到「帳號」頁登入，再到「實例管理」建立實例。');
-    }
 }
 
 boot();
