@@ -1678,7 +1678,8 @@ body:not([data-view="home"]) .weather { opacity: 0.45; }
 :root[data-shardstats="off"] :is(.shard .meta, .shard .bar, .dock-total) { display: none; }
 :root[data-lastplayed="off"] .pick-meta { display: none; }
 
-:root[data-cardview="list"] .inst-grid { grid-template-columns: 1fr; gap: 8px; }
+:root[data-cardview="list"] .inst-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+:root[data-cardview="list"] .inst-body { flex: 1 1 auto; min-width: 0; }
 :root[data-cardview="list"] .inst-card { flex-direction: row; align-items: stretch; }
 :root[data-cardview="list"] .inst-banner { flex: 0 0 150px; height: auto; min-height: 84px; border-bottom: 0; border-right: 2px solid var(--border-soft); }
 :root[data-cardview="list"] .inst-body { display: flex; flex-direction: column; justify-content: center; padding: 10px 14px; }
@@ -1960,7 +1961,10 @@ body.game-running :is(.bg-img, .update-chip.ready) { animation-play-state: pause
     & #rail-more { order: 98; }
     & .rail-spacer { flex: none; }
 
-    & .page-wrap { padding: 12px 16px 24px; }
+    & .page-wrap { padding: 8px 8px 16px; }
+    & .page-wrap .container { max-width: none; padding: 12px 14px 16px; }
+    & .page-wrap h1 { margin-bottom: 10px; padding-bottom: 4px; font-size: calc(20px * var(--fs, 1)); }
+    & #view-instances .store-head > .store-instance { display: none; }
     & :is(.inst-actions, .wardrobe-actions, .log-bar, .pick-tools, .preset-actions, .profile-bar, .setup-actions, .link-actions, .toolbar, .split-btn + .toolbar) { gap: 8px; }
     & :is(button.mc, select, input:not([type="checkbox"], [type="radio"], [type="range"]), [role="tab"], .inst-group-name, .inst-page-name, .instance-menu button, .account-menu button, [role="menuitem"]) { min-height: 40px; }
     & :is(button.mc.icon-btn, .split-btn > #btn-create-more, .stage-anims .chip) { min-width: 40px; min-height: 40px; }
@@ -2025,4 +2029,14 @@ body.game-running :is(.bg-img, .update-chip.ready) { animation-play-state: pause
     & #view-settings > :not(.settings-nav, .settings-head) { grid-column: 2; min-width: 0; }
 
     & .progress { padding: 8px 16px 9px; }
+
+    & dialog { inset: 0 0 0 auto; width: 100%; max-width: min(480px, 100vw); height: 100%; max-height: 100%; margin: 0; border: 0; border-left: 4px solid var(--accent); transform: translateX(32px); }
+    & dialog.wide { max-width: min(640px, 100vw); }
+    & dialog[open] { display: flex; flex-direction: column; transform: none; }
+    & dialog .dlg-body { flex: 1 1 auto; max-height: none; padding: 16px; }
+    & dialog .dlg-foot { flex: none; padding: 10px 16px; border-top: 1px solid var(--border-soft); background: var(--content-bg); }
+    & dialog h2, & dialog::backdrop { cursor: default; }
+    @starting-style { & dialog[open] { opacity: 0; transform: translateX(32px); } }
+
+    & .inst-banner { flex-basis: 96px; min-height: 64px; }
 }

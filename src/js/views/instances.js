@@ -1533,7 +1533,16 @@ const dragged = () => Date.now() - dragEndedAt < 300;
 
 function startDrag(event, source, item) {
     if (event.button !== 0 || event.target.closest('.inst-actions, .inst-group > .mc, input, select, textarea, .inst-menu')) return;
-    dragState = { item, source, x: event.clientX, y: event.clientY, ghost: null };
+    const touch = event.pointerType === 'touch';
+    dragState = { item, source, x: event.clientX, y: event.clientY, ghost: null, armed: !touch };
+    if (touch) {
+        dragState.timer = setTimeout(() => {
+            if (!dragState) return;
+            dragState.armed = true;
+            navigator.vibrate?.(15);
+            liftDrag(dragState.x, dragState.y);
+        }, 400);
+    }
     addEventListener('pointermove', moveDrag);
     addEventListener('pointerup', endDrag, { once: true });
     addEventListener('pointercancel', cancelDrag, { once: true });
@@ -1553,15 +1562,29 @@ function dropTargetAt(x, y) {
     return { el: spot, group: groupList().some((g) => g.name === group) ? group : '' };
 }
 
+function holdScroll(event) {
+    if (dragState?.armed) event.preventDefault();
+}
+
+function liftDrag(x, y) {
+    dragState.ghost = h('div', { class: 'drag-ghost' }, icon(dragState.item.kind === 'group' ? 'folder' : 'zap'), dragState.item.label);
+    document.body.append(dragState.ghost);
+    dragState.source.classList.add('dragging');
+    document.body.classList.add('inst-dragging');
+    dragState.ghost.style.transform = `translate(${x + 12}px, ${y + 12}px)`;
+}
+
 function moveDrag(event) {
     if (!dragState) return;
     if (!(event.buttons & 1)) return cancelDrag();
+    const distance = Math.hypot(event.clientX - dragState.x, event.clientY - dragState.y);
+    if (!dragState.armed) {
+        if (distance > 8) cancelDrag();
+        return;
+    }
     if (!dragState.ghost) {
-        if (Math.hypot(event.clientX - dragState.x, event.clientY - dragState.y) < 6) return;
-        dragState.ghost = h('div', { class: 'drag-ghost' }, icon(dragState.item.kind === 'group' ? 'folder' : 'zap'), dragState.item.label);
-        document.body.append(dragState.ghost);
-        dragState.source.classList.add('dragging');
-        document.body.classList.add('inst-dragging');
+        if (distance < 6) return;
+        liftDrag(event.clientX, event.clientY);
     }
     dragState.ghost.style.transform = `translate(${event.clientX + 12}px, ${event.clientY + 12}px)`;
     const wrap = $('#view-instances').closest('.page-wrap') ?? $('.page-wrap');
@@ -1585,6 +1608,7 @@ function moveDrag(event) {
 }
 
 function cancelDrag() {
+    clearTimeout(dragState?.timer);
     removeEventListener('pointermove', moveDrag);
     removeEventListener('pointerup', endDrag);
     removeEventListener('pointercancel', cancelDrag);
@@ -1696,6 +1720,7 @@ async function assignGroup(instance, name) {
 }
 
 export function initInstances() {
+    $('#instance-list').addEventListener('touchmove', holdScroll, { passive: false });
     provide('playInstance', playInstance);
     provide('manageMods', manageMods);
     $('#btn-new-instance').addEventListener('click', guard(() => createInstance()));

@@ -611,6 +611,8 @@ async function scanDisk() {
             h('div', { class: 'toolbar desktop-only' }, h('button', { type: 'button', class: 'mc', onclick: () => api.open_instance_folder({ id: inst.id, sub: '' }).then((path) => api.open_path({ path })).catch(fail) }, icon('folder'), '開啟資料夾')))));
 }
 
+const ANDROID_HIDDEN = ['set-width', 'set-height', 'set-window-mode', 'set-window-monitor', 'set-cursor', 'set-content-width', 'set-shard-layout', 'set-play-size', 'set-countdown-title', 'set-countdown-at', 'set-tagline', 'set-clock', 'set-clock-format', 'set-clock-style', 'set-clock-position', 'set-card-view', 'set-cards', 'set-card-hover', 'set-cover-height', 'set-cover-pos', 'set-wrapper', 'set-env', 'set-dgpu', 'set-debug', 'set-brand', 'set-credit'];
+
 let moving = false;
 
 const whenVisible = () => new Promise((resolve) => {
@@ -1334,6 +1336,16 @@ export function initSettings() {
         await api.open_path({ path: paths[0][1] }).catch(fail);
     }));
     if (ANDROID) {
+        for (const id of ANDROID_HIDDEN) {
+            const input = $(`#${id}`);
+            input?.closest('.check-row > label, .field')?.classList.add('desktop-only');
+        }
+        const countdownHint = $('#set-countdown-title').closest('.field-row')?.nextElementSibling;
+        if (countdownHint?.matches('.hint')) countdownHint.classList.add('desktop-only');
+        $('#btn-home-edit').closest('.field')?.classList.add('desktop-only');
+        for (const row of $$('#view-settings .field-row')) {
+            if ([...row.children].every((child) => child.classList.contains('desktop-only'))) row.classList.add('desktop-only');
+        }
         renderDataLocation().then((info) => info?.missing && toast('讀不到之前選的資料位置，暫時改用手機內部的資料，詳情請看「設定」的「資料位置」', 'warn'));
         $('#btn-data-move').addEventListener('click', guard(async () => {
             const typed = $('#data-location-custom').value.trim();

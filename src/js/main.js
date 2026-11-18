@@ -1,6 +1,6 @@
 import { ANDROID, api, appVersion, appWindow, fileSrc, listen, openUrl, setZoom } from './api.js';
 import { icon } from './icons.js';
-import { $, $$, autoTokens, confirm, dialog, fail, h, modalOpen, rangeFill, toast, guard, workPending } from './ui.js';
+import { $, $$, autoTokens, confirm, dialog, dismissDialog, fail, h, modalOpen, rangeFill, toast, guard, workPending } from './ui.js';
 import { emit, loadAccounts, loadInstances, loadSettings, on, saveSettings, selectedAccount, store } from './store.js';
 import { initHome } from './views/home.js';
 import { closeMenus, initInstances, openMenu } from './views/instances.js';
@@ -234,7 +234,7 @@ function applyTheme() {
     root.dataset.social = look.showSocial === false ? 'off' : 'on';
     root.dataset.shardstats = look.showShardStats === false ? 'off' : 'on';
     root.dataset.lastplayed = look.showLastPlayed === false ? 'off' : 'on';
-    root.dataset.cardview = pick(look.cardView, ['grid', 'list', 'poster'], 'grid');
+    root.dataset.cardview = ANDROID ? 'list' : pick(look.cardView, ['grid', 'list', 'poster'], 'grid');
     root.dataset.cardhover = pick(look.cardHover, ['lift', 'zoom', 'none'], 'lift');
     root.style.setProperty('--cover-shade', String(Math.min(80, Math.max(0, Number(look.coverShade ?? 35))) / 100));
     root.style.setProperty('--cover-pos', pick(look.coverPosition, ['top', 'center', 'bottom'], 'center'));
@@ -402,6 +402,14 @@ function initChrome() {
     });
     mountIcons();
     if (!ANDROID) initWindowChrome();
+    else {
+        document.addEventListener('click', (e) => {
+            const dlg = e.target;
+            if (!(dlg instanceof HTMLDialogElement) || !dlg.open) return;
+            const box = dlg.getBoundingClientRect();
+            if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) dlg.id === 'dlg' ? dismissDialog(null) : dlg.close();
+        });
+    }
 
     const mac = navigator.userAgent.includes('Mac');
     if (mac) $$('kbd.mod-key').forEach((k) => { k.textContent = '⌘'; });
