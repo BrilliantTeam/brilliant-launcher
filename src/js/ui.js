@@ -297,12 +297,16 @@ export function dialog({ title, content, wide = false, buttons = [{ label: 'é—œé
 
         for (const btn of buttons) {
             foot.append(
-                h('button', { type: 'button', class: `mc ${btn.kind ?? (DESTRUCTIVE.test(btn.label) && btn.value ? 'danger' : '')}`.trim(), onclick: () => close(btn.value) }, btn.label)
+                h('button', { type: 'button', class: `mc ${btn.kind ?? (DESTRUCTIVE.test(btn.label) && btn.value ? 'danger' : '')}`.trim(), onclick: () => {
+                    const problem = btn.check?.();
+                    if (problem) return toast(problem, 'error');
+                    close(btn.value);
+                } }, btn.label)
             );
         }
         dlg.showModal();
         if ($('#toasts').childElementCount) raiseToasts();
-        const field = body.querySelector('input[type="text"]:not([disabled])');
+        const field = ANDROID ? null : body.querySelector('input[type="text"]:not([disabled])');
         (field ?? foot.querySelector('button'))?.focus();
     });
 }

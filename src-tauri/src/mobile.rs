@@ -31,14 +31,11 @@ async fn call(app: &AppHandle, command: &'static str, payload: Value) -> anyhow:
     unreachable!()
 }
 
-pub async fn launch(app: &AppHandle, instance: &Instance, account: &Account, language: &str, join: &str, proxy: &[String]) -> R<()> {
-    if crate::forge::is_forge_like(&instance.loader) {
-        bail!("手機版目前只支援原版與 Fabric 實例");
-    }
+pub async fn launch(app: &AppHandle, instance: &Instance, version_id: &str, account: &Account, language: &str, join: &str, proxy: &[String]) -> R<()> {
     let msa = account.kind == "msa";
     let jvm_args = std::iter::once(format!("-Dbrilliant.launcher={} -Dbrilliant.android=true", env!("CARGO_PKG_VERSION"))).chain(proxy.iter().cloned()).collect::<Vec<_>>().join(" ");
     call(app, "launch", json!({
-        "versionId": instance.version_id,
+        "versionId": version_id,
         "gameDir": crate::paths::game_dir(&instance.id).strip_prefix(crate::paths::root()).context("遊戲資料夾不在啟動器資料夾內")?.to_string_lossy().replace('\\', "/"),
         "username": account.name,
         "uuid": account.uuid,
@@ -127,6 +124,47 @@ pub async fn stop_game(app: &AppHandle) {
     let _ = call(app, "stopGame", json!({})).await;
 }
 
+pub async fn run_installer(app: &AppHandle, mc: &str, jar: &std::path::Path, target: &std::path::Path, log: &std::path::Path) -> R<bool> {
+    let _ = std::fs::remove_file(log);
+    let java_args = format!("-Djava.awt.headless=true -jar {} --installClient {}", jar.display(), target.display());
+    call(app, "runInstaller", json!({ "versionId": mc, "javaArgs": java_args })).await.context("無法啟動載入器安裝程式")?;
+    let outcome = || {
+        let text = std::fs::read_to_string(log).unwrap_or_default();
+        if text.contains("Successfully installed client") {
+            Some(true)
+        } else if text.contains("There was an error during installation") {
+            Some(false)
+        } else {
+            None
+        }
+    };
+    let done = || outcome() == Some(true);
+    let mut started = false;
+    for second in 0..1800 {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        if let Some(ok) = outcome() {
+            for _ in 0..20 {
+                if !call(app, "installerRunning", json!({})).await.map(|v| v["running"].as_bool().unwrap_or(false)).unwrap_or(false) {
+                    return Ok(ok);
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            let _ = call(app, "stopInstaller", json!({})).await;
+            return Ok(ok);
+        }
+        let running = call(app, "installerRunning", json!({})).await.map(|v| v["running"].as_bool().unwrap_or(false)).unwrap_or(false);
+        if running {
+            started = true;
+        } else if started {
+            return Ok(done());
+        } else if second >= 60 {
+            bail!("載入器安裝程式沒有啟動");
+        }
+    }
+    let _ = call(app, "stopInstaller", json!({})).await;
+    bail!("載入器安裝程式執行太久，已停止等待")
+}
+
 pub async fn game_running(app: &AppHandle) -> bool {
     call(app, "gameRunning", json!({})).await.map(|v| v["running"].as_bool().unwrap_or(false)).unwrap_or(false)
 }
@@ -149,6 +187,7 @@ pub async fn data_location(app: &AppHandle) -> R<Value> {
     info["internal"] = json!(crate::paths::default_root().to_string_lossy());
     info["missing"] = json!(chosen.as_ref().is_some_and(|c| *c != root));
     info["chosen"] = json!(chosen.map(|c| c.to_string_lossy().to_string()));
+    info["play"] = json!(crate::commands::PLAY);
     Ok(info)
 }
 
@@ -246,28 +285,54 @@ pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
     Ok(to.to_string_lossy().to_string())
 }
 
-const PERFORMANCE_MODS: [(&str, &str); 3] = [("ferrite-core", "FerriteCore"), ("lithium", "Lithium"), ("entityculling", "Entity Culling")];
+const PERFORMANCE_MODS: [(&str, &str); 5] = [("ferrite-core", "FerriteCore"), ("lithium", "Lithium"), ("entityculling", "Entity Culling"), ("sodium", "Sodium"), ("immediatelyfast", "ImmediatelyFast")];
+
+fn offered_mods(marker: &str) -> Vec<String> {
+    let listed: Vec<String> = marker.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect();
+    if listed.is_empty() {
+        PERFORMANCE_MODS[..3].iter().map(|(p, _)| p.to_string()).collect()
+    } else {
+        listed
+    }
+}
 
 pub async fn performance_mods(app: &AppHandle, instance: &Instance, settings: &crate::config::Settings) -> Option<String> {
     let marker = crate::paths::instance_dir(&instance.id).join("mobile-performance-mods");
-    if marker.exists() {
+    let mut offered = match std::fs::read_to_string(&marker) {
+        Ok(text) => offered_mods(&text),
+        Err(_) => Vec::new(),
+    };
+    let pending: Vec<_> = PERFORMANCE_MODS.iter().filter(|(p, _)| !offered.iter().any(|o| o == p)).collect();
+    if pending.is_empty() {
         return None;
     }
     crate::net::emit_stage(app, "mods", "安裝手機版效能模組");
     let mut added = Vec::new();
-    let mut failed = 0;
-    for (project, name) in PERFORMANCE_MODS {
+    for (project, name) in pending {
         match crate::modrinth::install(app, &instance.id, crate::modrinth::Kind::Mod, &instance.loader, project, &instance.mc_version, instance.wants_rich_presence(settings), instance.channel(settings)).await {
-            Ok(files) if !files.is_empty() => added.push(name),
-            Ok(_) => {}
-            Err(e) if format!("{:#}", e.0).contains("沒有支援 Minecraft") => {}
-            Err(_) => failed += 1,
+            Ok(files) => {
+                if !files.is_empty() {
+                    added.push(*name);
+                }
+                offered.push(project.to_string());
+            }
+            Err(e) if format!("{:#}", e.0).contains("沒有支援 Minecraft") => offered.push(project.to_string()),
+            Err(_) => {}
         }
     }
-    if failed < PERFORMANCE_MODS.len() {
-        let _ = std::fs::write(&marker, b"");
-    }
+    let _ = std::fs::write(&marker, offered.join("\n"));
     (!added.is_empty()).then(|| format!("已為手機版安裝效能模組：{}，不需要可以到「模組」頁移除", added.join("、")))
+}
+
+#[cfg(test)]
+mod performance_tests {
+    use super::*;
+
+    #[test]
+    fn old_empty_marker_means_first_three_offered() {
+        assert_eq!(offered_mods(""), vec!["ferrite-core", "lithium", "entityculling"]);
+        assert_eq!(offered_mods("sodium\nlithium\n"), vec!["sodium", "lithium"]);
+    }
 }
 
 pub async fn install_apk(app: &AppHandle, path: &std::path::Path) -> R<String> {

@@ -488,7 +488,15 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         if !instance.general && instance.loader == "fabric" {
             notes.extend(crate::mobile::performance_mods(app, &instance, &settings).await);
         }
-        crate::mobile::launch(app, &instance, &account, &settings.language, settings.quick_join.trim(), &crate::advanced::proxy_props(&settings.proxy)).await?;
+        if instance.loader == "neoforge" {
+            crate::forge::disable_early_window(&paths::game_dir(&instance.id));
+        }
+        let version_id = if crate::forge::is_forge_like(&instance.loader) {
+            crate::forge::install(app, &instance.loader, &instance.mc_version, &instance.loader_version, settings.use_mirror).await?
+        } else {
+            instance.version_id.clone()
+        };
+        crate::mobile::launch(app, &instance, &version_id, &account, &settings.language, settings.quick_join.trim(), &crate::advanced::proxy_props(&settings.proxy)).await?;
         let _ = game_dir;
         let begun = now_secs();
         let stop = watch_mobile(app, &instance, begun).await;

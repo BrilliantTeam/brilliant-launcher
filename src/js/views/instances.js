@@ -7,7 +7,7 @@ import { icon, iconOf, INSTANCE_ICONS, instanceIconName, instanceVisual, svgFrom
 const isSvg = (path) => /\.svg$/i.test(path || '');
 import { importPicture } from '../crop.js';
 import { importPack, openStore } from './mods.js';
-import { isPreparing, repairInstance } from './home.js';
+import { forceStop, isPreparing, repairInstance } from './home.js';
 import { jvmPresetButtons, SHARE_INFO, SHARE_LABELS, SYNC_LABELS } from './settings.js';
 import { perfCheck } from '../perf.js';
 
@@ -245,18 +245,19 @@ async function editorDialog(title, source) {
         content,
         buttons: [
             { label: '取消', value: false },
-            { label: '確定', value: true }
+            {
+                label: '確定', value: true, check: () => {
+                    const problem = !name.value.trim() ? '請輸入實例名稱' : nameTaken(name.value, source.id) ? `已經有叫「${name.value.trim()}」的實例了，請換一個名稱` : '';
+                    if (problem) {
+                        name.scrollIntoView({ block: 'center' });
+                        name.focus({ preventScroll: true });
+                    }
+                    return problem;
+                }
+            }
         ]
     });
     if (ok !== true) return null;
-    if (!name.value.trim()) {
-        toast('請輸入實例名稱', 'error');
-        return null;
-    }
-    if (nameTaken(name.value, source.id)) {
-        toast(`已經有叫「${name.value.trim()}」的實例了，請換一個名稱`, 'error');
-        return null;
-    }
     return {
         ...source,
         name: name.value.trim(),
@@ -904,6 +905,7 @@ export function moreMenu(instance) {
         item('bug', '匯出診斷包', () => exportDiagnostics(instance)),
         item('copy', '複製實例', () => duplicateInstance(instance)),
         item('archive', '存成範本⋯', () => saveAsTemplate(instance)),
+        ANDROID && isRunning(instance.id) ? item('close', '強制結束遊戲', () => forceStop(instance), 'danger') : null,
         item('trash', '刪除實例', () => removeInstance(instance), 'danger')];
     const toggle = h('button', {
         type: 'button',

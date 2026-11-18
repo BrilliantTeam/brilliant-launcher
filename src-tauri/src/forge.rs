@@ -104,6 +104,14 @@ pub fn version_id(loader: &str, mc: &str, version: &str) -> String {
     }
 }
 
+fn complete(path: &std::path::Path) -> bool {
+    if path.extension().is_some_and(|e| e == "jar") {
+        std::fs::File::open(path).ok().is_some_and(|f| zip::ZipArchive::new(f).is_ok())
+    } else {
+        path.is_file()
+    }
+}
+
 fn read_installer(jar: &PathBuf) -> R<(String, Vec<PathBuf>)> {
     let mut zip = zip::ZipArchive::new(std::fs::File::open(jar)?).context("安裝器檔案損毀")?;
     let mut raw = String::new();
@@ -124,9 +132,6 @@ fn read_installer(jar: &PathBuf) -> R<(String, Vec<PathBuf>)> {
 }
 
 pub async fn install(app: &AppHandle, loader: &str, mc: &str, version: &str, mirror: bool) -> R<String> {
-    if cfg!(target_os = "android") {
-        bail!("手機版目前只支援原版與 Fabric 實例，Forge 與 NeoForge 請在電腦版遊玩");
-    }
     if !is_forge_like(loader) || !paths::valid_version_id(mc) || !paths::valid_version_id(version) {
         bail!("載入器版本不正確：{loader} {version}");
     }
@@ -145,25 +150,42 @@ pub async fn install(app: &AppHandle, loader: &str, mc: &str, version: &str, mir
             return Err(error);
         }
     };
-    if paths::version_json(&id).is_file() && generated.iter().all(|p| p.is_file()) {
+    if paths::version_json(&id).is_file() && generated.iter().all(|p| complete(p)) {
         return Ok(id);
     }
     let base = version::resolve(mc, mirror).await?;
-    let java_exe = java::ensure(app, &base.java_version.component, base.java_version.major_version, "", mirror, true).await?;
+    if let Some(client) = &base.client {
+        let file = DlFile::new(client.url.clone(), paths::version_jar(&base.base_id)).sha1(client.sha1.clone()).size(client.size);
+        net::download_all(app, "loader", vec![file], mirror).await?;
+    }
     let root = paths::shared();
     let profiles = root.join("launcher_profiles.json");
     if !profiles.is_file() {
         net::write_file(&profiles, br#"{"profiles":{}}"#, false).await?;
     }
     net::emit_stage(app, "loader", &format!("安裝 {} {version}（第一次需要幾分鐘）", display(loader)));
-    let mut cmd = tokio::process::Command::new(&java_exe);
-    cmd.arg("-Djava.awt.headless=true").arg("-jar").arg(&jar).arg("--installClient").arg(&root).current_dir(&root).kill_on_drop(true);
-    java::hide_console(&mut cmd);
-    let output = cmd.output().await.with_context(|| format!("無法執行 Java：{}", java_exe.display()))?;
-    let log = [output.stdout, output.stderr].concat();
+    #[cfg(target_os = "android")]
+    let (ok, log) = {
+        let _ = base;
+        let log = paths::root().join("latestlog.txt");
+        let ok = crate::mobile::run_installer(app, mc, &jar, &root, &log).await?;
+        if !ok {
+            let _ = std::fs::remove_file(paths::version_json(&id));
+        }
+        (ok, std::fs::read(&log).unwrap_or_default())
+    };
+    #[cfg(not(target_os = "android"))]
+    let (ok, log) = {
+        let java_exe = java::ensure(app, &base.java_version.component, base.java_version.major_version, "", mirror, true).await?;
+        let mut cmd = tokio::process::Command::new(&java_exe);
+        cmd.arg("-Djava.awt.headless=true").arg("-jar").arg(&jar).arg("--installClient").arg(&root).current_dir(&root).kill_on_drop(true);
+        java::hide_console(&mut cmd);
+        let output = cmd.output().await.with_context(|| format!("無法執行 Java：{}", java_exe.display()))?;
+        (output.status.success(), [output.stdout, output.stderr].concat())
+    };
     let log_file = paths::logs().join(format!("{loader}-installer.log"));
     let _ = net::write_file(&log_file, &log, false).await;
-    if !output.status.success() || !paths::version_json(&id).is_file() || !generated.iter().all(|p| p.is_file()) {
+    if !ok || !paths::version_json(&id).is_file() || !generated.iter().all(|p| complete(p)) {
         let text = String::from_utf8_lossy(&log);
         let tail: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
         bail!("{} 安裝失敗，詳細紀錄在 {}\n{}", display(loader), log_file.display(), tail[tail.len().saturating_sub(6)..].join("\n"));
@@ -171,9 +193,36 @@ pub async fn install(app: &AppHandle, loader: &str, mc: &str, version: &str, mir
     Ok(id)
 }
 
+pub fn early_window_off(text: &str) -> String {
+    if text.lines().any(|line| line.trim_start().starts_with("earlyWindowControl")) {
+        text.lines()
+            .map(|line| if line.trim_start().starts_with("earlyWindowControl") { "earlyWindowControl = false" } else { line })
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        format!("earlyWindowControl = false\n{text}")
+    }
+}
+
+pub fn disable_early_window(game_dir: &std::path::Path) {
+    let file = game_dir.join("config").join("fml.toml");
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    let fixed = early_window_off(&text);
+    if fixed != text && std::fs::create_dir_all(game_dir.join("config")).is_ok() {
+        let _ = std::fs::write(&file, fixed);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn turns_off_neoforge_early_window() {
+        assert_eq!(early_window_off("a = 1\nearlyWindowControl = true\nb = 2"), "a = 1\nearlyWindowControl = false\nb = 2");
+        assert_eq!(early_window_off(""), "earlyWindowControl = false\n");
+        assert_eq!(early_window_off("earlyWindowControl = false"), "earlyWindowControl = false");
+    }
 
     #[test]
     fn maps_minecraft_to_neoforge_versions() {

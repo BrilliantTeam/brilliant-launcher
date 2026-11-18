@@ -47,6 +47,7 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
+            if (providers.gradleProperty("brilliantDev").isPresent) isDebuggable = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro", "proguard-tauri.pro")
             signingConfig = signingConfigs.getByName("release")
         }

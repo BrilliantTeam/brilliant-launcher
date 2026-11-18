@@ -43,10 +43,6 @@ pub async fn take_shortcut(app: AppHandle) -> String {
 #[tauri::command]
 pub async fn data_location(app: AppHandle) -> R<serde_json::Value> {
     #[cfg(target_os = "android")]
-    if PLAY {
-        bail!("Google Play 版不支援變更資料位置")
-    }
-    #[cfg(target_os = "android")]
     return crate::mobile::data_location(&app).await;
     #[cfg(not(target_os = "android"))]
     {
@@ -73,8 +69,8 @@ pub async fn request_storage_access(app: AppHandle) -> R<()> {
 #[tauri::command]
 pub async fn move_data(app: AppHandle, target: String) -> R<String> {
     #[cfg(target_os = "android")]
-    if PLAY {
-        bail!("Google Play 版不支援變更資料位置")
+    if PLAY && !target.trim().is_empty() && !target.contains("/Android/data/") {
+        bail!("Google Play 版只能搬到手機儲存空間或 SD 卡上的 App 專屬資料夾")
     }
     #[cfg(target_os = "android")]
     return crate::mobile::move_data(&app, target).await;

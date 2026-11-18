@@ -638,8 +638,13 @@ async function renderDataLocation() {
     const gb = (n) => `剩 ${fmtBytes(n)}`;
     const places = [
         { label: '手機內部（預設，最快）', path: info.internal, target: '', free: info.internalFree },
-        ...info.volumes.map((v) => ({ label: v.removable ? 'SD 卡' : '手機儲存空間', path: `${v.path}/BrilliantLauncher`, target: v.path, free: v.free }))
+        ...info.volumes.map((v) => {
+            const base = info.play ? v.app : v.path;
+            return { label: `${v.removable ? 'SD 卡' : '手機儲存空間'}${info.play ? '（App 專屬資料夾）' : ''}`, path: `${base}/BrilliantLauncher`, target: base, free: v.free };
+        })
     ];
+    $('#data-location-own').hidden = !!info.play;
+    if (info.play) $('#data-location-hint').textContent = '實例、模組、存檔、截圖與遊戲檔案會一起搬過去；帳號登入資料與啟動器設定一律留在手機內部。SD 卡空間比較大，但讀取比內部儲存慢。放在任何位置都能用系統「檔案」App 側邊選單的「輝煌啟動器」放模組與資源包。App 專屬資料夾會在解除安裝輝煌啟動器時一起刪除，重要的存檔請先備份。';
     const known = places.some((p) => p.path === info.root);
     clear($('#data-location-list')).append(...places.map((place) => {
         const current = place.path === info.root;
@@ -647,14 +652,14 @@ async function renderDataLocation() {
             h('span', { class: 'media-name place' }, `${place.label}　${gb(place.free)}`, h('small', {}, place.path)),
             current ? h('span', { class: 'badge' }, '目前位置') : h('button', { type: 'button', class: 'mc', onclick: guard(() => moveData(place.target, place.path, info)) }, '搬到這裡'));
     }), ...(known ? [] : [h('div', { class: 'media-row current' }, h('span', { class: 'media-name place' }, '自訂資料夾', h('small', {}, info.root)), h('span', { class: 'badge' }, '目前位置'))]));
-    $('#data-location-status').textContent = info.missing ? `讀不到之前選的位置「${info.chosen}」（SD 卡可能被拔除，或「所有檔案存取權」被關閉），目前暫時改用手機內部的資料。插回 SD 卡或重新開啟權限後，重新開啟啟動器即可恢復。` : '';
+    $('#data-location-status').textContent = info.missing ? `讀不到之前選的位置「${info.chosen}」（SD 卡可能被拔除${info.play ? '' : '，或「所有檔案存取權」被關閉'}），目前暫時改用手機內部的資料。插回 SD 卡${info.play ? '' : '或重新開啟權限'}後，重新開啟啟動器即可恢復。` : '';
     return info;
 }
 
 async function moveData(target, shown, info) {
     if (moving) return;
     if (!$('#progress').hidden) return toast('遊戲正在準備或下載中，完成後再搬移資料', 'warn');
-    if (target && !info.granted) {
+    if (target && !info.play && !info.granted) {
         if (!(await confirm('要把資料放在手機儲存空間或 SD 卡，需要開啟「所有檔案存取權」。按「前往設定」後，找到輝煌啟動器並開啟，再回到這裡。', '前往設定'))) return;
         await api.request_storage_access().catch(fail);
         await whenVisible();

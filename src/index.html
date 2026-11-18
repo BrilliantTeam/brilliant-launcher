@@ -1102,15 +1102,15 @@
                     <label><input type="checkbox" id="set-streamer">直播模式</label>
                     <div class="hint">隱藏畫面上的帳號名稱、信箱、伺服器 IP、檔案路徑與截圖座標；上傳日誌、匯出診斷包時也會一併遮蔽 IP、信箱與玩家名稱。</div>
                 </div>
-                <div class="field android-only no-play">
+                <div class="field android-only">
                     <label>資料位置</label>
                     <div class="media-list" id="data-location-list"></div>
-                    <div class="link-add">
+                    <div class="link-add" id="data-location-own">
                         <input type="text" id="data-location-custom" maxlength="300" placeholder="或輸入資料夾路徑，例如 /storage/emulated/0/Games" aria-label="自訂資料夾路徑">
                         <button type="button" class="mc" id="btn-data-move"><i data-icon="folder"></i>搬到這個資料夾</button>
                     </div>
                     <div class="hint" id="data-location-status" role="status"></div>
-                    <div class="hint">實例、模組、存檔、截圖與遊戲檔案會一起搬過去，並自動建立「BrilliantLauncher」資料夾；帳號登入資料與啟動器設定一律留在手機內部。放在手機儲存空間或 SD 卡，就能用檔案管理員直接放模組與資源包，但讀取比內部儲存慢。</div>
+                    <div class="hint" id="data-location-hint">實例、模組、存檔、截圖與遊戲檔案會一起搬過去，並自動建立「BrilliantLauncher」資料夾；帳號登入資料與啟動器設定一律留在手機內部。放在手機儲存空間或 SD 卡，就能用檔案管理員直接放模組與資源包，但讀取比內部儲存慢。</div>
                 </div>
                 <div class="field">
                     <label>磁碟用量</label>

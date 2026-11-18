@@ -29,6 +29,12 @@ class LaunchArgs {
 }
 
 @InvokeArg
+class InstallerArgs {
+  lateinit var versionId: String
+  lateinit var javaArgs: String
+}
+
+@InvokeArg
 class StageArgs {
   lateinit var uri: String
 }
@@ -118,6 +124,29 @@ class GamePlugin(private val activity: Activity) : Plugin(activity) {
   }
 
   @Command
+  fun runInstaller(invoke: Invoke) {
+    val args = invoke.parseArgs(InstallerArgs::class.java)
+    BrilliantLaunch.runInstaller(activity, args.versionId, args.javaArgs, object : BrilliantLaunch.Callback {
+      override fun onStarted() = invoke.resolve()
+      override fun onFailed(error: Throwable) = invoke.reject(error.message ?: error.toString())
+    })
+  }
+
+  @Command
+  fun stopInstaller(invoke: Invoke) {
+    val manager = activity.getSystemService(android.app.ActivityManager::class.java)
+    manager.runningAppProcesses?.filter { it.processName.endsWith(":gui_installer") }?.forEach { android.os.Process.killProcess(it.pid) }
+    invoke.resolve()
+  }
+
+  @Command
+  fun installerRunning(invoke: Invoke) {
+    val manager = activity.getSystemService(android.app.ActivityManager::class.java)
+    val running = manager.runningAppProcesses?.any { it.processName.endsWith(":gui_installer") } == true
+    invoke.resolve(JSObject().put("running", running))
+  }
+
+  @Command
   fun resumeGame(invoke: Invoke) {
     val manager = activity.getSystemService(android.app.ActivityManager::class.java)
     val task = manager.appTasks.firstOrNull { it.taskInfo.baseActivity?.className == "net.kdt.pojavlaunch.MainActivity" }
@@ -176,7 +205,7 @@ class GamePlugin(private val activity: Activity) : Plugin(activity) {
     androidx.core.content.ContextCompat.getExternalFilesDirs(activity, null).filterNotNull().forEachIndexed { index, dir ->
       val root = dir.absolutePath.substringBefore("/Android/data/")
       val removable = try { android.os.Environment.isExternalStorageRemovable(dir) } catch (e: Exception) { index > 0 }
-      volumes.put(JSObject().put("path", root).put("removable", removable).put("free", dir.usableSpace).put("total", dir.totalSpace))
+      volumes.put(JSObject().put("path", root).put("app", dir.absolutePath).put("removable", removable).put("free", dir.usableSpace).put("total", dir.totalSpace))
     }
     invoke.resolve(JSObject().put("granted", storageGranted()).put("volumes", volumes).put("internalFree", activity.filesDir.usableSpace))
   }

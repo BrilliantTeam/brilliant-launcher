@@ -260,7 +260,7 @@ async function splash(title, sub) {
     }, store.settings?.afterLaunch === 'keep' ? 400 : 0);
 }
 
-async function forceStop(instance) {
+export async function forceStop(instance) {
     if (!(await confirm(`要強制結束「${instance.name}」嗎？\n強制結束不會存檔，單人世界最近的進度可能遺失；建議先在遊戲裡按「儲存並離開」${ANDROID ? '' : '或關閉遊戲視窗'}。`, '強制結束'))) return;
     await api.stop_game({ id: instance.id }).then(() => toast(`已強制結束「${instance.name}」`), fail);
 }
@@ -591,6 +591,9 @@ function toggleInstanceMenu(force) {
             : '',
         h('button', { type: 'button', onclick: () => { toggleInstanceMenu(false); location.hash = '#instances'; } }, '管理實例⋯')
     );
+    menu.style.maxHeight = '';
+    const top = $('.titlebar')?.getBoundingClientRect().bottom ?? 0;
+    menu.style.maxHeight = `${Math.max(120, Math.min(260, menu.getBoundingClientRect().bottom - top - 8))}px`;
 }
 
 const FOLD_KEY = 'brilliant.home.fold';
@@ -677,9 +680,11 @@ export function initHome() {
     });
     on('launch', () => (busy ? toast('正在準備遊戲，請等這次完成後再啟動', 'warn') : play()));
     $('#instance-pick').classList.add('glass');
+    if (ANDROID) $('#instance-pick').removeAttribute('aria-haspopup');
     $('#instance-pick').addEventListener('click', (e) => {
         e.stopPropagation();
-        toggleInstanceMenu();
+        if (ANDROID) location.hash = '#instances';
+        else toggleInstanceMenu();
     });
     $('#instance-menu').classList.add('glass');
     document.addEventListener('click', (e) => {
