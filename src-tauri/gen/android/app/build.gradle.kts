@@ -61,6 +61,7 @@ android {
         jniLibs.excludes += listOf("**/libzink_dri.so", "**/libEGL_mesa.so", "**/libglapi.so", "**/libGLESv2_angle.so", "**/libEGL_angle.so", "**/libVkLayer_khronos_timeline_semaphore.so")
     }
     androidResources {
+        localeFilters += listOf("en", "zh-rTW", "zh-rCN")
         ignoreAssetsPatterns += listOf("!<dir>armeabi-v7a", "!<dir>x86", "!<dir>x86_64", "!amethyst.png")
     }
     buildFeatures {
