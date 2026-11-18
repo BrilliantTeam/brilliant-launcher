@@ -405,6 +405,9 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     let started = std::time::Instant::now();
     let mut instance = crate::instance::get(instance_id).await?;
     let account = crate::commands::account_for(&settings, &instance.account).await?;
+    if cfg!(target_os = "android") && account.kind != "msa" {
+        bail!("手機版只支援微軟正版帳號，請到「帳號」改用微軟正版登入");
+    }
     let stale_login = account.kind == "msa" && account.expires_at <= now_secs();
 
     if settings.backup_on_launch {

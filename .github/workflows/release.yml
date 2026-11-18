@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       only_android:
-        description: 只重新打包 Android 版（補發 APK 時用，避免覆蓋已發布的電腦版檔案）
+        description: 只重新打包 Android 版（補出 Google Play 的 AAB，不動已發布的電腦版檔案）
         type: boolean
         default: false
 
@@ -194,48 +194,16 @@ jobs:
           chmod +x gradlew
           ./gradlew :brilliant_runtime:assembleRelease :androidnsbypass:assembleRelease -Porg.gradle.java.installations.paths="$JAVA_HOME_8_X64" --no-daemon --console=plain
 
-      - name: 準備 APK 簽章金鑰
+      - name: 準備 Android 簽章金鑰
         env:
           ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
         run: |
           if [ -z "$ANDROID_KEYSTORE" ]; then
-            echo "::error::缺少 ANDROID_KEYSTORE，拒絕發佈沒有簽章的 APK"
+            echo "::error::缺少 ANDROID_KEYSTORE，拒絕產出沒有簽章的 AAB"
             exit 1
           fi
           echo "$ANDROID_KEYSTORE" | base64 -d > "$RUNNER_TEMP/release.jks"
           echo "BRILLIANT_KEYSTORE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
-
-      - name: 打包 APK
-        working-directory: src-tauri
-        env:
-          ORG_GRADLE_PROJECT_brilliantRuntimeDir: ${{ github.workspace }}/runtime
-          BRILLIANT_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          BRILLIANT_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          BRILLIANT_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: cargo tauri android build --apk --target aarch64 --split-per-abi
-
-      - name: 整理安裝檔名稱
-        run: |
-          mkdir -p release
-          cp src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk "release/BrilliantLauncher_${{ steps.version.outputs.version }}_arm64.apk"
-          ls -la release
-
-      - name: 數位簽章
-        env:
-          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-        run: node .github/sign-release.mjs release "SIGNATURES-Android.json"
-
-      - name: 發佈 Release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: 輝煌啟動器 v${{ steps.version.outputs.version }}
-          generate_release_notes: false
-          draft: false
-          prerelease: ${{ steps.channel.outputs.prerelease }}
-          fail_on_unmatched_files: true
-          overwrite_files: true
-          files: release/*
 
       - name: 打包 Google Play 版 AAB
         working-directory: src-tauri

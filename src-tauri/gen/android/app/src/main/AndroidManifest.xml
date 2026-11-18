@@ -9,6 +9,7 @@
 
     <!-- AndroidTV support -->
     <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <application
         android:icon="@mipmap/ic_launcher"
@@ -19,7 +20,6 @@
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"
-            android:screenOrientation="sensorLandscape"
             android:label="@string/main_activity_title"
             android:name=".MainActivity"
             android:exported="true">
@@ -34,7 +34,6 @@
         <activity
             android:name=".LoginActivity"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|screenLayout|uiMode"
-            android:screenOrientation="sensorLandscape"
             android:theme="@style/Theme.AppCompat.DayNight.NoActionBar" />
         <service
             android:name=".DownloadService"

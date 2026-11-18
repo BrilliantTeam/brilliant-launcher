@@ -28,6 +28,7 @@ android {
         targetSdk = 36
         versionCode = versionCodeOf(appVersion)
         versionName = appVersion
+        if (providers.gradleProperty("brilliantDev").isPresent) applicationIdSuffix = ".dev"
     }
     signingConfigs {
         create("release") {
@@ -45,7 +46,8 @@ android {
             isMinifyEnabled = false
         }
         getByName("release") {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro", "proguard-tauri.pro")
             signingConfig = signingConfigs.getByName("release")
         }
     }
@@ -58,7 +60,7 @@ android {
     packaging {
         jniLibs.useLegacyPackaging = true
         jniLibs.pickFirsts += listOf("**/libbytehook.so", "**/libc++_shared.so", "**/libglxshim.so")
-        jniLibs.excludes += listOf("**/libzink_dri.so", "**/libEGL_mesa.so", "**/libglapi.so", "**/libGLESv2_angle.so", "**/libEGL_angle.so", "**/libVkLayer_khronos_timeline_semaphore.so")
+        jniLibs.excludes += listOf("**/libzink_dri.so", "**/libEGL_mesa.so", "**/libglapi.so", "**/libGLESv2_angle.so", "**/libEGL_angle.so", "**/libVkLayer_khronos_timeline_semaphore.so", "**/libunpack200.so")
     }
     androidResources {
         localeFilters += listOf("en", "zh-rTW", "zh-rCN")
@@ -102,7 +104,7 @@ dependencies {
     implementation("net.sourceforge.htmlcleaner:htmlcleaner:2.6.1")
     implementation("com.bytedance:bytehook:1.0.10")
     implementation("top.fifthlight.touchcontroller:proxy-client-android:0.0.4")
-    implementation("net.java.dev.jna:jna:5.14.0@aar")
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.4")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.5.0")

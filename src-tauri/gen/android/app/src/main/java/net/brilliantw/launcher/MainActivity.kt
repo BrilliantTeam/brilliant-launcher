@@ -1,6 +1,7 @@
 package net.brilliantw.launcher
 
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Build
 import android.os.Bundle
 import android.system.Os
@@ -15,6 +16,7 @@ class MainActivity : TauriActivity() {
     Os.setenv("BRILLIANT_LAUNCHER_HOME", filesDir.resolve("BrilliantLauncher").absolutePath, false)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    if (resources.configuration.smallestScreenWidthDp < 600) requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
     hideSystemBars()
     intent?.getStringExtra(SHORTCUT)?.let { pendingShortcut = it }
   }

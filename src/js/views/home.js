@@ -206,7 +206,7 @@ function renderSetup(account, instance) {
     if (!account) {
         step(1, '登入帳號', '登入後就能直接連上輝煌的各個分流。',
             h('button', { type: 'button', class: 'mc primary', onclick: loginMicrosoft }, '微軟正版登入'),
-            h('button', { type: 'button', class: 'mc', onclick: addOffline }, '離線帳號'));
+            ANDROID ? null : h('button', { type: 'button', class: 'mc', onclick: addOffline }, '離線帳號'));
     } else {
         step(2, '建立遊戲實例', '一鍵安裝輝煌推薦的版本與模組。',
             h('button', {

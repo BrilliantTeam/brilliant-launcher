@@ -319,6 +319,9 @@ pub async fn login_device(app: AppHandle, state: State<'_, AppState>) -> R<Accou
 
 #[tauri::command]
 pub async fn add_offline_account(state: State<'_, AppState>, name: String) -> R<Account> {
+    if cfg!(target_os = "android") {
+        bail!("手機版只支援微軟正版帳號");
+    }
     let account = auth::make_offline(&name)?;
     if config::load_accounts().await.iter().any(|a| a.name.eq_ignore_ascii_case(&account.name)) {
         bail!("已經有叫「{}」的帳號了", account.name);
