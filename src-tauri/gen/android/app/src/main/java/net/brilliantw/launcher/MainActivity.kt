@@ -1,5 +1,6 @@
 package net.brilliantw.launcher
 
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.system.Os
@@ -15,6 +16,12 @@ class MainActivity : TauriActivity() {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     hideSystemBars()
+    intent?.getStringExtra(SHORTCUT)?.let { pendingShortcut = it }
+  }
+
+  override fun onNewIntent(intent: Intent) {
+    super.onNewIntent(intent)
+    intent.getStringExtra(SHORTCUT)?.let { pendingShortcut = it }
   }
 
   override fun onWebViewCreate(webView: WebView) {
@@ -33,5 +40,10 @@ class MainActivity : TauriActivity() {
       systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
       hide(WindowInsetsCompat.Type.systemBars())
     }
+  }
+
+  companion object {
+    const val SHORTCUT = "shortcut"
+    @Volatile var pendingShortcut: String? = null
   }
 }

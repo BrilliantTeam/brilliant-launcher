@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="play" android:enabled="true" android:icon="@drawable/shortcut_play" android:shortcutShortLabel="@string/shortcut_play" android:shortcutLongLabel="@string/shortcut_play_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="net.brilliantw.launcher" android:targetClass="net.brilliantw.launcher.MainActivity">
+            <extra android:name="shortcut" android:value="play" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="shards" android:enabled="true" android:icon="@drawable/shortcut_shards" android:shortcutShortLabel="@string/shortcut_shards" android:shortcutLongLabel="@string/shortcut_shards_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="net.brilliantw.launcher" android:targetClass="net.brilliantw.launcher.MainActivity">
+            <extra android:name="shortcut" android:value="shards" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="news" android:enabled="true" android:icon="@drawable/shortcut_news" android:shortcutShortLabel="@string/shortcut_news" android:shortcutLongLabel="@string/shortcut_news_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="net.brilliantw.launcher" android:targetClass="net.brilliantw.launcher.MainActivity">
+            <extra android:name="shortcut" android:value="news" />
+        </intent>
+    </shortcut>
+    <shortcut android:shortcutId="instances" android:enabled="true" android:icon="@drawable/shortcut_instances" android:shortcutShortLabel="@string/shortcut_instances" android:shortcutLongLabel="@string/shortcut_instances_long">
+        <intent android:action="android.intent.action.VIEW" android:targetPackage="net.brilliantw.launcher" android:targetClass="net.brilliantw.launcher.MainActivity">
+            <extra android:name="shortcut" android:value="instances" />
+        </intent>
+    </shortcut>
+</shortcuts>

@@ -274,3 +274,7 @@ pub async fn install_apk(app: &AppHandle, path: &std::path::Path) -> R<String> {
     let value = call(app, "installApk", json!({ "path": path.to_string_lossy() })).await.context("無法開啟安裝畫面")?;
     Ok(value["status"].as_str().unwrap_or("started").to_string())
 }
+
+pub async fn take_shortcut(app: &AppHandle) -> String {
+    call(app, "takeShortcut", json!({})).await.ok().and_then(|v| v["action"].as_str().map(str::to_string)).unwrap_or_default()
+}

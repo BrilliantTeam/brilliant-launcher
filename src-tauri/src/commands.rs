@@ -28,6 +28,17 @@ pub async fn resume_game(app: AppHandle) -> R<()> {
 }
 
 #[tauri::command]
+pub async fn take_shortcut(app: AppHandle) -> String {
+    #[cfg(target_os = "android")]
+    return crate::mobile::take_shortcut(&app).await;
+    #[cfg(not(target_os = "android"))]
+    {
+        let _ = app;
+        String::new()
+    }
+}
+
+#[tauri::command]
 pub async fn data_location(app: AppHandle) -> R<serde_json::Value> {
     #[cfg(target_os = "android")]
     return crate::mobile::data_location(&app).await;

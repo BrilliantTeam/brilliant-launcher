@@ -116,6 +116,7 @@ pub fn run() {
             commands::stage_picked,
             commands::resume_game,
             commands::data_location,
+            commands::take_shortcut,
             commands::request_storage_access,
             commands::move_data,
             commands::login_device,

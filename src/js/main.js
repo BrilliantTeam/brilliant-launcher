@@ -331,6 +331,20 @@ function mountIcons() {
 
 const RAIL_MORE = [['profile', 'trophy', '我的輝煌'], ['album', 'image', '相簿與回顧'], ['explore', 'map', '探索'], ['about', 'info-box', '關於']];
 
+async function runShortcut() {
+    const action = await api.take_shortcut().catch(() => '');
+    if (!action) return;
+    if (action === 'instances') {
+        location.hash = '#instances';
+        return;
+    }
+    location.hash = '#home';
+    await new Promise((done) => setTimeout(done, 150));
+    if (action === 'play') $('#btn-play').click();
+    else if (action === 'shards') $('#shard-pick').click();
+    else if (action === 'news') $('#news-toggle').click();
+}
+
 function initRailMore() {
     const menu = $('#rail-more-menu');
     const link = $('#rail-more');
@@ -686,6 +700,10 @@ async function boot() {
         setTimeout(() => document.querySelector('#settings-nav a[data-jump="set-update"]')?.click(), 120);
     });
     startServices();
+    if (ANDROID) {
+        runShortcut();
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) runShortcut(); });
+    }
 
 }
 

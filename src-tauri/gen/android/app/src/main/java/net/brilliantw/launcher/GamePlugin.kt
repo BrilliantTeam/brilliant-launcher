@@ -223,4 +223,11 @@ class GamePlugin(private val activity: Activity) : Plugin(activity) {
       invoke.reject(e.message ?: e.toString())
     }
   }
+
+  @Command
+  fun takeShortcut(invoke: Invoke) {
+    val action = MainActivity.pendingShortcut
+    MainActivity.pendingShortcut = null
+    invoke.resolve(JSObject().put("action", action ?: ""))
+  }
 }

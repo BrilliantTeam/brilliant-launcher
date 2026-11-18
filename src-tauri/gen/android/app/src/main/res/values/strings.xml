@@ -1,4 +1,12 @@
 <resources>
     <string name="app_name">"輝煌啟動器"</string>
     <string name="main_activity_title">"輝煌啟動器"</string>
+    <string name="shortcut_play">開始遊戲</string>
+    <string name="shortcut_play_long">用目前的實例與分流開始遊戲</string>
+    <string name="shortcut_shards">選擇分流</string>
+    <string name="shortcut_shards_long">選擇要直連的分流</string>
+    <string name="shortcut_news">公告</string>
+    <string name="shortcut_news_long">查看最新公告</string>
+    <string name="shortcut_instances">實例</string>
+    <string name="shortcut_instances_long">管理遊戲實例</string>
 </resources>
