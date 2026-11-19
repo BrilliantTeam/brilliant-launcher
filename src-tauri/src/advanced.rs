@@ -426,11 +426,42 @@ fn same_dir(a: &Path, b: &Path) -> bool {
     }
 }
 
+fn links_supported(dir: &Path) -> bool {
+    if cfg!(target_os = "windows") {
+        return true;
+    }
+    let probe = dir.join(".brilliant-link-test");
+    let _ = std::fs::remove_file(&probe);
+    #[cfg(not(target_os = "windows"))]
+    let ok = std::os::unix::fs::symlink(dir, &probe).is_ok();
+    #[cfg(target_os = "windows")]
+    let ok = true;
+    let _ = std::fs::remove_file(&probe);
+    ok
+}
+
 pub fn sync_shared(instance: &Instance, settings: &Settings) -> R<Vec<String>> {
     let game = paths::game_dir(&instance.id);
     std::fs::create_dir_all(&game).with_context(|| format!("建立 {} 失敗", game.display()))?;
     let group = settings.instance_groups.iter().find(|g| !instance.group.is_empty() && g.name == instance.group && !g.key.is_empty());
     let mut notes = Vec::new();
+    if group.is_some_and(|g| !g.shared.is_empty()) && !links_supported(&game) {
+        let mut copied = Vec::new();
+        for name in SHAREABLE {
+            let link = game.join(name);
+            let source = group.filter(|g| g.shared.iter().any(|f| f == name)).map(|g| group_base(&g.key).join(name));
+            if let Some(source) = source.filter(|s| s.is_dir()) {
+                if !link.exists() && !is_link(&link) {
+                    copy_dir(&source, &link)?;
+                    copied.push(name);
+                }
+            }
+        }
+        if !copied.is_empty() {
+            notes.push(format!("目前的資料位置不支援共用資料夾，已把分組共用的「{}」複製一份到這個實例；之後的變更不會同步到同組其他實例。資料位置改回手機內部即可恢復共用。", copied.join("、")));
+        }
+        return Ok(notes);
+    }
     for name in SHAREABLE {
         let link = game.join(name);
         let want = group.filter(|g| g.shared.iter().any(|f| f == name)).map(|g| group_base(&g.key).join(name));
