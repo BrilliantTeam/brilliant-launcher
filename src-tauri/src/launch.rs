@@ -481,6 +481,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     let (java_exe, args, game_dir, mut notes) = prepared.context("準備啟動參數失敗")?;
     early_notes.append(&mut notes);
     let notes = early_notes;
+    crate::gameopts::first_launch_defaults(&instance, &settings.language).await;
     #[cfg(target_os = "android")]
     {
         let _ = (java_exe, args, started);

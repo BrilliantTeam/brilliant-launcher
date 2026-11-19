@@ -141,6 +141,110 @@ fn tune_for_mobile(game_dir: &Path, client_jar: &Path, low_memory: bool) -> std:
     Ok(true)
 }
 
+const FIRST_LAUNCH: [(&str, &str); 4] = [("onboardAccessibility", "false"), ("skipMultiplayerWarning", "true"), ("tutorialStep", "none"), ("joinedFirstServer", "true")];
+
+const SERVER_IP: &str = "brilliantw.net";
+
+fn nbt_string(out: &mut Vec<u8>, text: &str) {
+    out.extend((text.len() as u16).to_be_bytes());
+    out.extend(text.as_bytes());
+}
+
+fn server_entry(name: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    for (key, value) in [("ip", SERVER_IP), ("name", name)] {
+        out.push(8);
+        nbt_string(&mut out, key);
+        nbt_string(&mut out, value);
+    }
+    out.push(1);
+    nbt_string(&mut out, "acceptTextures");
+    out.extend([1, 0]);
+    out
+}
+
+fn add_server(bytes: &[u8], name: &str) -> Option<Vec<u8>> {
+    let mut wanted = vec![8];
+    nbt_string(&mut wanted, "ip");
+    nbt_string(&mut wanted, SERVER_IP);
+    if bytes.to_ascii_lowercase().windows(wanted.len()).any(|w| w == wanted.as_slice()) {
+        return None;
+    }
+    let mut head = vec![10, 0, 0, 9];
+    nbt_string(&mut head, "servers");
+    if bytes.is_empty() {
+        let mut out = head;
+        out.push(10);
+        out.extend(1i32.to_be_bytes());
+        out.extend(server_entry(name));
+        out.push(0);
+        return Some(out);
+    }
+    if !bytes.starts_with(&head) || !matches!(bytes.get(head.len()), Some(0 | 10)) {
+        return None;
+    }
+    let at = head.len() + 1;
+    let count = i32::from_be_bytes(bytes.get(at..at + 4)?.try_into().ok()?);
+    if bytes[head.len()] == 0 && count != 0 {
+        return None;
+    }
+    let mut out = head;
+    out.push(10);
+    out.extend((count + 1).to_be_bytes());
+    out.extend(server_entry(name));
+    out.extend(&bytes[at + 4..]);
+    Some(out)
+}
+
+fn first_launch(game_dir: &Path, client_jar: &Path, language: &str, brilliant: bool) -> std::io::Result<()> {
+    std::fs::create_dir_all(game_dir)?;
+    let file = game_dir.join("options.txt");
+    let fresh = !file.exists();
+    let mut current = parse(&std::fs::read_to_string(&file).unwrap_or_default());
+    if fresh {
+        if let Some(version) = data_version(client_jar) {
+            current.push(("version".into(), version.to_string()));
+        }
+        let lang = match language {
+            "zh-CN" => "zh_cn",
+            "en" => "en_us",
+            _ => "zh_tw",
+        };
+        current.push(("lang".into(), lang.into()));
+    }
+    if brilliant {
+        for (key, value) in FIRST_LAUNCH {
+            match current.iter_mut().find(|(k, _)| k == key) {
+                Some(entry) => entry.1 = value.to_string(),
+                None => current.push((key.to_string(), value.to_string())),
+            }
+        }
+    }
+    if fresh || brilliant {
+        paths::write_atomic(&file, render(&current).as_bytes())?;
+    }
+    if brilliant {
+        let servers = game_dir.join("servers.dat");
+        let name = match language {
+            "zh-CN" => "辉煌服务器",
+            "en" => "Brilliant",
+            _ => "輝煌伺服器",
+        };
+        if let Some(bytes) = add_server(&std::fs::read(&servers).unwrap_or_default(), name) {
+            paths::write_atomic(&servers, &bytes)?;
+        }
+    }
+    Ok(())
+}
+
+pub async fn first_launch_defaults(instance: &crate::instance::Instance, language: &str) {
+    if instance.last_played != 0 {
+        return;
+    }
+    let (dir, jar, language, brilliant) = (paths::game_dir(&instance.id), paths::version_jar(&instance.mc_version), language.to_string(), !instance.general);
+    let _ = tokio::task::spawn_blocking(move || first_launch(&dir, &jar, &language, brilliant)).await;
+}
+
 pub async fn mobile_defaults(instance: &crate::instance::Instance) {
     let (dir, jar) = (paths::game_dir(&instance.id), paths::version_jar(&instance.mc_version));
     let _ = tokio::task::spawn_blocking(move || tune_for_mobile(&dir, &jar, low_memory_device())).await;
@@ -174,6 +278,55 @@ mod tests {
         assert!(tune_for_mobile(&game, &base.join("missing.jar"), true).unwrap());
         let text = std::fs::read_to_string(game.join("options.txt")).unwrap();
         assert!(text.starts_with("version:4000\nrenderDistance:5\nlang:zh_tw\n") && text.contains("simulationDistance:5\n") && text.contains("particles:2\n"));
+        std::fs::remove_dir_all(&base).unwrap();
+    }
+
+    #[test]
+    fn first_launch_presets() {
+        let base = std::env::temp_dir().join(format!("bl-first-{}", rand::random::<u32>()));
+        let game = base.join("game");
+        let jar = base.join("missing.jar");
+        first_launch(&game, &jar, "en", false).unwrap();
+        assert_eq!(std::fs::read_to_string(game.join("options.txt")).unwrap(), "lang:en_us
+");
+        assert!(!game.join("servers.dat").exists());
+
+        std::fs::write(game.join("options.txt"), "lang:ja_jp
+tutorialStep:movement
+").unwrap();
+        first_launch(&game, &jar, "zh-TW", true).unwrap();
+        let text = std::fs::read_to_string(game.join("options.txt")).unwrap();
+        assert!(text.starts_with("lang:ja_jp
+tutorialStep:none
+") && text.contains("skipMultiplayerWarning:true
+") && text.contains("onboardAccessibility:false
+"));
+        let one = std::fs::read(game.join("servers.dat")).unwrap();
+        assert!(one.ends_with(&[1, 0, 0]) && one.windows(14).any(|w| w == b"brilliantw.net"));
+        first_launch(&game, &jar, "zh-TW", true).unwrap();
+        assert_eq!(std::fs::read(game.join("servers.dat")).unwrap(), one, "already listed");
+
+        let mut other = vec![10, 0, 0, 9];
+        nbt_string(&mut other, "servers");
+        other.push(10);
+        other.extend(1i32.to_be_bytes());
+        for (k, v) in [("ip", "mc.example.com"), ("name", "Other")] {
+            other.push(8);
+            nbt_string(&mut other, k);
+            nbt_string(&mut other, v);
+        }
+        other.extend([0, 0]);
+        let merged = add_server(&other, "輝煌伺服器").unwrap();
+        assert_eq!(&merged[14..18], &2i32.to_be_bytes());
+        assert!(merged.ends_with(b"Other  "));
+        assert!(add_server(&merged, "x").is_none());
+        assert!(add_server(b"garbage", "x").is_none());
+        let mut empty = vec![10, 0, 0, 9];
+        nbt_string(&mut empty, "servers");
+        empty.push(0);
+        empty.extend(0i32.to_be_bytes());
+        empty.push(0);
+        assert_eq!(&add_server(&empty, "x").unwrap()[13..18], &[10, 0, 0, 0, 1]);
         std::fs::remove_dir_all(&base).unwrap();
     }
 
