@@ -224,7 +224,7 @@ pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
         bail!("新位置不能在目前的資料夾裡面，也不能包含目前的資料夾");
     }
     let moving = to.join(".brilliant-moving");
-    if moving.exists() {
+    if moving.exists() || (to == internal && !to.join("instances").is_dir()) {
         for entry in std::fs::read_dir(&to).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
             if paths::PRIVATE_FILES.iter().any(|p| entry.file_name() == *p) {
                 continue;

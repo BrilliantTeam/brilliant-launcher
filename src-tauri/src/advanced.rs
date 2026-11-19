@@ -238,10 +238,18 @@ pub fn share_status(instance: &Instance, settings: &Settings) -> ShareStatus {
     let group = settings.instance_groups.iter().find(|g| !instance.group.is_empty() && g.name == instance.group && !g.key.is_empty());
     let mut linked = Vec::new();
     let mut pending = Vec::new();
+    let synced = !links_supported(&game);
+    let state_dir = paths::instance_dir(&instance.id).join(".shared-sync");
     for name in SHAREABLE {
         let link = game.join(name);
         let want = group.filter(|g| g.shared.iter().any(|f| f == name)).map(|g| group_base(&g.key).join(name));
-        let current = if is_link(&link) { std::fs::read_link(&link).ok() } else { None };
+        let current = if is_link(&link) {
+            std::fs::read_link(&link).ok()
+        } else if synced && link.is_dir() && state_dir.join(format!("{name}.json")).is_file() {
+            want.clone()
+        } else {
+            None
+        };
         match (&want, &current) {
             (Some(w), Some(c)) if same_dir(w, c) => linked.push(name.to_string()),
             (None, None) => {}
@@ -290,9 +298,28 @@ fn safe_item(name: &str) -> bool {
     !name.is_empty() && !name.contains(['/', '\\']) && name != "." && name != ".."
 }
 
+pub async fn sync_group(state: &crate::state::AppState, settings: &Settings, group: &str, except: &str) {
+    if group.is_empty() || links_supported(&paths::instances()) {
+        return;
+    }
+    for other in crate::instance::list().await.into_iter().filter(|i| i.group == group && i.id != except) {
+        if state.is_running(&other.id).await {
+            continue;
+        }
+        let s = settings.clone();
+        if let Ok(Err(e)) = tokio::task::spawn_blocking(move || sync_shared(&other, &s)).await {
+            eprintln!("[shared] 同步分組其他實例失敗：{:#}", e.0);
+        }
+    }
+}
+
 #[tauri::command]
-pub async fn shared_items(key: String, folder: String) -> R<Vec<SharedItem>> {
+pub async fn shared_items(state: tauri::State<'_, crate::state::AppState>, key: String, folder: String) -> R<Vec<SharedItem>> {
     let dir = shared_dir(&key, &folder)?;
+    let settings = crate::config::load_settings().await;
+    if let Some(group) = settings.instance_groups.iter().find(|g| g.key == key) {
+        sync_group(&state, &settings, &group.name, "").await;
+    }
     tokio::task::spawn_blocking(move || {
         let mut out = Vec::new();
         for entry in std::fs::read_dir(&dir).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
@@ -440,25 +467,135 @@ fn links_supported(dir: &Path) -> bool {
     ok
 }
 
+type Snapshot = std::collections::BTreeMap<String, (u64, i64)>;
+
+fn snapshot(root: &Path) -> Snapshot {
+    fn walk(root: &Path, dir: &Path, out: &mut Snapshot) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for entry in entries.flatten() {
+            let Ok(kind) = entry.file_type() else { continue };
+            let path = entry.path();
+            if kind.is_dir() {
+                walk(root, &path, out);
+            } else if kind.is_file() {
+                let Ok(meta) = entry.metadata() else { continue };
+                let modified = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map_or(0, |d| d.as_secs() as i64);
+                let rel = path.strip_prefix(root).map(|p| p.to_string_lossy().replace('\\', "/")).unwrap_or_default();
+                out.insert(rel, (meta.len(), modified));
+            }
+        }
+    }
+    let mut out = Snapshot::new();
+    walk(root, root, &mut out);
+    out
+}
+
+fn copy_stamped(from: &Path, to: &Path) -> R<()> {
+    if let Some(parent) = to.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("建立 {} 失敗", parent.display()))?;
+    }
+    std::fs::copy(from, to).with_context(|| format!("同步 {} 失敗", from.display()))?;
+    if let Ok(modified) = std::fs::metadata(from).and_then(|m| m.modified()) {
+        let _ = std::fs::File::options().write(true).open(to).and_then(|f| f.set_modified(modified));
+    }
+    Ok(())
+}
+
+fn prune_empty(dir: &Path, root: bool) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    let mut empty = true;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if entry.file_type().is_ok_and(|t| t.is_dir()) && prune_empty(&path, false) {
+            continue;
+        }
+        empty = false;
+    }
+    empty && !root && std::fs::remove_dir(dir).is_ok()
+}
+
+fn conflict_name(rel: &str, tag: &str) -> String {
+    let (dir, file) = rel.rsplit_once('/').map_or(("", rel), |(d, f)| (d, f));
+    let renamed = match file.rsplit_once('.') {
+        Some((stem, ext)) if !stem.is_empty() => format!("{stem} ({tag}).{ext}"),
+        _ => format!("{file} ({tag})"),
+    };
+    if dir.is_empty() { renamed } else { format!("{dir}/{renamed}") }
+}
+
+fn sync_folder(local: &Path, shared: &Path, state: &Path, tag: &str) -> R<()> {
+    let previous: Option<Snapshot> = std::fs::read(state).ok().and_then(|b| serde_json::from_slice(&b).ok());
+    let local_now = snapshot(local);
+    let shared_now = snapshot(shared);
+    for (rel, stamp) in &local_now {
+        if previous.as_ref().and_then(|p| p.get(rel)) == Some(stamp) {
+            continue;
+        }
+        match shared_now.get(rel) {
+            None => copy_stamped(&local.join(rel), &shared.join(rel))?,
+            Some(theirs) if theirs == stamp => {}
+            Some(theirs) => {
+                let untouched = previous.as_ref().and_then(|p| p.get(rel)) == Some(theirs);
+                if previous.is_none() {
+                    copy_stamped(&local.join(rel), &shared.join(conflict_name(rel, tag)))?;
+                } else if untouched || stamp.1 >= theirs.1 {
+                    copy_stamped(&local.join(rel), &shared.join(rel))?;
+                }
+            }
+        }
+    }
+    if let Some(previous) = &previous {
+        for (rel, stamp) in previous {
+            if !local_now.contains_key(rel) && shared_now.get(rel) == Some(stamp) {
+                let _ = std::fs::remove_file(shared.join(rel));
+            }
+        }
+    }
+    prune_empty(shared, true);
+    let shared_now = snapshot(shared);
+    let local_now = snapshot(local);
+    for (rel, stamp) in &shared_now {
+        if local_now.get(rel) != Some(stamp) {
+            copy_stamped(&shared.join(rel), &local.join(rel))?;
+        }
+    }
+    for rel in local_now.keys() {
+        if !shared_now.contains_key(rel) {
+            let _ = std::fs::remove_file(local.join(rel));
+        }
+    }
+    prune_empty(local, true);
+    if let Some(parent) = state.parent() {
+        std::fs::create_dir_all(parent).with_context(|| format!("建立 {} 失敗", parent.display()))?;
+    }
+    std::fs::write(state, serde_json::to_vec(&snapshot(local))?).with_context(|| format!("寫入 {} 失敗", state.display()))?;
+    Ok(())
+}
+
 pub fn sync_shared(instance: &Instance, settings: &Settings) -> R<Vec<String>> {
     let game = paths::game_dir(&instance.id);
     std::fs::create_dir_all(&game).with_context(|| format!("建立 {} 失敗", game.display()))?;
     let group = settings.instance_groups.iter().find(|g| !instance.group.is_empty() && g.name == instance.group && !g.key.is_empty());
     let mut notes = Vec::new();
-    if group.is_some_and(|g| !g.shared.is_empty()) && !links_supported(&game) {
-        let mut copied = Vec::new();
+    if !links_supported(&game) {
+        let state_dir = paths::instance_dir(&instance.id).join(".shared-sync");
         for name in SHAREABLE {
-            let link = game.join(name);
-            let source = group.filter(|g| g.shared.iter().any(|f| f == name)).map(|g| group_base(&g.key).join(name));
-            if let Some(source) = source.filter(|s| s.is_dir()) {
-                if !link.exists() && !is_link(&link) {
-                    copy_dir(&source, &link)?;
-                    copied.push(name);
+            let local = game.join(name);
+            let state = state_dir.join(format!("{name}.json"));
+            let want = group.filter(|g| g.shared.iter().any(|f| f == name)).map(|g| group_base(&g.key).join(name));
+            if is_link(&local) {
+                remove_link(&local).with_context(|| format!("移除共用連結失敗：{}", local.display()))?;
+            }
+            match want {
+                Some(shared) => {
+                    std::fs::create_dir_all(&local).with_context(|| format!("建立 {} 失敗", local.display()))?;
+                    std::fs::create_dir_all(&shared).with_context(|| format!("建立共用資料夾 {} 失敗", shared.display()))?;
+                    sync_folder(&local, &shared, &state, &instance.name)?;
+                }
+                None => {
+                    let _ = std::fs::remove_file(&state);
                 }
             }
-        }
-        if !copied.is_empty() {
-            notes.push(format!("目前的資料位置不支援共用資料夾，已把分組共用的「{}」複製一份到這個實例；之後的變更不會同步到同組其他實例。資料位置改回手機內部即可恢復共用。", copied.join("、")));
         }
         return Ok(notes);
     }
@@ -484,6 +621,12 @@ pub fn sync_shared(instance: &Instance, settings: &Settings) -> R<Vec<String>> {
         }
         if let Some(target) = &want {
             std::fs::create_dir_all(target).with_context(|| format!("建立共用資料夾 {} 失敗", target.display()))?;
+            let state = paths::instance_dir(&instance.id).join(".shared-sync").join(format!("{name}.json"));
+            if state.is_file() && link.is_dir() && !is_link(&link) {
+                sync_folder(&link, target, &state, &instance.name)?;
+                std::fs::remove_dir_all(&link).with_context(|| format!("改回共用連結時無法移除 {}", link.display()))?;
+                let _ = std::fs::remove_file(&state);
+            }
             if link.exists() {
                 move_into(&link, target, &instance.name)?;
             }
@@ -989,6 +1132,44 @@ mod tests {
         assert!(!is_link(&packs));
         assert!(packs.join("Faithful.zip").is_file() && shared.join("Faithful.zip").is_file());
         std::env::remove_var("BRILLIANT_LAUNCHER_HOME");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sync_folder_shares_like_a_link() {
+        let root = std::env::temp_dir().join(format!("brilliant-sync-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let (shared, a, b) = (root.join("shared"), root.join("a"), root.join("b"));
+        let (sa, sb) = (root.join("a.json"), root.join("b.json"));
+        for d in [&shared, &a, &b] {
+            std::fs::create_dir_all(d).unwrap();
+        }
+        std::fs::write(a.join("pack.zip"), "A").unwrap();
+        std::fs::create_dir_all(a.join("World/region")).unwrap();
+        std::fs::write(a.join("World/region/r.0.0.mca"), "world").unwrap();
+        sync_folder(&a, &shared, &sa, "a").unwrap();
+        sync_folder(&b, &shared, &sb, "b").unwrap();
+        assert_eq!(std::fs::read_to_string(b.join("pack.zip")).unwrap(), "A");
+        assert!(b.join("World/region/r.0.0.mca").is_file());
+
+        std::fs::remove_dir_all(b.join("World")).unwrap();
+        std::fs::write(b.join("new.zip"), "B").unwrap();
+        sync_folder(&b, &shared, &sb, "b").unwrap();
+        sync_folder(&a, &shared, &sa, "a").unwrap();
+        assert!(!a.join("World").exists(), "deleted world should disappear everywhere");
+        assert!(!shared.join("World").exists());
+        assert_eq!(std::fs::read_to_string(a.join("new.zip")).unwrap(), "B");
+
+        std::fs::write(a.join("pending.txt"), "unsynced").unwrap();
+        sync_folder(&a, &shared, &sa, "a").unwrap();
+        assert!(shared.join("pending.txt").is_file(), "changes left from a crash are pushed before pulling");
+
+        let c = root.join("c");
+        std::fs::create_dir_all(&c).unwrap();
+        std::fs::write(c.join("pack.zip"), "CC").unwrap();
+        sync_folder(&c, &shared, &root.join("c.json"), "c").unwrap();
+        assert_eq!(std::fs::read_to_string(shared.join("pack.zip")).unwrap(), "A");
+        assert_eq!(std::fs::read_to_string(shared.join("pack (c).zip")).unwrap(), "CC", "first join keeps both versions like move_into");
         let _ = std::fs::remove_dir_all(&root);
     }
 

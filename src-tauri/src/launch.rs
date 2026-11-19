@@ -466,6 +466,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         }
     }
     {
+        crate::advanced::sync_group(&state, &settings, &instance.group, &instance.id).await;
         let (inst, s) = (instance.clone(), settings.clone());
         let shared = tokio::task::spawn_blocking(move || crate::advanced::sync_shared(&inst, &s))
             .await
@@ -634,6 +635,13 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
 async fn finish_game(app: &AppHandle, instance: &Instance, started: i64, ended: i64, code: i32, asked_to_stop: bool) {
     let id = instance.id.clone();
     let settings = crate::config::load_settings().await;
+    #[cfg(target_os = "android")]
+    {
+        let (inst, s) = (instance.clone(), settings.clone());
+        if let Ok(Err(e)) = tokio::task::spawn_blocking(move || crate::advanced::sync_shared(&inst, &s)).await {
+            eprintln!("[shared] 遊戲結束後同步共用資料夾失敗：{:#}", e.0);
+        }
+    }
     let seconds = ended - started;
     app.state::<AppState>().running.lock().await.remove(&id);
     drop_record(&id);
