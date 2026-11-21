@@ -417,24 +417,54 @@ function initChrome() {
         if (e.target.matches?.('input[type="range"]')) rangeFill(e.target);
     });
     mountIcons();
-    if (!ANDROID) initWindowChrome();
-    else {
+    document.addEventListener('focusin', (e) => {
+        if (e.target.matches?.('[spellcheck="false"]')) e.target.setAttribute('autocapitalize', 'off');
+    });
+    const closeDialog = (dlg) => (dlg.id === 'dlg' ? dismissDialog(null) : dlg.close());
+    const openState = () => [$$('dialog[open]').length, $$(':popover-open:not(#toasts)').length, $$('.inst-menu:not([hidden])').length, document.body.className].join('|');
+    const closeOverlay = () => {
+        const dlg = $$('dialog[open]').pop();
+        if (dlg) return closeDialog(dlg), true;
+        if (document.body.classList.contains('news-open')) return $('#news-toggle').click(), true;
+        const before = openState();
+        (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }));
+        $$(':popover-open:not(#toasts)').forEach((pop) => pop.hidePopover());
+        closeMenus();
+        return openState() !== before;
+    };
+    if (!ANDROID) {
+        initWindowChrome();
+        const navigate = (dir) => {
+            if (dir < 0) closeOverlay() || history.back();
+            else if (!$$('dialog[open]').length) history.forward();
+        };
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'BrowserRefresh') return e.preventDefault();
+            const alt = e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey;
+            const dir = e.code === 'BrowserBack' || (alt && e.code === 'ArrowLeft') ? -1 : e.code === 'BrowserForward' || (alt && e.code === 'ArrowRight') ? 1 : 0;
+            if (dir) { e.preventDefault(); navigate(dir); }
+        });
+        document.addEventListener('mouseup', (e) => {
+            if (e.button !== 3 && e.button !== 4) return;
+            e.preventDefault();
+            navigate(e.button === 3 ? -1 : 1);
+        });
+    } else {
         document.addEventListener('click', (e) => {
             const dlg = e.target;
             if (!(dlg instanceof HTMLDialogElement) || !dlg.open) return;
             const box = dlg.getBoundingClientRect();
-            if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) dlg.id === 'dlg' ? dismissDialog(null) : dlg.close();
+            if (e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom) closeDialog(dlg);
         });
+        window.__brilliantBack = () => {
+            if (closeOverlay()) return true;
+            if (location.hash && location.hash !== '#home') return location.replace('#home'), true;
+            return false;
+        };
     }
 
     const mac = navigator.userAgent.includes('Mac');
     if (mac) $$('kbd.mod-key').forEach((k) => { k.textContent = '⌘'; });
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'F5' || e.key === 'BrowserRefresh') e.preventDefault();
-    });
-    document.addEventListener('keydown', (e) => {
-        if ((mac ? e.metaKey : e.ctrlKey) && (e.code === 'KeyR' || e.code === 'KeyP')) e.preventDefault();
-    });
     provide('search', () => {
         if (location.hash === '#settings') {
             $('#settings-search').focus();
@@ -442,7 +472,7 @@ function initChrome() {
             return;
         }
         location.hash = '#mods';
-        setTimeout(() => $('#mod-search').focus(), 50);
+        setTimeout(() => ['#installed-search', '#mod-search'].map((id) => $(id)).find((el) => el?.offsetParent)?.focus(), 50);
     });
     provide('nextTrack', nextTrack);
 

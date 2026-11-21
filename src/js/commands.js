@@ -65,14 +65,18 @@ const typing = (el) => el?.matches?.('input:not([type="checkbox"]):not([type="ra
 
 let capturing = false;
 
+const BROWSER_KEYS = new Set(['Ctrl+F', 'F3', 'Shift+F3', 'Ctrl+G', 'Ctrl+Shift+G', 'F5', 'Shift+F5', 'Ctrl+R', 'Ctrl+Shift+R', 'Ctrl+P', 'Ctrl+Shift+P', 'Ctrl+S', 'Ctrl+Shift+S', 'Ctrl+U', 'Ctrl+J', 'Ctrl+Shift+I', 'Ctrl+Shift+J', 'Ctrl+Shift+C', 'F7', 'F12']);
+
 function dispatch(e) {
     if (capturing || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
     const combo = comboFromEvent(e);
     if (!combo) return;
-    if (typing(e.target) && !/^(Ctrl|Alt)\+/.test(combo) && !/^F\d/.test(combo)) return;
-    if (document.querySelector('dialog[open]') && combo !== comboOf('palette')) return;
     const action = ACTIONS.find((a) => comboOf(a.id) === combo);
-    if (!action) return;
+    const blocked = (typing(e.target) && !/^(Ctrl|Alt)\+/.test(combo) && !/^F\d/.test(combo)) || (document.querySelector('dialog[open]') && combo !== comboOf('palette'));
+    if (!action || blocked) {
+        if (BROWSER_KEYS.has(combo)) e.preventDefault();
+        return;
+    }
     e.preventDefault();
     action.run();
 }

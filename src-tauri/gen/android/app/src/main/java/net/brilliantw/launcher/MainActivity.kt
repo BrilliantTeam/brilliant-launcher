@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.system.Os
 import android.webkit.WebView
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -30,6 +31,16 @@ class MainActivity : TauriActivity() {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
       webView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
     }
+    webView.settings.setSupportZoom(false)
+    webView.settings.builtInZoomControls = false
+    webView.settings.displayZoomControls = false
+    onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+      override fun handleOnBackPressed() {
+        webView.evaluateJavascript("window.__brilliantBack?.() === true") { handled ->
+          if (handled != "true") moveTaskToBack(true)
+        }
+      }
+    })
   }
 
   override fun onWindowFocusChanged(hasFocus: Boolean) {
