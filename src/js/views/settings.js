@@ -144,12 +144,13 @@ const LOOK_DEFAULTS = {
     animSpeed: 'normal', pageTransition: 'rise', clickSoundType: 'block', clickVolume: 50, toastPosition: 'bottom-right', toastSeconds: 6, launchSplash: false, sheetSide: 'right'
 };
 
-const STYLE_KEYS = ['buttonStyle', 'corners', 'cardSize', 'panelOpacity', 'bgDim', 'railLabels', 'showNews', 'contentWidth', 'density', 'accentBar', 'bgBlur', 'bgMotion',
-    'thinScrollbars', 'cardDetails', 'showBrand', 'railStyle', 'coverHeight', 'cursorStyle', 'bgFilter', 'homeLayout', 'showClock', 'clickSound', 'accentFromBg', 'autoPalette', 'highContrast',
-    'headingStyle', 'bgTransition', 'bgPan', 'weather', 'shardLayout', 'playSize', 'clockStyle', 'clockPosition', 'cardView', 'cardHover', 'coverPosition', 'coverShade',
-    'pageTransition', 'clickSoundType', 'launchSplash'];
-
 const LOOK_LOCAL = ['bgPin', 'railOrder', 'railHidden', 'hiddenTools', 'hiddenShards', 'startPage', 'hideAccountName', 'uiScale', 'reduceMotion'];
+const LOOK_PERSONAL = ['theme', 'darkFrom', 'darkTo', 'fontScale', 'highContrast', 'toastSeconds', 'toastPosition', 'sheetSide', 'clickVolume', 'animSpeed', 'instanceSort', 'slideSeconds'];
+
+const lookPatch = (look) => ({
+    ...Object.fromEntries(Object.keys(LOOK_DEFAULTS).filter((key) => !LOOK_LOCAL.includes(key) && !LOOK_PERSONAL.includes(key)).map((key) => [key, structuredClone(LOOK_DEFAULTS[key])])),
+    ...look
+});
 
 function cleanLook(raw) {
     const look = {};
@@ -168,8 +169,7 @@ function cleanLook(raw) {
 }
 
 async function applyLook(raw, name) {
-    const base = Object.fromEntries(STYLE_KEYS.map((key) => [key, LOOK_DEFAULTS[key]]));
-    await persist({ ...base, ...cleanLook(raw) });
+    await persist(lookPatch(cleanLook(raw)));
     toast(`已套用「${name}」風格`);
 }
 
@@ -277,7 +277,7 @@ const savedTracks = (entry) => (entry.music ?? []).map((path) => (store.settings
 async function applySavedLook(entry) {
     const look = decodeLook(entry.code);
     if (!look || !Object.keys(look).length) return toast('這組外觀已損毀，無法套用', 'error');
-    await persist({ ...look, ...(entry.background ? { background: entry.background, bgSource: 'auto' } : {}), ...withMusic(savedTracks(entry)) });
+    await persist({ ...lookPatch(look), ...(entry.background ? { background: entry.background, bgSource: 'auto' } : {}), ...withMusic(savedTracks(entry)) });
     toast(`已切換為「${entry.name}」`);
 }
 
@@ -404,7 +404,7 @@ async function importLook(initial = null) {
     const look = installed.background ? rest : cleanLook(staticLook(loaded.look));
     await rememberLook({ name, description: loaded.description, code: encodeLook(look, name, loaded.description), background: installed.background, music: installed.music.map((item) => item.path) });
     if (choice === 'apply') {
-        await persist({ ...look, ...(installed.background ? { background: installed.background, bgSource: 'auto' } : {}), ...withMusic(installed.music) });
+        await persist({ ...lookPatch(look), ...(installed.background ? { background: installed.background, bgSource: 'auto' } : {}), ...withMusic(installed.music) });
         toast(`已套用「${name}」並存進「我的外觀」`);
     } else {
         toast(`已把「${name}」存進「我的外觀」`);
