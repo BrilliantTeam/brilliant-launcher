@@ -58,6 +58,7 @@ export const fileSrc = (path) => tauri.core.convertFileSrc(path);
 export const setZoom = (scale) => tauri.webview.getCurrentWebview().setZoom(scale);
 
 export const appVersion = () => tauri.app.getVersion();
+export const versionLabel = (version, hotfix) => `v${version}${hotfix ? `-HotFix#${hotfix}` : ''}`;
 
 export function watchFolders(subs, target, onChange) {
     let key;

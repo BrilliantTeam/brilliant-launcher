@@ -1,4 +1,4 @@
-import { ANDROID, api, appVersion, appWindow, fileSrc, listen, openUrl, setZoom } from './api.js';
+import { ANDROID, api, appVersion, appWindow, fileSrc, listen, openUrl, setZoom, versionLabel } from './api.js';
 import { icon } from './icons.js';
 import { $, $$, autoTokens, confirm, dialog, dismissDialog, fail, h, modalOpen, rangeFill, toast, guard, workPending } from './ui.js';
 import { emit, loadAccounts, loadInstances, loadSettings, on, saveSettings, selectedAccount, store } from './store.js';
@@ -595,6 +595,7 @@ async function applyUpdate() {
     if (result === 'permission') toast('請在剛打開的設定頁允許「輝煌啟動器」安裝應用程式，回到啟動器後再按一次「安裝更新」。', 'warn');
 }
 
+const HOTFIX = api.hotfix_status().catch(() => 0);
 let untouched = true;
 for (const type of ['pointerdown', 'keydown']) addEventListener(type, () => { untouched = false; }, { capture: true, once: true });
 
@@ -654,13 +655,14 @@ async function checkPlayUpdate() {
 async function checkUpdate(manual = false) {
     const mode = store.settings?.launcherUpdate || 'auto';
     if (mode === 'off' && !manual) return;
-    const [info, current, kind] = await Promise.all([api.check_update().catch(() => null), appVersion().catch(() => ''), api.update_platform().catch(() => '')]);
+    const [info, current, kind, hotfix] = await Promise.all([api.check_update().catch(() => null), appVersion().catch(() => ''), api.update_platform().catch(() => ''), HOTFIX]);
     applyHotfix(info?.hotfix).catch(() => {});
-    if (ANDROID && !kind) return checkPlayUpdate();
+    const play = ANDROID && !kind;
     updateKind = kind;
     const latest = info?.launcher;
-    store.update = { checkedAt: Date.now(), current, latest: latest ?? null, reachable: !!info, newer: !!(latest && current && newerVersion(latest.version, current)), signed: !!updateAsset(latest ?? {})?.signature, self: !!updateKind };
+    store.update = { checkedAt: Date.now(), current, hotfix, play, latest: latest ?? null, reachable: !!info, newer: !!(latest && current && newerVersion(latest.version, current)), signed: !!updateAsset(latest ?? {})?.signature, self: !!updateKind };
     emit('update-status');
+    if (play) return checkPlayUpdate();
     if (!latest || !current || !newerVersion(latest.version, current)) return;
     const first = !pendingUpdate;
     pendingUpdate = { latest, current };
@@ -754,13 +756,13 @@ async function boot() {
     checkUpdate();
     setInterval(() => checkUpdate(), 30 * 60 * 1000);
     on('check-update', () => checkUpdate(true).catch(fail));
-    appVersion().then((version) => {
+    Promise.all([appVersion(), HOTFIX]).then(([version, hotfix]) => {
         const channel = channelOfVersion(version);
         const chip = $('#channel-chip');
         chip.hidden = channel === 'stable';
         chip.textContent = channel === 'beta' ? 'Beta' : 'Alpha';
         chip.classList.toggle('alpha', channel === 'alpha');
-        $('#about-version').textContent = `輝煌啟動器 v${version}（${channel === 'stable' ? '正式版' : channel === 'beta' ? 'Beta 搶先版' : 'Alpha 測試版'}）`;
+        $('#about-version').textContent = `輝煌啟動器 ${versionLabel(version, hotfix)}（${channel === 'stable' ? '正式版' : channel === 'beta' ? 'Beta 搶先版' : 'Alpha 測試版'}）`;
     }).catch(() => {});
     let taps = 0;
     let tapTimer = 0;

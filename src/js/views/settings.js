@@ -1,4 +1,4 @@
-import { ANDROID, api, fileSrc, listen, openUrl, pickFile } from '../api.js';
+import { ANDROID, api, fileSrc, listen, openUrl, pickFile, versionLabel } from '../api.js';
 import { $, $$, acceptFiles, autoTokens, clampNumber, clear, confirm, dialog, fail, fmtBytes, h, pickColor, rangeFill, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { icon } from '../icons.js';
@@ -1042,9 +1042,9 @@ function renderUpdate() {
         return;
     }
     const row = (label, value) => h('div', { class: 'row' }, h('div', { class: 'grow' }, h('div', { class: 'name' }, label), h('div', { class: 'meta' }, value)));
-    const latest = u.latest ? `v${u.latest.version}${u.newer ? '（可以更新）' : '（已是最新）'}` : u.reachable ? '—' : '暫時連不上官網';
-    const signed = !u.latest ? '—' : !u.self ? '這個平台請到官網下載新版' : u.signed ? '已附輝煌官方數位簽章，安裝前會先驗證' : '這個版本沒有數位簽章，啟動器不會自動安裝';
-    box.append(row('目前版本', `v${u.current}`), row('最新版本', latest), row('數位簽章', signed),
+    const latest = u.latest ? `v${u.latest.version}${u.play ? '' : u.newer ? '（可以更新）' : '（已是最新）'}` : u.reachable ? '—' : '暫時連不上官網';
+    const signed = u.play ? '由 Google Play 安裝與更新' : !u.latest ? '—' : !u.self ? '這個平台請到官網下載新版' : u.signed ? '已附輝煌官方數位簽章，安裝前會先驗證' : '這個版本沒有數位簽章，啟動器不會自動安裝';
+    box.append(row('目前版本', versionLabel(u.current, u.hotfix)), row('最新版本', latest), row('數位簽章', signed),
         row('上次檢查', new Date(u.checkedAt).toLocaleString('zh-TW', { hour12: false })));
     if (manualCheck) {
         manualCheck = false;
