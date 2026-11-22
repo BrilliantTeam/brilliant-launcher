@@ -1009,6 +1009,16 @@
                     </div>
                 </div>
                 <div class="field">
+                    <label for="set-mod-resolve">模組相容判斷</label>
+                    <select id="set-mod-resolve">
+                        <option value="auto">自動挑選相容版本（推薦）</option>
+                        <option value="stable">自動挑選，但不改用測試版</option>
+                        <option value="keep">只先不更新會衝突的模組</option>
+                        <option value="off">不判斷，一律更新到最新版</option>
+                    </select>
+                    <div class="hint">更新模組或開始遊戲前，若模組之間版本不相容，啟動器會依這裡的方式處理：先不更新、改用其他相容的版本、改用測試版或改回舊版。</div>
+                </div>
+                <div class="field">
                     <label for="set-proxy">代理伺服器</label>
                     <input type="text" id="set-proxy" spellcheck="false" maxlength="512" placeholder="例如 http://127.0.0.1:7890，留空為直接連線">
                     <div class="hint">學校或公司網路需要代理才能下載時使用，啟動器與遊戲內的連線都會走這個代理。目前支援 HTTP／HTTPS 代理；格式正確後才會自動儲存。</div>

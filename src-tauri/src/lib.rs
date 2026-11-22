@@ -200,6 +200,8 @@ pub fn run() {
             snapshots::list_mod_snapshots,
             snapshots::restore_mod_snapshot,
             modsolve::resolve_mods,
+            modsolve::plan_mod_updates,
+            modsolve::apply_mod_changes,
             diskuse::disk_usage,
             diskuse::clean_disk,
             extras::import_image,

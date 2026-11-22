@@ -54,6 +54,7 @@ pub struct Settings {
     pub shared_folders: Vec<String>,
     pub mod_channel: String,
     pub auto_update_mods: bool,
+    pub mod_resolve: String,
     pub proxy: String,
     pub debug_mode: bool,
     pub open_log_on_launch: bool,
@@ -289,6 +290,7 @@ impl Default for Settings {
             shared_folders: Vec::new(),
             mod_channel: "release".into(),
             auto_update_mods: false,
+            mod_resolve: "auto".into(),
             proxy: String::new(),
             debug_mode: false,
             open_log_on_launch: false,
@@ -555,6 +557,7 @@ impl Settings {
         clean_choice(&mut self.language, &["zh-TW", "zh-CN", "en"], "zh-TW");
         STREAMER.store(self.streamer_mode, std::sync::atomic::Ordering::Relaxed);
         clean_choice(&mut self.mod_channel, &["release", "beta", "alpha"], "release");
+        clean_choice(&mut self.mod_resolve, &["auto", "stable", "keep", "off"], "auto");
         clean_choice(&mut self.launcher_update, &["auto", "notify", "off"], "auto");
         clean_choice(&mut self.mod_update, &["auto", "keep"], "auto");
         clean_choice(&mut self.update_channel, &["stable", "beta", "alpha"], "stable");

@@ -827,6 +827,15 @@ dialog .dlg-foot {
     padding: 12px 22px 18px;
 }
 
+.mod-plan section { margin-top: 12px; }
+.mod-plan h3 { margin: 0 0 6px; font-size: calc(14px * var(--fs, 1)); }
+.mod-plan ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.mod-plan li { padding: 6px 10px; background: var(--content-bg-sunken); border-left: 4px solid var(--accent); overflow-wrap: anywhere; }
+.mod-plan li.warn { border-left-color: var(--warning); }
+.mod-plan li.danger { border-left-color: var(--danger); }
+.mod-plan .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mod-plan .ver, .mod-plan .why { font-size: calc(13px * var(--fs, 1)); color: var(--text-subtle); }
+.mod-plan .why { color: var(--text); }
 .crash-item { padding: 8px 10px; margin-bottom: 8px; background: var(--content-bg-sunken); border-left: 4px solid var(--danger); }
 .crash-item p { margin: 2px 0 0; font-size: calc(13px * var(--fs, 1)); white-space: pre-wrap; }
 .crash-fixes { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; padding: 8px 10px; background: var(--content-bg-sunken); border-left: 4px solid var(--accent); }

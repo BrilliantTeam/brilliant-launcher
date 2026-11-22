@@ -422,9 +422,9 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     if stale_login {
         early_notes.push("目前沒有網路，用上次的登入狀態開始遊戲：單人遊戲可以正常玩，連線伺服器要等網路恢復。".to_string());
     }
-    if settings.auto_update_mods && !instance.freeze_mods && instance.loader != "vanilla" {
-        net::emit_stage(app, "mods", "檢查模組更新");
-        match crate::modsolve::run(app, &instance, &settings, true).await {
+    if !instance.freeze_mods && instance.loader != "vanilla" && (settings.auto_update_mods || settings.mod_resolve != "off") {
+        net::emit_stage(app, "mods", if settings.auto_update_mods { "檢查模組更新" } else { "檢查模組相容性" });
+        match crate::modsolve::run(app, &instance, &settings, settings.auto_update_mods).await {
             Ok(resolved) => early_notes.extend(resolved.notes),
             Err(e) => early_notes.push(format!("檢查模組更新失敗，這次照原本的版本啟動（{:#}）", e.0)),
         }

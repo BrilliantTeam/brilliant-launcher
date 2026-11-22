@@ -43,6 +43,7 @@ const FIELDS = {
     preferDgpu: '#set-dgpu',
     modChannel: '#set-mod-channel',
     autoUpdateMods: '#set-mod-auto',
+    modResolve: '#set-mod-resolve',
     proxy: '#set-proxy',
     debugMode: '#set-debug',
     openLogOnLaunch: '#set-open-log',

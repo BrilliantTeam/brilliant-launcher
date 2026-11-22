@@ -206,7 +206,71 @@ async function remove(kind, entry) {
     }
 }
 
-async function update(kind, entries) {
+const PLAN_LABEL = { hold: '先不更新', newer: '非最新版', beta: '改用測試版', older: '改回舊版', olderBeta: '改回舊的測試版' };
+const RESOLVE_LABEL = { auto: '自動挑選相容版本', stable: '自動挑選，但不改用測試版', keep: '只先不更新會衝突的模組', off: '不判斷，一律更新到最新版' };
+
+function planView(plan) {
+    const plain = plan.changes.filter((c) => c.kind === 'update');
+    const special = plan.changes.filter((c) => c.kind !== 'update');
+    const version = (c) => (c.kind === 'hold' ? `維持 ${c.from}（最新 ${c.latest}）` : c.latest && c.latest !== c.to ? `${c.from} → ${c.to}（最新 ${c.latest}）` : `${c.from} → ${c.to}`);
+    return h('div', { class: 'mod-plan' },
+        h('p', { class: 'hint' }, `相容判斷方式：${RESOLVE_LABEL[store.settings?.modResolve] ?? RESOLVE_LABEL.auto}。可以到「設定 → 進階」的「模組相容判斷」更改。`),
+        special.length ? h('section', {},
+            h('h3', {}, `為了相容而調整（${special.length}）`),
+            h('ul', {}, ...special.map((c) => h('li', { class: 'warn' },
+                h('div', { class: 'head' }, h('b', {}, c.name), h('span', { class: 'badge warn' }, PLAN_LABEL[c.kind])),
+                h('div', { class: 'ver' }, version(c)),
+                h('div', { class: 'why' }, c.note))))) : null,
+        plain.length ? h('section', {},
+            h('h3', {}, `更新到最新版（${plain.length}）`),
+            h('ul', {}, ...plain.map((c) => h('li', {}, h('div', { class: 'head' }, h('b', {}, c.name)), h('div', { class: 'ver' }, version(c)))))) : null,
+        plan.conflicts.length ? h('section', {},
+            h('h3', {}, '無法解決的衝突'),
+            h('ul', {}, ...plan.conflicts.map((text) => h('li', { class: 'danger' }, h('div', { class: 'why' }, text))))) : null);
+}
+
+async function applyMods(instance, changes) {
+    if (!changes.length) return toast('沒有可以安全更新的模組', 'warn');
+    for (const c of changes) busy.add(`file:${c.file}`);
+    renderAll();
+    try {
+        const done = await api.apply_mod_changes({ id: instance.id, changes });
+        toast(`已更新 ${done} 個${KIND_LABEL.mod}`);
+    } catch (error) {
+        fail(error);
+    }
+    for (const c of changes) busy.delete(`file:${c.file}`);
+    await loadInstalled('mod');
+    renderAll();
+}
+
+async function updateMods(entries, all) {
+    const instance = selectedInstance();
+    for (const entry of entries) busy.add(`file:${entry.file}`);
+    renderAll();
+    toast('正在檢查模組相容性⋯');
+    let plan = null;
+    try {
+        plan = await api.plan_mod_updates({ id: instance.id, files: all ? [] : entries.map((e) => e.file) });
+    } catch (error) {
+        fail(error);
+    }
+    for (const entry of entries) busy.delete(`file:${entry.file}`);
+    renderAll();
+    if (!plan) return;
+    const apply = plan.changes.filter((c) => c.update);
+    if (!all && apply.length && plan.changes.every((c) => c.kind === 'update') && !plan.conflicts.length) return applyMods(instance, apply);
+    const ok = await dialog({
+        title: all ? `確認更新「${instance.name}」的模組` : `更新「${entries[0]?.name}」`,
+        content: planView(plan),
+        wide: true,
+        buttons: [{ label: '取消', value: null }, ...(apply.length ? [{ label: `更新 ${apply.length} 個模組`, value: true, kind: 'primary' }] : [])]
+    });
+    if (ok) await applyMods(instance, apply);
+}
+
+async function update(kind, entries, all = false) {
+    if (kind === 'mod') return updateMods(entries, all);
     const instance = selectedInstance();
     for (const entry of entries) {
         busy.add(`file:${entry.file}`);
@@ -1574,7 +1638,7 @@ export function initMods() {
         state.filter = e.target.value;
         renderInstalled();
     });
-    $('#btn-update-all').addEventListener('click', guard(() => update(state.kind, (installed[state.kind] || []).filter((entry) => entry.update && !entry.pinned))));
+    $('#btn-update-all').addEventListener('click', guard(() => update(state.kind, (installed[state.kind] || []).filter((entry) => entry.update && !entry.pinned), true)));
     $('#btn-add-mod').addEventListener('click', guard(async () => {
         const picked = await pickFile('content', { multiple: true });
         if (picked) await installLocal(Array.isArray(picked) ? picked : [picked]);
