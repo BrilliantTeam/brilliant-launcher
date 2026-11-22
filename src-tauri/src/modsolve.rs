@@ -1,7 +1,7 @@
 use crate::config::Settings;
 use crate::err::R;
 use crate::instance::Instance;
-use crate::modrinth::{self, FabricMeta, Kind, Update, VersionInfo};
+use crate::modrinth::{self, ModMeta, Kind, Update, VersionInfo};
 use crate::net::{self, DlFile};
 use crate::paths;
 use crate::state::AppState;
@@ -19,7 +19,7 @@ const BUDGET: usize = 24;
 struct Pick {
     update: Option<Update>,
     sha1: String,
-    meta: Option<FabricMeta>,
+    meta: Option<ModMeta>,
     rank: u8,
 }
 
@@ -58,7 +58,7 @@ fn clashes(slots: &[Slot]) -> Vec<(usize, usize)> {
             for (id, req) in rules {
                 let Some(&t) = owner.get(id.as_str()).filter(|t| **t != i) else { continue };
                 let Some(target) = &slots[t].chosen.meta else { continue };
-                if modrinth::version_satisfies(req, &target.version) == Some(bad) && !out.contains(&(i, t)) {
+                if meta.accepts(req, &target.version) == Some(bad) && !out.contains(&(i, t)) {
                     out.push((i, t));
                 }
             }
@@ -75,14 +75,14 @@ fn cached(update: &Update) -> PathBuf {
     cache_dir().join(format!("{}.jar", update.sha1.to_ascii_lowercase()))
 }
 
-async fn fetch(app: &AppHandle, update: &Update) -> Option<FabricMeta> {
+async fn fetch(app: &AppHandle, update: &Update) -> Option<ModMeta> {
     if !modrinth::trusted(update, Kind::Mod) {
         return None;
     }
     let path = cached(update);
     let dl = DlFile::new(update.url.clone(), path.clone()).sha1(Some(update.sha1.clone())).size(update.size);
     net::download_all(app, "mods", vec![dl], false).await.ok()?;
-    modrinth::digest(&path).await?.fabric
+    modrinth::digest(&path).await?.meta
 }
 
 async fn candidates(slot: &mut Slot, loader: &str, mc: &str, channel: &str) -> Vec<Pick> {
@@ -192,7 +192,7 @@ pub async fn run(app: &AppHandle, instance: &Instance, settings: &Settings, upda
             continue;
         }
         let Some(found) = modrinth::digest(&dir.join(&entry.file)).await else { continue };
-        let original = Pick { update: None, sha1: found.sha1, meta: found.fabric, rank: 0 };
+        let original = Pick { update: None, sha1: found.sha1, meta: found.meta, rank: 0 };
         let fixed = entry.managed || entry.pinned;
         let mut offered = None;
         if let Some(update) = entry.update.filter(|_| updates && !fixed) {
@@ -258,7 +258,7 @@ mod tests {
     use super::*;
 
     fn slot(id: &str, version: &str, breaks: &[(&str, &str)]) -> Slot {
-        let meta = FabricMeta { id: id.into(), version: version.into(), breaks: breaks.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect(), ..Default::default() };
+        let meta = ModMeta { id: id.into(), version: version.into(), breaks: breaks.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect(), ..Default::default() };
         let pick = Pick { update: None, sha1: format!("{id}{version}"), meta: Some(meta), rank: 0 };
         Slot { file: id.into(), name: id.into(), project: None, version_id: None, fixed: false, original: pick.clone(), offered: None, chosen: pick, blame: None, versions: None }
     }

@@ -17,14 +17,14 @@ const RULES = [
         detail: () => (ANDROID ? '這個 Minecraft 版本需要更新的 Java。請重新開啟啟動器再開始遊戲，讓它自動補上正確的版本；仍然不行請回報給管理員。' : '這個 Minecraft 版本需要更新的 Java。請到「設定 → Java 執行檔」選「自動」，讓啟動器下載正確的版本。')
     },
     {
-        test: /Incompatible mods? found|incompatible mod set|requires (?:version|any version)/i,
+        test: /Incompatible mods? found|incompatible mod set|requires (?:version|any version)|Missing or unsupported mandatory dependencies|Expected range: '/i,
         title: '模組缺少前置或版本不相容',
         detail: (lines) => {
             const reasons = lines
-                .filter((line) => /^\s*-\s*(?:Mod\b|Install\b|Replace\b|Remove\b|模[組组]|將|将|安[裝装]|移除)/.test(line) || /requires (?:version|any version)/i.test(line))
+                .filter((line) => /^\s*-\s*(?:Mod\b|Install\b|Replace\b|Remove\b|模[組组]|將|将|安[裝装]|移除)/.test(line) || /requires (?:version|any version)|Mod ID: '/i.test(line))
                 .map((line) => line.trim().replace(/^-\s*/, ''))
                 .slice(0, 6);
-            return `Fabric 拒絕載入目前的模組組合。${reasons.length ? `\n${reasons.map((r) => `・${r}`).join('\n')}` : ''}\n請到實例頁的「模組與資源」安裝缺少的前置模組，或移除不支援這個版本的模組。`;
+            return `模組載入器拒絕載入目前的模組組合。${reasons.length ? `\n${reasons.map((r) => `・${r}`).join('\n')}` : ''}\n請到實例頁的「模組與資源」安裝缺少的前置模組，或移除不支援這個版本的模組。`;
         }
     },
     {
@@ -62,7 +62,7 @@ export function diagnose(lines) {
     return { findings, exception: exception ? exception.trim().slice(0, 200) : '' };
 }
 
-const NO_INSTALL = new Set(['minecraft', 'java', 'fabricloader', 'fabric']);
+const NO_INSTALL = new Set(['minecraft', 'java', 'fabricloader', 'fabric', 'forge', 'neoforge', 'javafml']);
 const GPU_DLL = /ig\w*icd(?:32|64)|atio6axx|atioglxx|nvoglv(?:32|64)|amdxc64|libnvidia|iris_dri|radeonsi/i;
 const newer = (a, b) => b.version.localeCompare(a.version, undefined, { numeric: true });
 
@@ -116,6 +116,13 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
             else if (!/錯誤|错误/.test(rest) && !byId(dep)) add({ kind: 'install', target: dep, label: `安裝缺少的前置模組 ${dep}` });
             else resolve(byId(dep));
         }
+        const forge = /Mod ID: '([\w-]+)', Requested by: '([\w-]+)', Expected range: '[^']*', Actual version: '([^']*)'/.exec(line);
+        if (forge) {
+            const [, dep, owner, actual] = forge;
+            if (NO_INSTALL.has(dep)) update(byId(owner));
+            else if (actual === '[MISSING]' && !byId(dep)) add({ kind: 'install', target: dep, label: `安裝缺少的前置模組 ${dep}` });
+            else resolve(byId(dep));
+        }
         const zhReplace = /^\s*-\s*(?:將|将) 模[組组] '[^']*' \(([\w-]+)\)/.exec(line);
         if (zhReplace) {
             if (zhReplace[1] === 'fabricloader') loader();
@@ -136,7 +143,7 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
         for (const mod of [...group].sort(newer).slice(1)) disable(mod, `（重複的舊版本 ${mod.version || mod.file}）`);
     }
     if (dupes.length && !findings.some((f) => f.title === '有重複的模組')) {
-        findings.push({ title: '有重複的模組', detail: `${dupes.map((g) => g[0].name).join('、')} 同時裝了不只一個版本，Fabric 會拒絕載入。一鍵修復會保留最新版、停用舊的。` });
+        findings.push({ title: '有重複的模組', detail: `${dupes.map((g) => g[0].name).join('、')} 同時裝了不只一個版本，模組載入器會拒絕載入。一鍵修復會保留最新版、停用舊的。` });
     }
     if (report && !fixes.some((f) => ['disable', 'update', 'install', 'resolve'].includes(f.kind))) {
         const suspect = enabled.filter((m) => m.blame > 0 && !m.managed).sort((a, b) => b.blame - a.blame)[0];

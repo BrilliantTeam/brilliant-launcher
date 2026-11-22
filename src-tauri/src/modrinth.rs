@@ -19,24 +19,42 @@ pub struct Digest {
     pub size: u64,
     pub icon: Option<String>,
     pub print: u32,
-    pub fabric: Option<FabricMeta>,
+    pub meta: Option<ModMeta>,
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct FabricMeta {
+pub struct ModMeta {
     pub id: String,
     pub version: String,
     pub provides: Vec<String>,
     pub depends: Vec<(String, String)>,
     pub breaks: Vec<(String, String)>,
+    pub maven: bool,
 }
 
-fn fabric_meta(bytes: &[u8]) -> Option<FabricMeta> {
-    use serde_json::Value;
+impl ModMeta {
+    pub fn accepts(&self, requirement: &str, version: &str) -> Option<bool> {
+        if self.maven { range_satisfies(requirement, version) } else { version_satisfies(requirement, version) }
+    }
+}
+
+fn zip_text(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>, name: &str) -> Option<String> {
     use std::io::Read;
-    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
     let mut raw = String::new();
-    zip.by_name("fabric.mod.json").ok()?.take(1 << 20).read_to_string(&mut raw).ok()?;
+    zip.by_name(name).ok()?.take(1 << 20).read_to_string(&mut raw).ok()?;
+    Some(raw)
+}
+
+fn mod_meta(bytes: &[u8]) -> Option<ModMeta> {
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).ok()?;
+    match zip_text(&mut zip, "fabric.mod.json") {
+        Some(raw) => fabric_meta(&raw),
+        None => forge_meta(&mut zip),
+    }
+}
+
+fn fabric_meta(raw: &str) -> Option<ModMeta> {
+    use serde_json::Value;
     let clean: String = raw.chars().map(|c| if c.is_control() { ' ' } else { c }).collect();
     let meta: Value = serde_json::from_str(&clean).ok()?;
     let text = |v: &Value| match v {
@@ -47,13 +65,153 @@ fn fabric_meta(bytes: &[u8]) -> Option<FabricMeta> {
     let rules = |key: &str| -> Vec<(String, String)> {
         meta.get(key).and_then(Value::as_object).map(|m| m.iter().filter_map(|(id, v)| Some((id.clone(), text(v)?))).collect()).unwrap_or_default()
     };
-    Some(FabricMeta {
+    Some(ModMeta {
         id: meta.get("id")?.as_str()?.to_string(),
         version: meta.get("version").and_then(Value::as_str).unwrap_or_default().to_string(),
         provides: meta.get("provides").and_then(Value::as_array).map(|l| l.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default(),
         depends: rules("depends"),
         breaks: rules("breaks"),
+        maven: false,
     })
+}
+
+fn forge_meta(zip: &mut zip::ZipArchive<std::io::Cursor<&[u8]>>) -> Option<ModMeta> {
+    use toml::Value;
+    let raw = zip_text(zip, "META-INF/neoforge.mods.toml").or_else(|| zip_text(zip, "META-INF/mods.toml"))?;
+    let doc: toml::Table = toml::from_str(&raw).ok()?;
+    let mods = doc.get("mods")?.as_array()?;
+    let ids: Vec<String> = mods.iter().filter_map(|m| Some(m.get("modId")?.as_str()?.to_string())).collect();
+    let mut version = mods.first()?.get("version").and_then(Value::as_str).unwrap_or_default().to_string();
+    if version.contains("${") {
+        version = zip_text(zip, "META-INF/MANIFEST.MF")
+            .and_then(|m| m.lines().find_map(|l| l.strip_prefix("Implementation-Version:").map(|v| v.trim().to_string())))
+            .unwrap_or_default();
+    }
+    let (mut depends, mut breaks) = (Vec::new(), Vec::new());
+    for list in doc.get("dependencies").and_then(Value::as_table).into_iter().flat_map(|t| t.values()).filter_map(Value::as_array) {
+        for dep in list {
+            let Some(id) = dep.get("modId").and_then(Value::as_str) else { continue };
+            let range = dep.get("versionRange").and_then(Value::as_str).unwrap_or_default().to_string();
+            match dep.get("type").and_then(Value::as_str).map(str::to_ascii_lowercase).as_deref() {
+                Some("incompatible") => breaks.push((id.to_string(), range)),
+                Some("discouraged") => {}
+                _ => depends.push((id.to_string(), range)),
+            }
+        }
+    }
+    Some(ModMeta { id: ids.first()?.clone(), version, provides: ids[1..].to_vec(), depends, breaks, maven: true })
+}
+
+#[derive(PartialEq, Debug)]
+enum Token {
+    Num(u64),
+    Text(String),
+}
+
+fn maven_tokens(version: &str) -> Option<Vec<Token>> {
+    let version = version.trim().to_ascii_lowercase();
+    if version.is_empty() || version.contains("${") {
+        return None;
+    }
+    let mut out = Vec::new();
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut Vec<Token>| {
+        if !word.is_empty() {
+            out.push(word.parse().map(Token::Num).unwrap_or_else(|_| Token::Text(word.clone())));
+            word.clear();
+        }
+    };
+    for c in version.chars() {
+        if matches!(c, '.' | '-' | '_' | '+') {
+            flush(&mut word, &mut out);
+        } else {
+            if word.chars().last().is_some_and(|l| l.is_ascii_digit() != c.is_ascii_digit()) {
+                flush(&mut word, &mut out);
+            }
+            word.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    Some(out)
+}
+
+fn qualifier(text: &str) -> u8 {
+    match text {
+        "alpha" | "a" => 0,
+        "beta" | "b" => 1,
+        "milestone" | "m" => 2,
+        "rc" | "cr" | "pre" => 3,
+        "snapshot" => 4,
+        "" | "ga" | "final" | "release" => 5,
+        "sp" => 6,
+        _ => 7,
+    }
+}
+
+fn maven_cmp(a: &[Token], b: &[Token]) -> std::cmp::Ordering {
+    use std::cmp::Ordering::*;
+    let blank = Token::Text(String::new());
+    for i in 0..a.len().max(b.len()) {
+        let (x, y) = (a.get(i).unwrap_or(&blank), b.get(i).unwrap_or(&blank));
+        let order = match (x, y) {
+            (Token::Num(m), Token::Num(n)) => m.cmp(n),
+            (Token::Num(m), Token::Text(t)) if t.is_empty() => m.cmp(&0),
+            (Token::Text(t), Token::Num(n)) if t.is_empty() => 0.cmp(n),
+            (Token::Num(_), Token::Text(_)) => Greater,
+            (Token::Text(_), Token::Num(_)) => Less,
+            (Token::Text(s), Token::Text(t)) => qualifier(s).cmp(&qualifier(t)).then_with(|| s.cmp(t)),
+        };
+        if order.is_ne() {
+            return order;
+        }
+    }
+    Equal
+}
+
+pub fn range_satisfies(range: &str, version: &str) -> Option<bool> {
+    use std::cmp::Ordering::*;
+    let range = range.trim();
+    if range.is_empty() || range == "*" {
+        return Some(true);
+    }
+    let have = maven_tokens(version)?;
+    if !range.starts_with(['[', '(']) {
+        return Some(true);
+    }
+    let mut rest = range;
+    loop {
+        rest = rest.trim_start_matches([',', ' ']);
+        if rest.is_empty() {
+            return Some(false);
+        }
+        let open = rest.chars().next()?;
+        if !matches!(open, '[' | '(') {
+            return None;
+        }
+        let end = rest.find([']', ')'])?;
+        let close = rest[end..].chars().next()?;
+        let inner = &rest[1..end];
+        let ok = match inner.split_once(',') {
+            None => maven_cmp(&have, &maven_tokens(inner)?) == Equal,
+            Some((low, high)) => {
+                let low_ok = low.trim().is_empty() || match maven_cmp(&have, &maven_tokens(low)?) {
+                    Greater => true,
+                    Equal => open == '[',
+                    Less => false,
+                };
+                let high_ok = high.trim().is_empty() || match maven_cmp(&have, &maven_tokens(high)?) {
+                    Less => true,
+                    Equal => close == ']',
+                    Greater => false,
+                };
+                low_ok && high_ok
+            }
+        };
+        if ok {
+            return Some(true);
+        }
+        rest = &rest[end + 1..];
+    }
 }
 
 struct Semver {
@@ -191,8 +349,8 @@ pub async fn digest(path: &Path) -> Option<Digest> {
         let is_mod = name.ends_with(".jar") || name.ends_with(".jar.disabled");
         let nested = if is_mod { nested_jars(&bytes) } else { Vec::new() };
         let icon = if is_mod || name.ends_with(".zip") || name.ends_with(".zip.disabled") { embedded_icon(&bytes, is_mod) } else { None };
-        let fabric = if is_mod { fabric_meta(&bytes) } else { None };
-        Some(Digest { sha1: sha1_hex(&bytes), nested, size: bytes.len() as u64, icon, print: crate::curseforge::fingerprint(&bytes), fabric })
+        let meta = if is_mod { mod_meta(&bytes) } else { None };
+        Some(Digest { sha1: sha1_hex(&bytes), nested, size: bytes.len() as u64, icon, print: crate::curseforge::fingerprint(&bytes), meta })
     })
     .await
     .ok()??;
@@ -744,7 +902,8 @@ pub async fn installed(instance_id: &str, kind: Kind, scope: &Scope<'_>) -> R<Ve
             let enabled = !file.ends_with(DISABLED_SUFFIX);
             let stem = file.trim_end_matches(DISABLED_SUFFIX).trim_end_matches(kind.extension()).to_string();
             let loader_needed = found
-                .fabric
+                .meta
+                .filter(|m| !m.maven)
                 .and_then(|m| m.depends.into_iter().find(|(id, _)| id == "fabricloader"))
                 .map(|(_, req)| req)
                 .filter(|req| enabled && loader == "fabric" && version_satisfies(req, loader_version) == Some(false));
@@ -1096,7 +1255,7 @@ mod tests {
         let mut jar = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
         jar.start_file("fabric.mod.json", zip::write::SimpleFileOptions::default()).unwrap();
         std::io::Write::write_all(&mut jar, br#"{"id":"x","depends":{"fabricloader":">=0.20.1","minecraft":"26.3"}}"#).unwrap();
-        let meta = fabric_meta(&jar.finish().unwrap().into_inner()).unwrap();
+        let meta = mod_meta(&jar.finish().unwrap().into_inner()).unwrap();
         assert_eq!(meta.depends.iter().find(|(id, _)| id == "fabricloader").map(|(_, r)| r.as_str()), Some(">=0.20.1"));
         assert_eq!(version_satisfies("<=26.3-6.8.6", "26.3-6.8.6"), Some(true));
         assert_eq!(version_satisfies("<=26.3-6.8.6", "26.3-6.9.0"), Some(false));
@@ -1107,6 +1266,56 @@ mod tests {
         assert_eq!(version_satisfies("<1.6.0-beta.2", "1.6.0-alpha.3"), Some(true));
         assert_eq!(version_satisfies(">=26.3 <26.3.1", "26.3"), Some(true));
         assert_eq!(version_satisfies("<=1.3.0", "1.2.0a"), None);
+    }
+
+    #[test]
+    fn forge_mods_toml_and_ranges() {
+        let mut jar = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let opts = zip::write::SimpleFileOptions::default();
+        jar.start_file("META-INF/neoforge.mods.toml", opts).unwrap();
+        std::io::Write::write_all(&mut jar, br#"modLoader="javafml"
+loaderVersion="[4,)"
+[[mods]]
+modId="create"
+version="${file.jarVersion}"
+description='''Line one
+line two'''
+[[mods]]
+modId="ponder"
+version="1.0"
+[[dependencies.create]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.0,)"
+[[dependencies.create]]
+modId="flywheel"
+type="required"
+versionRange="[1.0.0,1.1)"
+[[dependencies.create]]
+modId="optifine"
+type="incompatible"
+versionRange="*"
+"#).unwrap();
+        jar.start_file("META-INF/MANIFEST.MF", opts).unwrap();
+        std::io::Write::write_all(&mut jar, b"Manifest-Version: 1.0\r\nImplementation-Version: 6.0.4-55\r\n").unwrap();
+        let meta = mod_meta(&jar.finish().unwrap().into_inner()).unwrap();
+        assert!(meta.maven);
+        assert_eq!((meta.id.as_str(), meta.version.as_str()), ("create", "6.0.4-55"));
+        assert_eq!(meta.provides, vec!["ponder"]);
+        assert_eq!(meta.depends.len(), 2);
+        assert_eq!(meta.breaks, vec![("optifine".to_string(), "*".to_string())]);
+        assert_eq!(meta.accepts("[1.0.0,1.1)", "1.0.9"), Some(true));
+        assert_eq!(meta.accepts("[1.0.0,1.1)", "1.1.0"), Some(false));
+        assert_eq!(range_satisfies("[1.0.0,1.1)", "1.1-beta.2"), Some(true));
+        assert_eq!(range_satisfies("[47,)", "1.20.1-47.2.0"), Some(false));
+        assert_eq!(range_satisfies("[1.20.1-47.2.0,)", "1.20.1-47.3.0"), Some(true));
+        assert_eq!(range_satisfies("(,2.0]", "2.0.0"), Some(true));
+        assert_eq!(range_satisfies("(,2.0)", "2.0-rc1"), Some(true));
+        assert_eq!(range_satisfies("[1.0]", "1.0.0"), Some(true));
+        assert_eq!(range_satisfies("[1,2),[3,4)", "3.5"), Some(true));
+        assert_eq!(range_satisfies("[1,2),[3,4)", "2.5"), Some(false));
+        assert_eq!(range_satisfies("1.5", "0.1"), Some(true));
+        assert_eq!(range_satisfies("[1,2)", "${file.jarVersion}"), None);
     }
 
     #[tokio::test]
