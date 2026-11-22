@@ -103,7 +103,7 @@ async function render() {
         $('#btn-profile-refresh').hidden = false;
         return;
     }
-    if (!data.servers.length) clear(box).append(h('div', { class: 'empty-state' }, '還沒有你在輝煌的遊玩紀錄，進伺服器玩一陣子再回來看看吧！'));
+    if (!data.servers.length) clear(box).append(h('div', { class: 'empty-state' }, '還沒有你在輝煌的遊玩紀錄，進伺服器玩一陣子後，這裡會顯示你的紀錄。'));
     else {
         renderProfile(account, data);
         $('#btn-profile-refresh').hidden = false;

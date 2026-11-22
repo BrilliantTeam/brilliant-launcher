@@ -1083,7 +1083,7 @@ async function showVersions(kind, entry) {
                     h('div', { class: 'meta' }, [
                         v.date_published ? new Date(v.date_published).toLocaleDateString('zh-TW') : '',
                         `Minecraft ${v.game_versions.slice(-3).join('、')}${v.game_versions.length > 3 ? ' 等' : ''}`,
-                        fits ? '' : '⚠ 不是這個實例的版本'
+                        fits ? '' : '不是這個實例的版本'
                     ].filter(Boolean).join('｜'))),
                 h('button', {
                     type: 'button',

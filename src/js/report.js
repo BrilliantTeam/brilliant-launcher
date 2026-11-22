@@ -116,7 +116,7 @@ export async function reportDialog(kind, instance, extra = {}) {
             const cause = body.findings[0] || body.message.split('\n')[0] || (kind === 'crash' ? '遊戲異常結束' : '無法啟動遊戲');
             await saveSettings({ myReports: [{ id: result.id, token: result.token, at: Date.now(), cause, alerted: 0, seen: 0 }, ...(store.settings.myReports || [])].slice(0, 20) }).catch(() => {});
         }
-        toast(`已回報給管理員${result?.id ? `（回報編號 ${result.id.slice(0, 8)}）` : ''}，謝謝你！可以在「日誌 → 我的回報」查看處理進度`);
+        toast(`已回報給管理員${result?.id ? `（回報編號 ${result.id.slice(0, 8)}）` : ''}，謝謝你。可以在「日誌 → 我的回報」查看處理進度`);
     } catch (error) {
         fail(error);
     }
