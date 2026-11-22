@@ -29,6 +29,23 @@ pub struct CrashContext {
     pub report: String,
     pub native: String,
     pub mods: Vec<ModMeta>,
+    pub log: Vec<String>,
+}
+
+pub fn runtime_log(id: &str) -> Vec<String> {
+    use std::io::{Seek, SeekFrom};
+    let Ok(mut file) = std::fs::File::open(paths::game_dir(id).join("logs").join("launcher-runtime.txt")) else { return Vec::new() };
+    let len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut bytes = Vec::new();
+    if file.seek(SeekFrom::Start(len.saturating_sub(256 << 10))).is_err() || file.read_to_end(&mut bytes).is_err() {
+        return Vec::new();
+    }
+    let lines: Vec<String> = String::from_utf8_lossy(&bytes).lines().map(str::to_string).collect();
+    lines[lines.len().saturating_sub(400)..].to_vec()
+}
+
+pub fn exit_code(lines: &[String]) -> i32 {
+    lines.iter().rev().find_map(|l| l.trim().strip_prefix("Java Exit code: ")?.parse().ok()).unwrap_or(0)
 }
 
 const SKIP: [&str; 20] = [
@@ -321,8 +338,9 @@ pub async fn crash_context(id: String, since: i64, lines: Vec<String>) -> R<Cras
         let game = paths::game_dir(&id);
         let report = read_head(newest_since(&game.join("crash-reports"), "crash-", ".txt", since), 256 << 10);
         let native = read_head(newest_since(&game, "hs_err_pid", ".log", since), 16 << 10);
-        let text = format!("{report}\n{}", lines.join("\n"));
-        CrashContext { mods: mod_index(&id, &text), report, native }
+        let log = if lines.is_empty() { runtime_log(&id) } else { Vec::new() };
+        let text = format!("{report}\n{}\n{}", lines.join("\n"), log.join("\n"));
+        CrashContext { mods: mod_index(&id, &text), report, native, log }
     })
     .await
     .context("讀取當機資料中斷")
@@ -541,6 +559,15 @@ pub async fn save_png(name: String, data: String) -> R<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn runtime_exit_code_uses_the_last_record() {
+        let lines: Vec<String> = ["Java Exit code: 0", "[main/ERROR]: Incompatible mods found!", "Java Exit code: 1"].map(String::from).to_vec();
+        assert_eq!(exit_code(&lines), 1);
+        assert_eq!(exit_code(&lines[..2]), 0);
+        assert_eq!(exit_code(&["Java Exit code: -1".to_string()]), -1);
+        assert_eq!(exit_code(&[]), 0);
+    }
 
     #[test]
     fn streamer_scrub_hides_ip_email_and_names() {

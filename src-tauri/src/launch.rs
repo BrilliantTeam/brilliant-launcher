@@ -850,7 +850,8 @@ async fn follow_mobile(app: AppHandle, instance: Instance, begun: i64, mut stop_
         }
     }
     let _ = std::fs::remove_file(mobile_record());
-    finish_game(&app, &instance, begun, now_secs(), 0, asked).await;
+    let code = crate::insight::exit_code(&crate::insight::runtime_log(&instance.id));
+    finish_game(&app, &instance, begun, now_secs(), code, asked).await;
 }
 
 #[cfg(target_os = "android")]
@@ -870,7 +871,8 @@ async fn adopt_mobile(app: AppHandle) {
         let ended = modified(mobile_record()).max(modified(paths::game_dir(&instance.id).join("logs").join("launcher-runtime.txt")));
         let _ = std::fs::remove_file(mobile_record());
         if let Some(ended) = ended.filter(|&e| e > begun) {
-            finish_game(&app, &instance, begun, ended, 0, false).await;
+            let code = crate::insight::exit_code(&crate::insight::runtime_log(&instance.id));
+            finish_game(&app, &instance, begun, ended, code, false).await;
         }
         return;
     }

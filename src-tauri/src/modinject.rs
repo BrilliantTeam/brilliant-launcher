@@ -20,6 +20,7 @@ pub struct LauncherInfo {
     pub versions: Vec<String>,
     pub recommended: String,
     pub launcher: Option<serde_json::Value>,
+    pub hotfix: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]

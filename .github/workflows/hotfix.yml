@@ -1,0 +1,36 @@
+name: 發佈介面修正
+on:
+  push:
+    tags:
+      - "hotfix-*"
+
+permissions:
+  contents: write
+
+jobs:
+  hotfix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 簽出儲存庫
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 打包有變動的介面檔案
+        id: pack
+        run: node .github/hotfix-pack.mjs "${GITHUB_REF_NAME}"
+
+      - name: 數位簽章
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node .github/sign-release.mjs release SIGNATURES-hotfix.json
+
+      - name: 發佈 Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: 輝煌啟動器 v${{ steps.pack.outputs.version }} 介面修正 #${{ steps.pack.outputs.build }}
+          body: 以 ${{ steps.pack.outputs.base }} 為基準的介面修正，只會套用到 v${{ steps.pack.outputs.version }}。
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: release/*

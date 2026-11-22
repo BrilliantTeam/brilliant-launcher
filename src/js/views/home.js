@@ -367,13 +367,14 @@ async function runFix(instance, fix) {
 
 async function showCrash(id, code, seconds) {
     const instance = store.instances.find((i) => i.id === id) ?? selectedInstance();
-    const lines = recentLog(instance.id);
+    const recent = recentLog(instance.id);
     const [ctx, info] = await Promise.all([
-        api.crash_context({ id: instance.id, since: Math.floor(Date.now() / 1000) - seconds - 5, lines: lines.slice(-400) }).catch(() => ({ report: '', native: '', mods: [] })),
+        api.crash_context({ id: instance.id, since: Math.floor(Date.now() / 1000) - seconds - 5, lines: recent.slice(-400) }).catch(() => ({ report: '', native: '', mods: [], log: [] })),
         api.system_info().catch(() => ({}))
     ]);
+    const lines = recent.length ? recent : ctx.log || [];
     const { findings, exception, fixes } = plan({
-        lines, ...ctx,
+        ...ctx, lines,
         memoryMb: instance.memoryMb || store.settings?.memoryMb || 0,
         totalMb: info.memoryMb, recommendedMb: info.recommendedMb,
         preferDgpu: store.settings?.preferDgpu

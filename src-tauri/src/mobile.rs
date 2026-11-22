@@ -18,6 +18,10 @@ pub fn init() -> TauriPlugin<Wry> {
         .build()
 }
 
+pub async fn play_update(app: &AppHandle, command: &'static str) -> R<Value> {
+    Ok(call(app, command, json!({})).await?)
+}
+
 async fn call(app: &AppHandle, command: &'static str, payload: Value) -> anyhow::Result<Value> {
     let handle = app.state::<Game>().0.clone();
     for attempt in 0.. {

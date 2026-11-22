@@ -712,6 +712,22 @@ fn update_file_ok(file: &str) -> bool {
 }
 
 #[tauri::command]
+pub async fn play_update(app: AppHandle, action: String) -> R<serde_json::Value> {
+    #[cfg(target_os = "android")]
+    if PLAY {
+        let command = match action.as_str() {
+            "info" => "playUpdateInfo",
+            "start" => "startPlayUpdate",
+            "complete" => "completePlayUpdate",
+            _ => bail!("未知的更新動作"),
+        };
+        return crate::mobile::play_update(&app, command).await;
+    }
+    let _ = (app, action);
+    Ok(serde_json::json!({ "available": false }))
+}
+
+#[tauri::command]
 pub async fn check_update() -> R<modinject::LauncherInfo> {
     modinject::info().await
 }

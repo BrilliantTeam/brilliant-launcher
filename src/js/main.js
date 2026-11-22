@@ -595,11 +595,64 @@ async function applyUpdate() {
     if (result === 'permission') toast('請在剛打開的設定頁允許「輝煌啟動器」安裝應用程式，回到啟動器後再按一次「安裝更新」。', 'warn');
 }
 
+async function applyHotfix(hotfix) {
+    if (!hotfix?.build || hotfix.build <= await api.hotfix_status().catch(() => 0)) return;
+    const build = await api.apply_hotfix({ url: hotfix.url, build: hotfix.build, sha256: hotfix.sha256, signature: hotfix.signature }).catch(() => 0);
+    if (build !== hotfix.build) return;
+    if (!store.running.length && await confirm('已下載啟動器的介面修正，重新整理畫面後就會套用，不用重新安裝。要現在重新整理嗎？', '重新整理')) location.reload();
+    else api.hotfix_ok().catch(() => {});
+}
+
+const playChip = { bound: false, timer: 0 };
+
+function showPlayUpdate(state) {
+    const chip = $('#update-chip');
+    chip.hidden = false;
+    chip.classList.toggle('ready', !!state.downloaded);
+    $('#update-label').textContent = state.downloaded ? '重新啟動以更新' : state.status === 2 && state.total ? `下載更新 ${Math.floor((state.bytes * 100) / state.total)}%` : '有新版本';
+    if (state.downloaded) {
+        clearInterval(playChip.timer);
+        playChip.timer = 0;
+    }
+}
+
+function watchPlayUpdate() {
+    clearInterval(playChip.timer);
+    playChip.timer = setInterval(async () => {
+        const state = await api.play_update({ action: 'info' }).catch(() => null);
+        if (state) showPlayUpdate(state);
+        if (state && [0, 5, 6].includes(state.status) && !state.downloaded) {
+            clearInterval(playChip.timer);
+            playChip.timer = 0;
+        }
+    }, 1000);
+}
+
+async function checkPlayUpdate() {
+    const state = await api.play_update({ action: 'info' }).catch(() => null);
+    if (!state?.available && !state?.downloaded) return;
+    showPlayUpdate(state);
+    if (state.status === 2 && !playChip.timer) watchPlayUpdate();
+    if (playChip.bound) return;
+    playChip.bound = true;
+    $('#update-chip').addEventListener('click', guard(async () => {
+        const now = await api.play_update({ action: 'info' });
+        if (now.downloaded) {
+            if (store.running.length) return toast('遊戲還在執行中，關閉遊戲後再更新', 'warn');
+            return api.play_update({ action: 'complete' });
+        }
+        if (now.status === 2 || now.status === 1) return toast('正在從 Google Play 下載新版，完成後右上角會變成「重新啟動以更新」。');
+        const result = await api.play_update({ action: 'start' });
+        if (result?.accepted) watchPlayUpdate();
+    }));
+}
+
 async function checkUpdate(manual = false) {
     const mode = store.settings?.launcherUpdate || 'auto';
     if (mode === 'off' && !manual) return;
     const [info, current, kind] = await Promise.all([api.check_update().catch(() => null), appVersion().catch(() => ''), api.update_platform().catch(() => '')]);
-    if (ANDROID && !kind) return;
+    applyHotfix(info?.hotfix).catch(() => {});
+    if (ANDROID && !kind) return checkPlayUpdate();
     updateKind = kind;
     const latest = info?.launcher;
     store.update = { checkedAt: Date.now(), current, latest: latest ?? null, reachable: !!info, newer: !!(latest && current && newerVersion(latest.version, current)), signed: !!updateAsset(latest ?? {})?.signature, self: !!updateKind };
@@ -685,6 +738,7 @@ async function boot() {
 
     emit('settings');
     show(location.hash.slice(1) || startView());
+    api.hotfix_ok().catch(() => {});
     if (ANDROID) api.update_platform().then((kind) => {
         if (kind) return;
         document.documentElement.dataset.store = 'play';

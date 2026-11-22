@@ -116,6 +116,41 @@ class GamePlugin(private val activity: Activity) : Plugin(activity) {
     invoke.resolve(JSObject().put("url", result.data?.getStringExtra(LoginActivity.EXTRA_RESULT)))
   }
 
+  private val updates by lazy { com.google.android.play.core.appupdate.AppUpdateManagerFactory.create(activity) }
+
+  @Command
+  fun playUpdateInfo(invoke: Invoke) {
+    updates.appUpdateInfo
+      .addOnSuccessListener { info ->
+        invoke.resolve(JSObject()
+          .put("available", info.updateAvailability() == com.google.android.play.core.install.model.UpdateAvailability.UPDATE_AVAILABLE && info.isUpdateTypeAllowed(com.google.android.play.core.install.model.AppUpdateType.FLEXIBLE))
+          .put("downloaded", info.installStatus() == com.google.android.play.core.install.model.InstallStatus.DOWNLOADED)
+          .put("status", info.installStatus())
+          .put("bytes", info.bytesDownloaded())
+          .put("total", info.totalBytesToDownload()))
+      }
+      .addOnFailureListener { invoke.resolve(JSObject().put("available", false).put("downloaded", false)) }
+  }
+
+  @Command
+  fun startPlayUpdate(invoke: Invoke) {
+    updates.appUpdateInfo
+      .addOnSuccessListener { info ->
+        val options = com.google.android.play.core.appupdate.AppUpdateOptions.defaultOptions(com.google.android.play.core.install.model.AppUpdateType.FLEXIBLE)
+        updates.startUpdateFlow(info, activity, options)
+          .addOnSuccessListener { code -> invoke.resolve(JSObject().put("accepted", code == Activity.RESULT_OK)) }
+          .addOnFailureListener { e -> invoke.reject(e.message ?: e.toString()) }
+      }
+      .addOnFailureListener { e -> invoke.reject(e.message ?: e.toString()) }
+  }
+
+  @Command
+  fun completePlayUpdate(invoke: Invoke) {
+    updates.completeUpdate()
+      .addOnSuccessListener { invoke.resolve(JSObject()) }
+      .addOnFailureListener { e -> invoke.reject(e.message ?: e.toString()) }
+  }
+
   @Command
   fun gameRunning(invoke: Invoke) {
     val manager = activity.getSystemService(android.app.ActivityManager::class.java)

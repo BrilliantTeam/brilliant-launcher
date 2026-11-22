@@ -32,6 +32,7 @@ pub mod snapshots;
 pub mod diskuse;
 pub mod secret;
 pub mod modpack;
+pub mod hotfix;
 #[cfg(target_os = "android")]
 pub mod mobile;
 
@@ -60,6 +61,8 @@ pub fn run() {
     if std::path::Path::new("/proc/driver/nvidia").exists() && std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
     }
+    let mut context = tauri::generate_context!();
+    hotfix::wrap(&mut context);
     let builder = tauri::Builder::default();
     #[cfg(desktop)]
     let builder = builder
@@ -252,7 +255,11 @@ pub fn run() {
             insight::save_png,
             insight::save_shot_thumb,
             extras::dir_stamp,
+            hotfix::hotfix_status,
+            hotfix::hotfix_ok,
+            hotfix::apply_hotfix,
+            commands::play_update,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("啟動 Tauri 失敗");
 }

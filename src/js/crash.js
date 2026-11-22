@@ -21,7 +21,7 @@ const RULES = [
         title: '模組缺少前置或版本不相容',
         detail: (lines) => {
             const reasons = lines
-                .filter((line) => /^\s*-\s*(?:Mod|Install|Replace|Remove)\b/.test(line) || /requires (?:version|any version)/i.test(line))
+                .filter((line) => /^\s*-\s*(?:Mod\b|Install\b|Replace\b|Remove\b|模[組组]|將|将|安[裝装]|移除)/.test(line) || /requires (?:version|any version)/i.test(line))
                 .map((line) => line.trim().replace(/^-\s*/, ''))
                 .slice(0, 6);
             return `Fabric 拒絕載入目前的模組組合。${reasons.length ? `\n${reasons.map((r) => `・${r}`).join('\n')}` : ''}\n請到實例頁的「模組與資源」安裝缺少的前置模組，或移除不支援這個版本的模組。`;
@@ -90,6 +90,9 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
         const major = Number(classVersion[1]) - 44;
         add({ kind: 'java', target: major, label: `改用 Java ${major}（啟動器會自動下載）` });
     }
+    const breaks = all.map((line) => /Mod '[^']*' \(([\w-]+)\)[^\n]*? is incompatible with [^\n]*?mod '[^']*' \(([\w-]+)\)/.exec(line) || /模[組组] '[^']*' \(([\w-]+)\)[^\n]*?與[^\n]*?模[組组] '[^']*' \(([\w-]+)\)[^\n]*?不相容/.exec(line)).filter(Boolean);
+    const breakers = new Set(breaks.map((m) => m[1]));
+    for (const [, , victim] of breaks) update(byId(victim));
     for (const line of all) {
         const req = /Mod '[^']*' \(([\w-]+)\)[^\n]*? requires (?:.+?) of (?:mod '[^']*' \()?([\w-]+)\)?,? (which is missing|but only the wrong version)/.exec(line);
         if (req) {
@@ -110,13 +113,13 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
         const zhReplace = /^\s*-\s*(?:將|将) 模[組组] '[^']*' \(([\w-]+)\)/.exec(line);
         if (zhReplace) {
             if (zhReplace[1] === 'fabricloader') loader();
-            else update(byId(zhReplace[1]));
+            else if (!breakers.has(zhReplace[1])) update(byId(zhReplace[1]));
         }
         const install = /^\s*-\s*Install ([\w-]+),/.exec(line);
         if (install?.[1] === 'fabricloader') loader();
         if (install && !NO_INSTALL.has(install[1]) && !byId(install[1])) add({ kind: 'install', target: install[1], label: `安裝缺少的前置模組 ${install[1]}` });
         const replace = /^\s*-\s*Replace mod '[^']*' \(([\w-]+)\)/.exec(line);
-        if (replace) update(byId(replace[1]));
+        if (replace && !breakers.has(replace[1])) update(byId(replace[1]));
         const remove = /^\s*-\s*Remove mod '[^']*' \(([\w-]+)\)/.exec(line);
         if (remove) disable(byId(remove[1]), '（與其他模組不相容）');
         for (const m of line.matchAll(/Mixin apply for mod ([\w-]+) failed/g)) disable(byId(m[1]), '（與遊戲或其他模組衝突）');
