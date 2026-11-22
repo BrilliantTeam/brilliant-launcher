@@ -18,6 +18,16 @@ pub fn init() -> TauriPlugin<Wry> {
         .build()
 }
 
+pub async fn export_game_settings(app: &AppHandle) -> R<String> {
+    let value = call(app, "exportGameSettings", json!({})).await?;
+    Ok(value["json"].as_str().unwrap_or_default().to_string())
+}
+
+pub async fn import_game_settings(app: &AppHandle, settings: &str) -> R<u64> {
+    let value = call(app, "importGameSettings", json!({ "json": settings })).await?;
+    Ok(value["applied"].as_u64().unwrap_or(0))
+}
+
 pub async fn play_update(app: &AppHandle, command: &'static str) -> R<Value> {
     Ok(call(app, command, json!({})).await?)
 }

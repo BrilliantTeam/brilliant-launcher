@@ -30,7 +30,7 @@ fn library_index() -> PathBuf {
     library_dir().join("library.json")
 }
 
-fn load_library() -> Vec<LibrarySkin> {
+pub fn load_library() -> Vec<LibrarySkin> {
     let Ok(bytes) = std::fs::read(library_index()) else { return Vec::new() };
     serde_json::from_slice(&bytes).unwrap_or_else(|_| {
         let keep = library_index().with_extension("broken.json");
@@ -41,7 +41,7 @@ fn load_library() -> Vec<LibrarySkin> {
     })
 }
 
-fn save_library(list: &[LibrarySkin]) -> R<()> {
+pub fn save_library(list: &[LibrarySkin]) -> R<()> {
     std::fs::create_dir_all(library_dir())?;
     paths::write_atomic(&library_index(), &serde_json::to_vec_pretty(list)?).context("儲存衣櫃清單失敗")?;
     Ok(())

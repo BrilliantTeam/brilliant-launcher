@@ -750,17 +750,79 @@ pub fn export_diagnostics(instance: &Instance, settings: &Settings, java: &str) 
     Ok(path)
 }
 
-pub async fn export_config() -> R<PathBuf> {
+const MEDIA_FILE_MAX: u64 = 500 << 20;
+const PORTABLE_DIRS: [&str; 2] = ["media", "skins"];
+
+fn platform() -> &'static str {
+    if cfg!(target_os = "android") { "android" } else { "desktop" }
+}
+
+fn portable_rel(root: &Path, path: &str) -> Option<String> {
+    let rel = Path::new(path).strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/");
+    let safe = !rel.split('/').any(|c| c.is_empty() || c == "." || c == "..");
+    (safe && PORTABLE_DIRS.iter().any(|d| rel.starts_with(&format!("{d}/")))).then_some(rel)
+}
+
+fn rel_from(path: &str, source_root: &str) -> Option<String> {
+    let normalized = path.replace('\\', "/");
+    let root = source_root.replace('\\', "/").trim_end_matches('/').to_string() + "/";
+    let rest = normalized.get(root.len()..).filter(|_| normalized.get(..root.len()).is_some_and(|head| head.eq_ignore_ascii_case(&root)))?;
+    (!rest.is_empty() && !rest.split('/').any(|c| c.is_empty() || c == "." || c == "..")).then(|| rest.to_string())
+}
+
+fn relocate(path: &str, source_root: Option<&str>) -> String {
+    if path.is_empty() {
+        return String::new();
+    }
+    let local = source_root.and_then(|r| rel_from(path, r)).map(|rel| paths::root().join(rel)).unwrap_or_else(|| PathBuf::from(path));
+    if local.is_file() { local.to_string_lossy().to_string() } else { String::new() }
+}
+
+pub struct ImportOutcome {
+    pub added: usize,
+    pub skipped: usize,
+    pub settings: bool,
+    pub notes: Vec<String>,
+    pub web: Option<serde_json::Value>,
+    pub game: Option<String>,
+    pub source_platform: String,
+}
+
+pub async fn export_config(web: serde_json::Value, game: Option<String>) -> R<PathBuf> {
     let settings = crate::config::load_settings().await;
     let instances = crate::instance::list().await;
+    let root = paths::root();
     let dir = export_dir();
     std::fs::create_dir_all(&dir)?;
     let path = paths::unused(dir.join(format!("輝煌啟動器設定-{}.zip", crate::config::now_secs())));
     let mut zip = zip::ZipWriter::new(std::fs::File::create(&path)?);
-    add_text(&mut zip, &format!("{CONFIG_ROOT}/meta.json"), &serde_json::json!({ "os": std::env::consts::OS, "version": env!("CARGO_PKG_VERSION") }).to_string())?;
+    let meta = serde_json::json!({ "os": std::env::consts::OS, "platform": platform(), "version": env!("CARGO_PKG_VERSION"), "root": root.to_string_lossy() });
+    add_text(&mut zip, &format!("{CONFIG_ROOT}/meta.json"), &meta.to_string())?;
     add_text(&mut zip, &format!("{CONFIG_ROOT}/config.json"), &serde_json::to_string_pretty(&settings)?)?;
     for instance in &instances {
         add_text(&mut zip, &format!("{CONFIG_ROOT}/instances/{}/instance.json", instance.id), &serde_json::to_string_pretty(instance)?)?;
+    }
+    let skins = crate::skins::load_library();
+    let mut media: Vec<String> = vec![settings.background.clone(), settings.music.clone(), settings.custom_font.clone()];
+    media.extend(settings.fonts.iter().chain(&settings.playlist).map(|m| m.path.clone()));
+    media.extend(instances.iter().map(|i| i.image.clone()));
+    media.extend(skins.iter().map(|s| root.join("skins").join(&s.file).to_string_lossy().to_string()));
+    let files: std::collections::BTreeSet<String> = media.iter().filter_map(|p| portable_rel(&root, p)).collect();
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated).large_file(true);
+    for rel in files {
+        let src = root.join(&rel);
+        if !src.is_file() || std::fs::metadata(&src)?.len() > MEDIA_FILE_MAX {
+            continue;
+        }
+        zip.start_file(format!("{CONFIG_ROOT}/files/{rel}"), options)?;
+        std::io::copy(&mut std::fs::File::open(&src)?, &mut zip)?;
+    }
+    add_text(&mut zip, &format!("{CONFIG_ROOT}/skins.json"), &serde_json::to_string(&skins)?)?;
+    if web.is_object() {
+        add_text(&mut zip, &format!("{CONFIG_ROOT}/web.json"), &web.to_string())?;
+    }
+    if let Some(game) = game.filter(|g| !g.is_empty()) {
+        add_text(&mut zip, &format!("{CONFIG_ROOT}/game.json"), &game)?;
     }
     zip.finish()?;
     Ok(path)
@@ -774,18 +836,34 @@ pub fn fit_memory(mb: u32, total_mb: u64) -> u32 {
     }
 }
 
-pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
+pub async fn import_config(path: &str) -> R<ImportOutcome> {
     let file = std::fs::File::open(path).with_context(|| format!("無法開啟 {path}"))?;
     let mut archive = zip::ZipArchive::new(file).context("這不是輝煌啟動器匯出的設定檔")?;
+    let root = paths::root();
+    let files_prefix = format!("{CONFIG_ROOT}/files/");
     let mut settings_json: Option<String> = None;
-    let mut source_os: Option<String> = None;
+    let mut meta = serde_json::Value::Null;
     let mut instances: Vec<(String, String)> = Vec::new();
+    let (mut skins_json, mut web, mut game) = (None, None, None);
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
+        let name = entry.name().replace('\\', "/");
+        if let Some(rel) = name.strip_prefix(&files_prefix) {
+            let safe = !rel.split('/').any(|c| c.is_empty() || c == "." || c == "..") && PORTABLE_DIRS.iter().any(|d| rel.starts_with(&format!("{d}/")));
+            let dest = root.join(rel);
+            if !safe || dest.exists() || entry.size() > MEDIA_FILE_MAX {
+                continue;
+            }
+            std::fs::create_dir_all(dest.parent().unwrap_or(&root))?;
+            let copied = std::fs::File::create(&dest).map_err(anyhow::Error::from).and_then(|mut out| Ok(std::io::copy(&mut (&mut entry).take(MEDIA_FILE_MAX), &mut out)?));
+            if copied.is_err() {
+                let _ = std::fs::remove_file(&dest);
+            }
+            continue;
+        }
         if entry.size() > 4 << 20 {
             continue;
         }
-        let name = entry.name().replace('\\', "/");
         let mut text = String::new();
         if (&mut entry).take(4 << 20).read_to_string(&mut text).is_err() {
             continue;
@@ -793,7 +871,13 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
         if name == format!("{CONFIG_ROOT}/config.json") {
             settings_json = Some(text);
         } else if name == format!("{CONFIG_ROOT}/meta.json") {
-            source_os = serde_json::from_str::<serde_json::Value>(&text).ok().and_then(|v| v.get("os")?.as_str().map(str::to_string));
+            meta = serde_json::from_str(&text).unwrap_or_default();
+        } else if name == format!("{CONFIG_ROOT}/skins.json") {
+            skins_json = Some(text);
+        } else if name == format!("{CONFIG_ROOT}/web.json") {
+            web = serde_json::from_str::<serde_json::Value>(&text).ok().filter(|v| v.is_object());
+        } else if name == format!("{CONFIG_ROOT}/game.json") {
+            game = Some(text);
         } else if let Some(rest) = name.strip_prefix(&format!("{CONFIG_ROOT}/instances/")) {
             if let Some((id, "instance.json")) = rest.split_once('/') {
                 if paths::valid_instance_id(id) {
@@ -805,6 +889,9 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
     if settings_json.is_none() && instances.is_empty() {
         bail!("這不是輝煌啟動器匯出的設定檔");
     }
+    let source_os = meta.get("os").and_then(|v| v.as_str()).map(str::to_string);
+    let source_root = meta.get("root").and_then(|v| v.as_str()).map(str::to_string);
+    let source_platform = meta.get("platform").and_then(|v| v.as_str()).unwrap_or(if source_os.as_deref() == Some("android") { "android" } else { "desktop" }).to_string();
     let same_os = source_os.as_deref() == Some(std::env::consts::OS);
     let total_mb = crate::boost::system_info().memory_mb;
     let mut notes = Vec::new();
@@ -842,11 +929,14 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
                 notes.push(format!("設定裡有{}，會在開始遊戲時執行；如果不是你自己設定的，請到「設定」的「啟動流程」與「進階」清除", kept.join("、")));
             }
         }
-        if !imported.background.is_empty() && !Path::new(&imported.background).is_file() {
-            imported.background = String::new();
-        }
-        if !imported.music.is_empty() && !Path::new(&imported.music).is_file() {
-            imported.music = String::new();
+        imported.background = relocate(&imported.background, source_root.as_deref());
+        imported.music = relocate(&imported.music, source_root.as_deref());
+        imported.custom_font = relocate(&imported.custom_font, source_root.as_deref());
+        for list in [&mut imported.fonts, &mut imported.playlist] {
+            for item in list.iter_mut() {
+                item.path = relocate(&item.path, source_root.as_deref());
+            }
+            list.retain(|item| !item.path.is_empty());
         }
         if !imported.java_path.is_empty() && !Path::new(&imported.java_path).is_file() {
             imported.java_path = String::new();
@@ -868,7 +958,7 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
         };
         instance.id = id;
         instance.name = crate::instance::unique_name(&instance.name).await;
-        instance.image = String::new();
+        instance.image = relocate(&instance.image, source_root.as_deref());
         instance.memory_mb = if instance.memory_mb > 0 { fit_memory(instance.memory_mb, total_mb) } else { 0 };
         if !same_os && !instance.wrapper.trim().is_empty() {
             instance.wrapper.clear();
@@ -883,7 +973,22 @@ pub async fn import_config(path: &str) -> R<(usize, usize, bool, Vec<String>)> {
         crate::instance::save(&instance).await?;
         added += 1;
     }
-    Ok((added, skipped, applied_settings, notes))
+    if let Some(list) = skins_json.and_then(|t| serde_json::from_str::<Vec<crate::skins::LibrarySkin>>(&t).ok()) {
+        let mut library = crate::skins::load_library();
+        let before = library.len();
+        for mut skin in list {
+            let file = root.join("skins").join(&skin.file);
+            if skin.file.contains(['/', '\\']) || !file.is_file() || library.iter().any(|s| s.file == skin.file) {
+                continue;
+            }
+            skin.path = file.to_string_lossy().to_string();
+            library.push(skin);
+        }
+        if library.len() > before {
+            crate::skins::save_library(&library)?;
+        }
+    }
+    Ok(ImportOutcome { added, skipped, settings: applied_settings, notes, web, game, source_platform })
 }
 
 pub fn parse_cli(args: &[String]) -> Option<(String, Option<String>)> {
@@ -1001,6 +1106,19 @@ pub fn create_shortcut(instance: &Instance, join: Option<String>) -> R<PathBuf> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_paths_move_between_devices() {
+        assert_eq!(rel_from(r"C:\Users\米\AppData\Roaming\BrilliantLauncher\media\bg.png", r"C:\Users\米\AppData\Roaming\BrilliantLauncher").as_deref(), Some("media/bg.png"));
+        assert_eq!(rel_from("/storage/emulated/0/Brilliant/media/images/a.png", "/storage/emulated/0/Brilliant/").as_deref(), Some("media/images/a.png"));
+        assert_eq!(rel_from(r"c:\users\a\brilliantlauncher\skins\x.png", r"C:\Users\A\BrilliantLauncher").as_deref(), Some("skins/x.png"));
+        assert!(rel_from(r"C:\Users\米\media\bg.png", r"C:\Users\米米").is_none());
+        assert!(rel_from(r"C:\Root\..\secret.txt", r"C:\Root").is_none());
+        let root = Path::new("/data/root");
+        assert_eq!(portable_rel(root, "/data/root/media/bg.png").as_deref(), Some("media/bg.png"));
+        assert!(portable_rel(root, "/data/root/accounts.json").is_none());
+        assert!(portable_rel(root, "/elsewhere/media/bg.png").is_none());
+    }
 
     #[test]
     fn powershell_quotes_cannot_be_escaped() {

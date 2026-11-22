@@ -984,8 +984,15 @@ pub async fn export_diagnostics(id: String) -> R<String> {
 }
 
 #[tauri::command]
-pub async fn export_config() -> R<String> {
-    Ok(crate::advanced::export_config().await?.to_string_lossy().to_string())
+pub async fn export_config(app: AppHandle, web: Option<serde_json::Value>) -> R<String> {
+    #[cfg(target_os = "android")]
+    let game = crate::mobile::export_game_settings(&app).await.ok();
+    #[cfg(not(target_os = "android"))]
+    let game: Option<String> = {
+        let _ = &app;
+        None
+    };
+    Ok(crate::advanced::export_config(web.unwrap_or_default(), game).await?.to_string_lossy().to_string())
 }
 
 #[derive(Serialize)]
@@ -994,12 +1001,28 @@ pub struct ImportSummary {
     skipped: usize,
     settings: bool,
     notes: Vec<String>,
+    web: Option<serde_json::Value>,
 }
 
 #[tauri::command]
-pub async fn import_config(path: String) -> R<ImportSummary> {
-    let (added, skipped, settings, notes) = crate::advanced::import_config(&path).await?;
-    Ok(ImportSummary { added, skipped, settings, notes })
+pub async fn import_config(app: AppHandle, path: String) -> R<ImportSummary> {
+    let crate::advanced::ImportOutcome { added, skipped, settings, mut notes, web, game, source_platform } = crate::advanced::import_config(&path).await?;
+    if let Some(game) = game {
+        #[cfg(target_os = "android")]
+        match crate::mobile::import_game_settings(&app, &game).await {
+            Ok(n) if n > 0 => notes.push(format!("已匯入手機版遊戲內設定與按鍵配置（{n} 項），下次開始遊戲生效")),
+            Ok(_) => {}
+            Err(e) => notes.push(format!("手機版遊戲內設定匯入失敗：{:#}", e.0)),
+        }
+        #[cfg(not(target_os = "android"))]
+        {
+            let _ = (&app, game);
+            notes.push("手機版的遊戲內設定（快速設定、自訂按鍵配置）只能匯入到手機版，已略過".into());
+        }
+    } else if source_platform == "desktop" && cfg!(target_os = "android") {
+        notes.push("設定來自電腦版，手機版的遊戲內設定與按鍵配置維持不變".into());
+    }
+    Ok(ImportSummary { added, skipped, settings, notes, web })
 }
 
 #[tauri::command]

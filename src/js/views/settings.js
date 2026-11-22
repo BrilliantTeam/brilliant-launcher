@@ -1,5 +1,5 @@
 import { ANDROID, api, fileSrc, listen, openUrl, pickFile, versionLabel } from '../api.js';
-import { $, $$, acceptFiles, autoKeyboard, autoTokens, clampNumber, clear, confirm, dialog, fail, fmtBytes, h, pickColor, rangeFill, setAutoKeyboard, toast, guard } from '../ui.js';
+import { $, $$, acceptFiles, autoTokens, clampNumber, clear, confirm, dialog, fail, fmtBytes, h, pickColor, rangeFill, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { icon } from '../icons.js';
 import { gpuName, isIntegratedGpu, nextTrack, nowPlaying } from '../services.js';
@@ -1147,11 +1147,28 @@ function initPages(view) {
     show(current);
 }
 
+const WEB_KEYS = ['eventReminders', 'recapSnapshots', 'brilliant.home.fold'];
+
+function webPrefs() {
+    const out = {};
+    for (const key of WEB_KEYS) {
+        try {
+            const value = localStorage.getItem(key);
+            if (value !== null) out[key] = value;
+        } catch {}
+    }
+    return out;
+}
+
+function restoreWebPrefs(web) {
+    for (const [key, value] of Object.entries(web ?? {})) {
+        if (!WEB_KEYS.includes(key) || typeof value !== 'string') continue;
+        try { localStorage.setItem(key, value); } catch {}
+    }
+}
+
 export function initSettings() {
     on('update-status', renderUpdate);
-    const autoKb = $('#set-auto-keyboard');
-    autoKb.checked = autoKeyboard();
-    autoKb.addEventListener('change', () => setAutoKeyboard(autoKb.checked));
     const syncAlpha = () => { $('#opt-alpha').hidden = !store.settings?.alphaUnlocked && store.settings?.updateChannel !== 'alpha'; };
     on('settings', syncAlpha);
     syncAlpha();
@@ -1318,7 +1335,7 @@ export function initSettings() {
     on('instances', renderSharedSummary);
     $('#btn-config-export').addEventListener('click', guard(async () => {
         try {
-            const path = await api.export_config();
+            const path = await api.export_config({ web: webPrefs() });
             toast(`已匯出設定到「下載」資料夾：${path.split(/[\\/]/).pop()}`);
             api.open_path({ path: path.replace(/[\\/][^\\/]+$/, '') }).catch(() => {});
         } catch (error) {
@@ -1330,6 +1347,7 @@ export function initSettings() {
         if (!(await confirm('匯入會用檔案裡的啟動器設定取代目前的設定，並加入目前沒有的實例（已存在的實例不會被動到）。要繼續嗎？', '匯入'))) return;
         try {
             const result = await api.import_config({ path });
+            restoreWebPrefs(result.web);
             await loadSettings();
             emit('settings');
             await loadInstances().catch(() => {});

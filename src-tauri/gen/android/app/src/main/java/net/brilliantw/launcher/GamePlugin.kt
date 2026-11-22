@@ -31,6 +31,11 @@ class LaunchArgs {
 }
 
 @InvokeArg
+class GameSettingsArgs {
+  lateinit var json: String
+}
+
+@InvokeArg
 class InstallerArgs {
   lateinit var versionId: String
   lateinit var javaArgs: String
@@ -151,6 +156,24 @@ class GamePlugin(private val activity: Activity) : Plugin(activity) {
     updates.completeUpdate()
       .addOnSuccessListener { invoke.resolve(JSObject()) }
       .addOnFailureListener { e -> invoke.reject(e.message ?: e.toString()) }
+  }
+
+  @Command
+  fun exportGameSettings(invoke: Invoke) {
+    try {
+      invoke.resolve(JSObject().put("json", BrilliantLaunch.exportSettings(activity)))
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: e.toString())
+    }
+  }
+
+  @Command
+  fun importGameSettings(invoke: Invoke) {
+    try {
+      invoke.resolve(JSObject().put("applied", BrilliantLaunch.importSettings(activity, invoke.parseArgs(GameSettingsArgs::class.java).json)))
+    } catch (e: Exception) {
+      invoke.reject(e.message ?: e.toString())
+    }
   }
 
   @Command

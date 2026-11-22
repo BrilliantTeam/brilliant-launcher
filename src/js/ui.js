@@ -501,22 +501,3 @@ export function autoTokens({ hue, sat }, mode) {
         : { 'content-bg': c(0.8, 97), 'content-bg-alt': c(0.8, 94), 'content-bg-sunken': c(0.8, 89), 'panel-face': c(0.8, 92), text: c(0.6, 14), 'text-subtle': c(0.4, 38),
             border: c(0.6, 72), 'border-soft': c(0.6, 85), 'chrome-bg': c(0.8, 91), 'chrome-ink': c(0.6, 15), 'glass-bg': c(0.8, 97), 'glass-ink': c(0.6, 14) };
 }
-
-const AUTO_KEYBOARD_KEY = 'brilliant.autoKeyboard';
-export function autoKeyboard() {
-    try { return localStorage.getItem(AUTO_KEYBOARD_KEY) === 'on'; } catch { return false; }
-}
-export function setAutoKeyboard(on) {
-    try { localStorage.setItem(AUTO_KEYBOARD_KEY, on ? 'on' : 'off'); } catch {}
-}
-const TYPING = 'input:not([type]), input[type="text"], input[type="search"], input[type="number"], input[type="url"], input[type="email"], input[type="password"], textarea, [contenteditable="true"]';
-let touched = null;
-let touchedAt = 0;
-addEventListener('pointerdown', (e) => { touched = e.target; touchedAt = Date.now(); }, true);
-addEventListener('keydown', () => { touched = null; touchedAt = Date.now(); }, true);
-if (ANDROID) addEventListener('focusin', (e) => {
-    const field = e.target;
-    if (!field.matches?.(TYPING) || autoKeyboard()) return;
-    if (Date.now() - touchedAt < 800 && (!touched || touched === field || touched.contains?.(field) || field.contains(touched) || touched.closest?.('label')?.control === field)) return;
-    field.blur();
-}, true);
