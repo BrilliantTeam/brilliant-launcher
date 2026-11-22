@@ -3,24 +3,14 @@ use std::path::Path;
 
 pub const GROUPS: [&str; 4] = ["keys", "video", "audio", "controls"];
 
-const VIDEO: [&str; 19] = [
-    "fov", "renderDistance", "simulationDistance", "gamma", "guiScale", "maxFps", "enableVsync", "graphicsMode", "particles", "entityShadows",
-    "biomeBlendRadius", "renderClouds", "fovEffectScale", "screenEffectScale", "darknessEffectScale", "ao", "mipmapLevels", "entityDistanceScaling", "bobView",
-];
-
-const CONTROLS: [&str; 12] = [
-    "mouseSensitivity", "invertYMouse", "autoJump", "toggleCrouch", "toggleSprint", "rawMouseInput", "mouseWheelSensitivity", "discrete_mouse_scroll",
-    "chatOpacity", "chatScale", "chatLineSpacing", "textBackgroundOpacity",
-];
-
-fn group_of(key: &str) -> Option<&'static str> {
+fn group_of(key: &str, sync: &SyncGroups) -> Option<&'static str> {
     if key.starts_with("key_") {
         Some("keys")
     } else if key.starts_with("soundCategory_") {
         Some("audio")
-    } else if VIDEO.contains(&key) {
+    } else if sync.video.iter().any(|k| k == key) {
         Some("video")
-    } else if CONTROLS.contains(&key) {
+    } else if sync.controls.iter().any(|k| k == key) {
         Some("controls")
     } else {
         None
@@ -35,12 +25,13 @@ fn render(list: &[(String, String)]) -> String {
     list.iter().map(|(k, v)| format!("{k}:{v}\n")).collect()
 }
 
-fn wanted(key: &str, groups: &[String]) -> bool {
-    group_of(key).is_some_and(|g| groups.iter().any(|w| w == g))
+fn wanted(key: &str, groups: &[String], sync: &SyncGroups) -> bool {
+    group_of(key, sync).is_some_and(|g| groups.iter().any(|w| w == g))
 }
 
 fn apply_with(source: &Path, game_dir: &Path, groups: &[String]) -> std::io::Result<usize> {
-    let synced: Vec<(String, String)> = parse(&std::fs::read_to_string(source).unwrap_or_default()).into_iter().filter(|(k, _)| wanted(k, groups)).collect();
+    let sync = defaults().sync_groups;
+    let synced: Vec<(String, String)> = parse(&std::fs::read_to_string(source).unwrap_or_default()).into_iter().filter(|(k, _)| wanted(k, groups, &sync)).collect();
     if synced.is_empty() {
         return Ok(0);
     }
@@ -76,35 +67,31 @@ pub async fn apply(instance: &crate::instance::Instance, settings: &crate::confi
     let _ = tokio::task::spawn_blocking(move || apply_with(&from, &to, &groups)).await;
 }
 
-const MOBILE: [(&str, &str); 20] = [
-    ("graphicsPreset", "\"custom\""),
-    ("renderDistance", "8"),
-    ("simulationDistance", "6"),
-    ("maxFps", "60"),
-    ("enableVsync", "false"),
-    ("particles", "1"),
-    ("entityShadows", "false"),
-    ("renderClouds", "\"fast\""),
-    ("cloudRange", "64"),
-    ("cutoutLeaves", "false"),
-    ("improvedTransparency", "false"),
-    ("biomeBlendRadius", "0"),
-    ("chunkSectionFadeInTime", "0.0"),
-    ("weatherRadius", "5"),
-    ("entityDistanceScaling", "0.75"),
-    ("vignette", "false"),
-    ("menuBackgroundBlurriness", "0"),
-    ("mipmapLevels", "0"),
-    ("inactivityFpsLimit", "\"afk\""),
-    ("tutorialStep", "none"),
-];
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Defaults {
+    mobile: Vec<(String, String)>,
+    low_memory: Vec<(String, String)>,
+    first_launch: Vec<(String, String)>,
+    sync_groups: SyncGroups,
+    server: Server,
+}
 
-const LOW_MEMORY: [(&str, &str); 4] = [
-    ("renderDistance", "5"),
-    ("simulationDistance", "5"),
-    ("particles", "2"),
-    ("entityDistanceScaling", "0.5"),
-];
+#[derive(serde::Deserialize)]
+struct SyncGroups {
+    video: Vec<String>,
+    controls: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct Server {
+    ip: String,
+    names: std::collections::HashMap<String, String>,
+}
+
+fn defaults() -> Defaults {
+    crate::hotfix::data("game-options.json")
+}
 
 fn low_memory_device() -> bool {
     matches!(crate::boost::total_memory_mb(), 1..5120)
@@ -129,10 +116,11 @@ fn tune_for_mobile(game_dir: &Path, client_jar: &Path, low_memory: bool) -> std:
         };
         current.insert(0, ("version".into(), version.to_string()));
     }
-    for (key, value) in MOBILE.iter().chain(if low_memory { LOW_MEMORY.iter() } else { [].iter() }) {
-        match current.iter_mut().find(|(k, _)| k == key) {
-            Some(entry) => entry.1 = value.to_string(),
-            None => current.push((key.to_string(), value.to_string())),
+    let Defaults { mobile, low_memory: low, .. } = defaults();
+    for (key, value) in mobile.into_iter().chain(if low_memory { low } else { Vec::new() }) {
+        match current.iter_mut().find(|(k, _)| *k == key) {
+            Some(entry) => entry.1 = value,
+            None => current.push((key, value)),
         }
     }
     std::fs::create_dir_all(game_dir)?;
@@ -141,18 +129,15 @@ fn tune_for_mobile(game_dir: &Path, client_jar: &Path, low_memory: bool) -> std:
     Ok(true)
 }
 
-const FIRST_LAUNCH: [(&str, &str); 4] = [("onboardAccessibility", "false"), ("skipMultiplayerWarning", "true"), ("tutorialStep", "none"), ("joinedFirstServer", "true")];
-
-const SERVER_IP: &str = "brilliantw.net";
 
 fn nbt_string(out: &mut Vec<u8>, text: &str) {
     out.extend((text.len() as u16).to_be_bytes());
     out.extend(text.as_bytes());
 }
 
-fn server_entry(name: &str) -> Vec<u8> {
+fn server_entry(ip: &str, name: &str) -> Vec<u8> {
     let mut out = Vec::new();
-    for (key, value) in [("ip", SERVER_IP), ("name", name)] {
+    for (key, value) in [("ip", ip), ("name", name)] {
         out.push(8);
         nbt_string(&mut out, key);
         nbt_string(&mut out, value);
@@ -163,10 +148,10 @@ fn server_entry(name: &str) -> Vec<u8> {
     out
 }
 
-fn add_server(bytes: &[u8], name: &str) -> Option<Vec<u8>> {
+fn add_server(bytes: &[u8], ip: &str, name: &str) -> Option<Vec<u8>> {
     let mut wanted = vec![8];
     nbt_string(&mut wanted, "ip");
-    nbt_string(&mut wanted, SERVER_IP);
+    nbt_string(&mut wanted, &ip.to_ascii_lowercase());
     if bytes.to_ascii_lowercase().windows(wanted.len()).any(|w| w == wanted.as_slice()) {
         return None;
     }
@@ -176,7 +161,7 @@ fn add_server(bytes: &[u8], name: &str) -> Option<Vec<u8>> {
         let mut out = head;
         out.push(10);
         out.extend(1i32.to_be_bytes());
-        out.extend(server_entry(name));
+        out.extend(server_entry(ip, name));
         out.push(0);
         return Some(out);
     }
@@ -191,7 +176,7 @@ fn add_server(bytes: &[u8], name: &str) -> Option<Vec<u8>> {
     let mut out = head;
     out.push(10);
     out.extend((count + 1).to_be_bytes());
-    out.extend(server_entry(name));
+    out.extend(server_entry(ip, name));
     out.extend(&bytes[at + 4..]);
     Some(out)
 }
@@ -213,10 +198,10 @@ fn first_launch(game_dir: &Path, client_jar: &Path, language: &str, brilliant: b
         current.push(("lang".into(), lang.into()));
     }
     if brilliant {
-        for (key, value) in FIRST_LAUNCH {
-            match current.iter_mut().find(|(k, _)| k == key) {
-                Some(entry) => entry.1 = value.to_string(),
-                None => current.push((key.to_string(), value.to_string())),
+        for (key, value) in defaults().first_launch {
+            match current.iter_mut().find(|(k, _)| *k == key) {
+                Some(entry) => entry.1 = value,
+                None => current.push((key, value)),
             }
         }
     }
@@ -225,12 +210,9 @@ fn first_launch(game_dir: &Path, client_jar: &Path, language: &str, brilliant: b
     }
     if brilliant {
         let servers = game_dir.join("servers.dat");
-        let name = match language {
-            "zh-CN" => "辉煌服务器",
-            "en" => "Brilliant",
-            _ => "輝煌伺服器",
-        };
-        if let Some(bytes) = add_server(&std::fs::read(&servers).unwrap_or_default(), name) {
+        let server = defaults().server;
+        let name = server.names.get(language).or_else(|| server.names.get("zh-TW")).cloned().unwrap_or_else(|| server.ip.clone());
+        if let Some(bytes) = add_server(&std::fs::read(&servers).unwrap_or_default(), &server.ip, &name) {
             paths::write_atomic(&servers, &bytes)?;
         }
     }
@@ -316,17 +298,17 @@ tutorialStep:none
             nbt_string(&mut other, v);
         }
         other.extend([0, 0]);
-        let merged = add_server(&other, "輝煌伺服器").unwrap();
+        let merged = add_server(&other, "brilliantw.net", "輝煌伺服器").unwrap();
         assert_eq!(&merged[14..18], &2i32.to_be_bytes());
         assert!(merged.ends_with(b"Other  "));
-        assert!(add_server(&merged, "x").is_none());
-        assert!(add_server(b"garbage", "x").is_none());
+        assert!(add_server(&merged, "BrilliantW.net", "x").is_none());
+        assert!(add_server(b"garbage", "brilliantw.net", "x").is_none());
         let mut empty = vec![10, 0, 0, 9];
         nbt_string(&mut empty, "servers");
         empty.push(0);
         empty.extend(0i32.to_be_bytes());
         empty.push(0);
-        assert_eq!(&add_server(&empty, "x").unwrap()[13..18], &[10, 0, 0, 0, 1]);
+        assert_eq!(&add_server(&empty, "brilliantw.net", "x").unwrap()[13..18], &[10, 0, 0, 0, 1]);
         std::fs::remove_dir_all(&base).unwrap();
     }
 

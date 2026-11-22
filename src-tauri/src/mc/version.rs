@@ -238,7 +238,7 @@ pub async fn resolve(id: &str, mirror: bool) -> R<Resolved> {
                 game_args.extend(legacy.split_whitespace().map(|s| Value::String(s.into())));
                 if jvm_args.is_empty() {
                     jvm_args.extend(
-                        LEGACY_JVM_ARGS.iter().map(|s| Value::String((*s).into())),
+                        crate::hotfix::data::<crate::config::JvmData>("jvm.json").legacy_args.into_iter().map(Value::String),
                     );
                 }
             }
@@ -280,10 +280,3 @@ pub async fn resolve(id: &str, mirror: bool) -> R<Resolved> {
     })
 }
 
-const LEGACY_JVM_ARGS: &[&str] = &[
-    "-Djava.library.path=${natives_directory}",
-    "-Dminecraft.launcher.brand=${launcher_name}",
-    "-Dminecraft.launcher.version=${launcher_version}",
-    "-cp",
-    "${classpath}",
-];

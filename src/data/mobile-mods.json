@@ -1,0 +1,7 @@
+[
+    ["ferrite-core", "FerriteCore"],
+    ["lithium", "Lithium"],
+    ["entityculling", "Entity Culling"],
+    ["sodium", "Sodium"],
+    ["immediatelyfast", "ImmediatelyFast"]
+]

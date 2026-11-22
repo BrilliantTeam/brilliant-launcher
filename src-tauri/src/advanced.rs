@@ -28,7 +28,8 @@ pub fn parse_env(text: &str) -> Vec<(String, String)> {
 }
 
 pub fn drop_removed_flags(args: Vec<String>, java_major: u32) -> Vec<String> {
-    args.into_iter().filter(|a| java_major < 23 || !a.ends_with("ZGenerational")).collect()
+    let removed = crate::hotfix::data::<crate::config::JvmData>("jvm.json").removed_flags;
+    args.into_iter().filter(|a| !removed.iter().any(|r| java_major >= r.since_java && a.ends_with(&r.suffix))).collect()
 }
 
 pub fn split_args(text: &str) -> Vec<String> {
@@ -61,13 +62,7 @@ pub fn split_args(text: &str) -> Vec<String> {
 }
 
 pub fn java_component(major: u32) -> String {
-    match major {
-        8 => "jre-legacy".into(),
-        16 => "java-runtime-alpha".into(),
-        17 => "java-runtime-gamma".into(),
-        21 => "java-runtime-delta".into(),
-        other => format!("java-{other}"),
-    }
+    crate::hotfix::data::<crate::config::JvmData>("jvm.json").java_components.remove(&major.to_string()).unwrap_or_else(|| format!("java-{major}"))
 }
 
 pub fn proxy_props(proxy: &str) -> Vec<String> {

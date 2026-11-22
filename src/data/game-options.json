@@ -1,0 +1,48 @@
+{
+    "mobile": [
+        ["graphicsPreset", "\"custom\""],
+        ["renderDistance", "8"],
+        ["simulationDistance", "6"],
+        ["maxFps", "60"],
+        ["enableVsync", "false"],
+        ["particles", "1"],
+        ["entityShadows", "false"],
+        ["renderClouds", "\"fast\""],
+        ["cloudRange", "64"],
+        ["cutoutLeaves", "false"],
+        ["improvedTransparency", "false"],
+        ["biomeBlendRadius", "0"],
+        ["chunkSectionFadeInTime", "0.0"],
+        ["weatherRadius", "5"],
+        ["entityDistanceScaling", "0.75"],
+        ["vignette", "false"],
+        ["menuBackgroundBlurriness", "0"],
+        ["mipmapLevels", "0"],
+        ["inactivityFpsLimit", "\"afk\""],
+        ["tutorialStep", "none"]
+    ],
+    "lowMemory": [
+        ["renderDistance", "5"],
+        ["simulationDistance", "5"],
+        ["particles", "2"],
+        ["entityDistanceScaling", "0.5"]
+    ],
+    "firstLaunch": [
+        ["onboardAccessibility", "false"],
+        ["skipMultiplayerWarning", "true"],
+        ["tutorialStep", "none"],
+        ["joinedFirstServer", "true"]
+    ],
+    "syncGroups": {
+        "video": ["fov", "renderDistance", "simulationDistance", "gamma", "guiScale", "maxFps", "enableVsync", "graphicsMode", "particles", "entityShadows", "biomeBlendRadius", "renderClouds", "fovEffectScale", "screenEffectScale", "darknessEffectScale", "ao", "mipmapLevels", "entityDistanceScaling", "bobView"],
+        "controls": ["mouseSensitivity", "invertYMouse", "autoJump", "toggleCrouch", "toggleSprint", "rawMouseInput", "mouseWheelSensitivity", "discrete_mouse_scroll", "chatOpacity", "chatScale", "chatLineSpacing", "textBackgroundOpacity"]
+    },
+    "server": {
+        "ip": "brilliantw.net",
+        "names": {
+            "zh-TW": "輝煌伺服器",
+            "zh-CN": "辉煌服务器",
+            "en": "Brilliant"
+        }
+    }
+}

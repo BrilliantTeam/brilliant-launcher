@@ -108,11 +108,7 @@ impl Instance {
         }
     }
     pub fn jvm(&self, s: &Settings) -> String {
-        if self.jvm_args.trim().is_empty() {
-            s.jvm_args.clone()
-        } else {
-            self.jvm_args.clone()
-        }
+        crate::config::current_jvm(if self.jvm_args.trim().is_empty() { s.jvm_args.clone() } else { self.jvm_args.clone() })
     }
     pub fn java<'a>(&'a self, s: &'a Settings) -> &'a str {
         if self.java_path.trim().is_empty() { &s.java_path } else { &self.java_path }

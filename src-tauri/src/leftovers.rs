@@ -5,10 +5,12 @@ use serde::Serialize;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-const KEEP_DIRS: &[&str] = &[
-    "mods", "config", "saves", "resourcepacks", "shaderpacks", "screenshots", "logs", "crash-reports", "versions", "libraries",
-    "assets", "natives", "backups", "trash", "defaultconfigs", "kubejs", "datapacks", "schematics", "server-resource-packs",
-];
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Folders {
+    pub default_packs: Vec<String>,
+    pub keep_dirs: Vec<String>,
+}
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -128,10 +130,11 @@ pub fn find(game_dir: &Path, target: &str, others: &[String]) -> Vec<Leftover> {
             out.push(leftover(format!("config/{name}"), &path));
         }
     }
+    let keep = crate::hotfix::data::<Folders>("folders.json").keep_dirs;
     for entry in std::fs::read_dir(game_dir).map(|d| d.flatten().collect::<Vec<_>>()).unwrap_or_default() {
         let name = entry.file_name().to_string_lossy().to_string();
         let lower = name.to_ascii_lowercase();
-        if entry.path().is_dir() && !KEEP_DIRS.contains(&lower.as_str()) && variants(target).contains(&lower) {
+        if entry.path().is_dir() && !keep.contains(&lower) && variants(target).contains(&lower) {
             out.push(leftover(name, &entry.path()));
         }
     }

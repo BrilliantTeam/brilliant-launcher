@@ -1,0 +1,27 @@
+{
+    "defaultPacks": [
+        "bsje.zip",
+        "bsje-riceboss.zip"
+    ],
+    "keepDirs": [
+        "mods",
+        "config",
+        "saves",
+        "resourcepacks",
+        "shaderpacks",
+        "screenshots",
+        "logs",
+        "crash-reports",
+        "versions",
+        "libraries",
+        "assets",
+        "natives",
+        "backups",
+        "trash",
+        "defaultconfigs",
+        "kubejs",
+        "datapacks",
+        "schematics",
+        "server-resource-packs"
+    ]
+}

@@ -1,0 +1,29 @@
+{
+    "memoryTiers": [
+        [7000, 3072],
+        [5500, 2560]
+    ],
+    "controlLabels": [
+        ["Jump", "跳躍", "跳跃"],
+        ["Offhand", "副手", "副手"],
+        ["Menu", "選單", "菜单"],
+        ["Crouch", "潛行", "潜行"],
+        ["Right\nClick", "右鍵", "右键"],
+        ["Middle\nClick", "中鍵", "中键"],
+        ["Inventory", "物品欄", "物品栏"],
+        ["Sprint", "疾跑", "疾跑"],
+        ["Hide\nControls", "隱藏\n按鍵", "隐藏\n按键"],
+        ["Pause", "暫停", "暂停"],
+        ["Exit\nMenu", "離開\n選單", "退出\n菜单"],
+        ["Third\nPerson", "第三\n人稱", "第三\n人称"],
+        ["Debug\nMenu", "除錯\n畫面", "调试\n界面"],
+        ["Mouse\nToggle", "切換\n滑鼠", "切换\n鼠标"],
+        ["Chat", "聊天", "聊天"],
+        ["Keyboard", "鍵盤", "键盘"],
+        ["HUD\nToggle", "切換\n介面", "切换\n界面"],
+        ["Drop\nItem", "丟棄\n物品", "丢弃\n物品"],
+        ["Player\nList", "玩家\n列表", "玩家\n列表"],
+        ["More", "更多", "更多"],
+        ["Actions", "快捷動作", "快捷动作"]
+    ]
+}

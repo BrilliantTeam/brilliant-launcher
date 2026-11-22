@@ -73,13 +73,51 @@ pub fn load() {
     let Ok(bytes) = std::fs::read(dir.join("hotfix.zip")) else { return };
     match unpack(saved.build, &bytes, &saved.signature) {
         Ok(files) => {
-            let _ = std::fs::write(&pending, "");
             *ACTIVE.write().unwrap() = Some((saved.build, files));
         }
         Err(_) => {
             let _ = std::fs::remove_dir_all(&dir);
         }
     }
+}
+
+pub fn arm() {
+    if current() > 0 {
+        let _ = std::fs::write(dir().join("pending"), "");
+    }
+}
+
+fn builtin_bytes(name: &str) -> &'static [u8] {
+    match name {
+        "risky-mods.json" => include_bytes!("../../src/data/risky-mods.json"),
+        "perf.json" => include_bytes!("../../src/data/perf.json"),
+        "jvm.json" => include_bytes!("../../src/data/jvm.json"),
+        "game-options.json" => include_bytes!("../../src/data/game-options.json"),
+        "controls.json" => include_bytes!("../../src/data/controls.json"),
+        "mirrors.json" => include_bytes!("../../src/data/mirrors.json"),
+        "crash.json" => include_bytes!("../../src/data/crash.json"),
+        "mobile-mods.json" => include_bytes!("../../src/data/mobile-mods.json"),
+        "folders.json" => include_bytes!("../../src/data/folders.json"),
+        "mobile.json" => include_bytes!("../../src/data/mobile.json"),
+        _ => b"null",
+    }
+}
+
+pub fn builtin<T: serde::de::DeserializeOwned>(name: &str) -> T {
+    serde_json::from_slice(builtin_bytes(name)).expect("內建資料格式錯誤")
+}
+
+pub fn data<T: serde::de::DeserializeOwned>(name: &str) -> T {
+    let patched = ACTIVE.read().unwrap().as_ref().and_then(|(_, files)| files.get(&format!("/data/{name}")).cloned());
+    patched.and_then(|bytes| serde_json::from_slice(&bytes).ok()).unwrap_or_else(|| builtin(name))
+}
+
+pub fn data_text(name: &str) -> String {
+    let patched = ACTIVE.read().unwrap().as_ref().and_then(|(_, files)| files.get(&format!("/data/{name}")).cloned());
+    patched
+        .filter(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).is_ok())
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .unwrap_or_else(|| String::from_utf8_lossy(builtin_bytes(name)).into_owned())
 }
 
 fn rejected() -> u32 {
@@ -121,7 +159,6 @@ pub async fn apply_hotfix(url: String, build: u32, sha256: String, signature: St
     tokio::fs::create_dir_all(&dir).await?;
     tokio::fs::write(dir.join("hotfix.zip"), &bytes).await?;
     tokio::fs::write(dir.join("hotfix.json"), serde_json::to_vec(&Saved { app: VERSION.into(), build, signature })?).await?;
-    tokio::fs::write(dir.join("pending"), "").await?;
     *ACTIVE.write().unwrap() = Some((build, files));
     Ok(build)
 }
@@ -183,5 +220,27 @@ mod tests {
         assert!(unpack(1, &bytes, "").is_err(), "沒有簽章要拒絕");
         assert!(unpack(1, &bytes, "7w50zp16kSKorY4aE6TR6E0MSnEG1MWHblvMoE1SKd4SdPuvVdYHrENDjCatgMxruSwFyAP9PgIc+m82xxznCg==").is_err(), "別的檔案的簽章要拒絕");
         assert_eq!(file_name(3), format!("BrilliantLauncher_UI_{VERSION}_3.zip"));
+    }
+
+    #[test]
+    fn hotfix_data_overrides_builtin() {
+        assert!(crate::insight::risk_of("examplecheat").is_none());
+        let mut files = HashMap::new();
+        let mut risky: Vec<serde_json::Value> = builtin("risky-mods.json");
+        risky.push(serde_json::json!({ "ids": ["examplecheat"], "reason": "test" }));
+        files.insert("/data/risky-mods.json".to_string(), serde_json::to_vec(&risky).unwrap());
+        files.insert("/data/controls.json".to_string(), b"{broken".to_vec());
+        *ACTIVE.write().unwrap() = Some((1, files));
+        assert_eq!(crate::insight::risk_of("examplecheat").as_deref(), Some("test"));
+        assert!(data_text("controls.json").contains("mControlDataList"), "壞掉的修正資料要退回內建版本");
+        *ACTIVE.write().unwrap() = None;
+        assert!(crate::insight::risk_of("examplecheat").is_none());
+    }
+
+    #[test]
+    fn builtin_data_parses() {
+        for name in ["risky-mods.json", "perf.json", "jvm.json", "game-options.json", "controls.json", "mirrors.json", "crash.json", "mobile-mods.json", "folders.json", "mobile.json"] {
+            assert!(!builtin::<serde_json::Value>(name).is_null(), "{name}");
+        }
     }
 }

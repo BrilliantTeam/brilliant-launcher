@@ -1,0 +1,24 @@
+{
+    "skipPackages": [
+        "java.",
+        "javax.",
+        "jdk.",
+        "sun.",
+        "com.sun.",
+        "net.minecraft.",
+        "com.mojang.",
+        "org.spongepowered.",
+        "net.fabricmc.",
+        "org.lwjgl.",
+        "io.netty.",
+        "com.google.",
+        "org.apache.",
+        "it.unimi.",
+        "org.joml.",
+        "oshi.",
+        "org.slf4j.",
+        "kotlin.",
+        "org.objectweb.",
+        "cpw."
+    ]
+}

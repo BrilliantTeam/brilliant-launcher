@@ -79,6 +79,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .manage(state::AppState::default())
         .setup(|app| {
+            hotfix::arm();
             let startup = tauri::async_runtime::block_on(config::load_settings());
             tauri::async_runtime::block_on(config::seal_stored_accounts());
             net::set_concurrency(startup.download_threads);

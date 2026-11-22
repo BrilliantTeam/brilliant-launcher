@@ -48,6 +48,8 @@ pub async fn launch(app: &AppHandle, instance: &Instance, version_id: &str, acco
         "language": language,
         "join": join,
         "jvmArgs": jvm_args,
+        "controls": crate::hotfix::data_text("controls.json"),
+        "mobile": crate::hotfix::data_text("mobile.json"),
     }))
     .await
     .context("遊戲執行環境啟動失敗")?;
@@ -289,12 +291,10 @@ pub async fn move_data(app: &AppHandle, target: String) -> R<String> {
     Ok(to.to_string_lossy().to_string())
 }
 
-const PERFORMANCE_MODS: [(&str, &str); 5] = [("ferrite-core", "FerriteCore"), ("lithium", "Lithium"), ("entityculling", "Entity Culling"), ("sodium", "Sodium"), ("immediatelyfast", "ImmediatelyFast")];
-
 fn offered_mods(marker: &str) -> Vec<String> {
     let listed: Vec<String> = marker.lines().map(str::trim).filter(|l| !l.is_empty()).map(str::to_string).collect();
     if listed.is_empty() {
-        PERFORMANCE_MODS[..3].iter().map(|(p, _)| p.to_string()).collect()
+        ["ferrite-core", "lithium", "entityculling"].map(String::from).to_vec()
     } else {
         listed
     }
@@ -306,17 +306,17 @@ pub async fn performance_mods(app: &AppHandle, instance: &Instance, settings: &c
         Ok(text) => offered_mods(&text),
         Err(_) => Vec::new(),
     };
-    let pending: Vec<_> = PERFORMANCE_MODS.iter().filter(|(p, _)| !offered.iter().any(|o| o == p)).collect();
+    let pending: Vec<(String, String)> = crate::hotfix::data::<Vec<(String, String)>>("mobile-mods.json").into_iter().filter(|(p, _)| !offered.iter().any(|o| o == p)).collect();
     if pending.is_empty() {
         return None;
     }
     crate::net::emit_stage(app, "mods", "安裝手機版效能模組");
     let mut added = Vec::new();
     for (project, name) in pending {
-        match crate::modrinth::install(app, &instance.id, crate::modrinth::Kind::Mod, &instance.loader, project, &instance.mc_version, instance.wants_rich_presence(settings), instance.channel(settings)).await {
+        match crate::modrinth::install(app, &instance.id, crate::modrinth::Kind::Mod, &instance.loader, &project, &instance.mc_version, instance.wants_rich_presence(settings), instance.channel(settings)).await {
             Ok(files) => {
                 if !files.is_empty() {
-                    added.push(*name);
+                    added.push(name);
                 }
                 offered.push(project.to_string());
             }

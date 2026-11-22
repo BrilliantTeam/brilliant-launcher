@@ -10,7 +10,6 @@ use tauri::AppHandle;
 
 const PACK_INDEX: &str = "https://www.brilliantw.net/resourcepack/latest.json";
 const PACK_PREFIX: &str = "https://www.brilliantw.net/resourcepack/";
-const DEFAULT_PACKS: [&str; 2] = ["bsje.zip", "bsje-riceboss.zip"];
 const INHERITED_FILES: [&str; 4] = ["options.txt", "servers.dat", "optionsshaders.txt", "optionsof.txt"];
 
 #[derive(Deserialize)]
@@ -56,7 +55,7 @@ pub async fn sync_server_packs(app: &AppHandle, instance: &Instance) -> R<()> {
     let game_dir = paths::game_dir(&instance.id);
     let mut wanted = received_packs(&game_dir);
     if wanted.is_empty() {
-        wanted = DEFAULT_PACKS.iter().map(|s| s.to_string()).collect();
+        wanted = crate::hotfix::data::<crate::leftovers::Folders>("folders.json").default_packs.into_iter().collect();
     }
     let jobs: Vec<DlFile> = index
         .packs

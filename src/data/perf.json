@@ -1,0 +1,3 @@
+{
+    "keys": ["renderDistance", "simulationDistance", "graphicsMode", "particles", "biomeBlendRadius", "maxFps", "enableVsync", "entityShadows", "cloudStatus", "entityDistanceScaling", "mipmapLevels", "ao"]
+}

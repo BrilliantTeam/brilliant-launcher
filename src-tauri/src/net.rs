@@ -79,23 +79,12 @@ pub fn client() -> reqwest::Client {
     client
 }
 
-const MIRROR: &[(&str, &str)] = &[
-    ("https://piston-meta.mojang.com", "https://bmclapi2.bangbang93.com"),
-    ("https://piston-data.mojang.com", "https://bmclapi2.bangbang93.com"),
-    ("https://launchermeta.mojang.com", "https://bmclapi2.bangbang93.com"),
-    ("https://launcher.mojang.com", "https://bmclapi2.bangbang93.com"),
-    ("https://resources.download.minecraft.net", "https://bmclapi2.bangbang93.com/assets"),
-    ("https://libraries.minecraft.net", "https://bmclapi2.bangbang93.com/maven"),
-    ("https://maven.fabricmc.net", "https://bmclapi2.bangbang93.com/maven"),
-    ("https://meta.fabricmc.net", "https://bmclapi2.bangbang93.com/fabric-meta"),
-];
-
 pub fn mirrored(url: &str, on: bool) -> String {
     if !on {
         return url.to_string();
     }
-    for (from, to) in MIRROR {
-        if let Some(rest) = url.strip_prefix(from) {
+    for (from, to) in crate::hotfix::data::<Vec<(String, String)>>("mirrors.json") {
+        if let Some(rest) = url.strip_prefix(&from) {
             return format!("{to}{rest}");
         }
     }

@@ -26,6 +26,8 @@ class LaunchArgs {
   var language: String = "zh-TW"
   var jvmArgs: String = ""
   var join: String = ""
+  var controls: String = ""
+  var mobile: String = ""
 }
 
 @InvokeArg
@@ -71,7 +73,7 @@ class GamePlugin(private val activity: Activity) : Plugin(activity) {
   @Command
   fun launch(invoke: Invoke) {
     val args = invoke.parseArgs(LaunchArgs::class.java)
-    BrilliantLaunch.launch(activity, args.versionId, args.gameDir, args.username, args.uuid, args.accessToken, args.xuid, 0, args.language, args.jvmArgs, args.join,
+    BrilliantLaunch.launch(activity, args.versionId, args.gameDir, args.username, args.uuid, args.accessToken, args.xuid, 0, args.language, args.jvmArgs, args.join, args.controls, args.mobile,
       object : BrilliantLaunch.Callback {
         override fun onStarted() = invoke.resolve()
         override fun onFailed(error: Throwable) = invoke.reject(error.message ?: error.toString())

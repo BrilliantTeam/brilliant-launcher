@@ -603,7 +603,6 @@ async function applyHotfix(hotfix) {
     if (!hotfix?.build || hotfix.build <= await api.hotfix_status().catch(() => 0)) return;
     const build = await api.apply_hotfix({ url: hotfix.url, build: hotfix.build, sha256: hotfix.sha256, signature: hotfix.signature }).catch(() => 0);
     if (build !== hotfix.build) return;
-    await api.hotfix_ok().catch(() => {});
     if (untouched && !store.running.length && !modalOpen()) return location.reload();
     if (!store.running.length && await confirm('已下載啟動器的介面修正，重新整理畫面後就會套用，不用重新安裝。要現在重新整理嗎？', '重新整理')) location.reload();
 }
@@ -716,8 +715,7 @@ async function boot() {
     on('instances', () => document.body.classList.toggle('game-running', store.running.length > 0));
 
     await Promise.all([loadInstances().catch(fail), loadAccounts().catch(fail)]);
-    window.addEventListener('focus', () => { loadAccounts().catch(() => {}); api.hotfix_ok().catch(() => {}); });
-    setInterval(() => api.hotfix_ok().catch(() => {}), 60 * 1000);
+    window.addEventListener('focus', () => loadAccounts().catch(() => {}));
 
     initHome();
     if (ANDROID) initRailMore();

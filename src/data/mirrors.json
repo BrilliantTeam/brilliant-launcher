@@ -1,0 +1,10 @@
+[
+    ["https://piston-meta.mojang.com", "https://bmclapi2.bangbang93.com"],
+    ["https://piston-data.mojang.com", "https://bmclapi2.bangbang93.com"],
+    ["https://launchermeta.mojang.com", "https://bmclapi2.bangbang93.com"],
+    ["https://launcher.mojang.com", "https://bmclapi2.bangbang93.com"],
+    ["https://resources.download.minecraft.net", "https://bmclapi2.bangbang93.com/assets"],
+    ["https://libraries.minecraft.net", "https://bmclapi2.bangbang93.com/maven"],
+    ["https://maven.fabricmc.net", "https://bmclapi2.bangbang93.com/maven"],
+    ["https://meta.fabricmc.net", "https://bmclapi2.bangbang93.com/fabric-meta"]
+]

@@ -245,7 +245,7 @@ impl Default for Settings {
         Self {
             use_mirror: true,
             memory_mb: 4096,
-            jvm_args: DEFAULT_JVM_ARGS.to_string(),
+            jvm_args: crate::hotfix::builtin::<JvmData>("jvm.json").default_args,
             java_path: String::new(),
             java_auto_update: false,
             width: 854,
@@ -664,9 +664,29 @@ impl Settings {
     }
 }
 
-pub const DEFAULT_JVM_ARGS: &str = "-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC \
--XX:G1NewSizePercent=20 -XX:G1ReservePercent=20 -XX:MaxGCPauseMillis=50 \
--XX:G1HeapRegionSize=32M -XX:-UseAdaptiveSizePolicy -XX:-OmitStackTraceInFastThrow";
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JvmData {
+    pub default_args: String,
+    pub java_components: std::collections::HashMap<String, String>,
+    pub removed_flags: Vec<RemovedFlag>,
+    pub legacy_args: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemovedFlag {
+    pub since_java: u32,
+    pub suffix: String,
+}
+
+pub fn current_jvm(args: String) -> String {
+    if args == crate::hotfix::builtin::<JvmData>("jvm.json").default_args {
+        crate::hotfix::data::<JvmData>("jvm.json").default_args
+    } else {
+        args
+    }
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(default, rename_all = "camelCase")]

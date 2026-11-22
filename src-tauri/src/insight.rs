@@ -48,20 +48,22 @@ pub fn exit_code(lines: &[String]) -> i32 {
     lines.iter().rev().find_map(|l| l.trim().strip_prefix("Java Exit code: ")?.parse().ok()).unwrap_or(0)
 }
 
-const SKIP: [&str; 20] = [
-    "java.", "javax.", "jdk.", "sun.", "com.sun.", "net.minecraft.", "com.mojang.", "org.spongepowered.", "net.fabricmc.", "org.lwjgl.",
-    "io.netty.", "com.google.", "org.apache.", "it.unimi.", "org.joml.", "oshi.", "org.slf4j.", "kotlin.", "org.objectweb.", "cpw.",
-];
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CrashData {
+    skip_packages: Vec<String>,
+}
 
-fn class_path(name: &str) -> Option<String> {
+fn class_path(name: &str, skip: &[String]) -> Option<String> {
     let name = name.rsplit('/').next()?.split('$').next()?;
     let ok = name.split('.').count() >= 3
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_')
-        && !SKIP.iter().any(|p| name.starts_with(p));
+        && !skip.iter().any(|p| name.starts_with(p.as_str()));
     ok.then(|| format!("{}.class", name.replace('.', "/")))
 }
 
 pub fn stack_hints(text: &str) -> (HashSet<String>, HashSet<String>) {
+    let skip = crate::hotfix::data::<CrashData>("crash.json").skip_packages;
     let mut classes = HashSet::new();
     let mut ids = HashSet::new();
     for line in text.lines() {
@@ -74,11 +76,11 @@ pub fn stack_hints(text: &str) -> (HashSet<String>, HashSet<String>) {
                 ids.insert(parts[2].to_string());
             }
             if let Some((class, _)) = call.rsplit_once('.') {
-                classes.extend(class_path(class));
+                classes.extend(class_path(class, &skip));
             }
         } else if let Some((class, tail)) = line.split_once(" (") {
             if tail.ends_with(".json)") {
-                classes.extend(class_path(class));
+                classes.extend(class_path(class, &skip));
             }
         }
     }
@@ -134,21 +136,18 @@ pub fn mod_index(id: &str, text: &str) -> Vec<ModMeta> {
     out
 }
 
-const CHEAT: &str = "外掛客戶端，內含飛行、透視、自動攻擊等修改遊戲的功能";
-const FAST: &str = "取消挖掘或放置的延遲，等於加快挖礦、蓋方塊的速度，屬於修改遊戲數據";
-const RISKY: &[(&[&str], &str)] = &[
-    (&["wurst", "meteor-client", "liquidbounce", "thunderhack", "bleachhack", "aristois", "aoba", "lumina", "samsara", "schizoid", "meteorplus", "gemclient-core"], CHEAT),
-    (&["nobreakdelay", "fastblocks*", "fastplace", "fastplace_extras_remake"], FAST),
-    (&["tweakeroo"], "部分功能（例如快速放置、快速點擊、快速破壞、延長觸及距離）會修改遊戲行為，只要啟用這類功能就違反服規"),
-    (&["baritone"], "自動走路、挖礦屬於允許的自動腳本，但部分設定（例如瞬間轉向、超出正常節奏的動作）會修改遊戲行為，啟用這類設定就違反服規"),
-];
+#[derive(Deserialize)]
+struct Risk {
+    ids: Vec<String>,
+    reason: String,
+}
 
-pub fn risk_of(mod_id: &str) -> Option<&'static str> {
+pub fn risk_of(mod_id: &str) -> Option<String> {
     let id = mod_id.to_ascii_lowercase();
-    RISKY
-        .iter()
-        .find(|(ids, _)| ids.iter().any(|k| k.strip_suffix('*').map_or(id == *k, |prefix| id.starts_with(prefix))))
-        .map(|(_, reason)| *reason)
+    crate::hotfix::data::<Vec<Risk>>("risky-mods.json")
+        .into_iter()
+        .find(|r| r.ids.iter().any(|k| k.strip_suffix('*').map_or(id == *k, |prefix| id.starts_with(prefix))))
+        .map(|r| r.reason)
 }
 
 #[derive(Serialize)]
@@ -164,7 +163,7 @@ pub fn risky_mods(id: &str, only: &[String]) -> Vec<RiskyMod> {
     mod_index(id, "")
         .into_iter()
         .filter(|m| m.enabled && (only.is_empty() || only.contains(&m.file)))
-        .filter_map(|m| risk_of(&m.id).map(|reason| RiskyMod { file: m.file, id: m.id, name: m.name, version: m.version, reason: reason.to_string() }))
+        .filter_map(|m| risk_of(&m.id).map(|reason| RiskyMod { file: m.file, id: m.id, name: m.name, version: m.version, reason }))
         .collect()
 }
 
@@ -347,10 +346,14 @@ pub async fn crash_context(id: String, since: i64, lines: Vec<String>) -> R<Cras
     .map_err(Into::into)
 }
 
-pub const PERF_KEYS: [&str; 12] = [
-    "renderDistance", "simulationDistance", "graphicsMode", "particles", "biomeBlendRadius", "maxFps",
-    "enableVsync", "entityShadows", "cloudStatus", "entityDistanceScaling", "mipmapLevels", "ao",
-];
+#[derive(Deserialize)]
+struct PerfData {
+    keys: Vec<String>,
+}
+
+fn perf_keys() -> Vec<String> {
+    crate::hotfix::data::<PerfData>("perf.json").keys
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -363,10 +366,11 @@ pub struct PerfReport {
 }
 
 fn read_options(path: &Path) -> HashMap<String, String> {
+    let keys = perf_keys();
     String::from_utf8_lossy(&std::fs::read(path).unwrap_or_default())
         .lines()
         .filter_map(|l| l.split_once(':'))
-        .filter(|(k, _)| PERF_KEYS.contains(k))
+        .filter(|(k, _)| keys.iter().any(|key| key == k))
         .map(|(k, v)| (k.to_string(), v.trim().to_string()))
         .collect()
 }
@@ -386,8 +390,8 @@ pub fn patch_options(text: &str, changes: &HashMap<String, String>) -> String {
     out.join("\n") + "\n"
 }
 
-fn valid_option(key: &str, value: &str) -> bool {
-    PERF_KEYS.contains(&key) && !value.is_empty() && value.len() <= 16 && value.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '"'))
+fn valid_option(keys: &[String], key: &str, value: &str) -> bool {
+    keys.iter().any(|k| k == key) && !value.is_empty() && value.len() <= 16 && value.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '"'))
 }
 
 #[tauri::command]
@@ -417,7 +421,8 @@ pub async fn perf_report(id: String) -> R<PerfReport> {
 #[tauri::command]
 pub async fn apply_perf(state: State<'_, AppState>, id: String, options: HashMap<String, String>, memory_mb: Option<u32>) -> R<()> {
     state.ensure_idle(&id).await?;
-    if options.iter().any(|(k, v)| !valid_option(k, v)) {
+    let keys = perf_keys();
+    if options.iter().any(|(k, v)| !valid_option(&keys, k, v)) {
         bail!("設定值不正確");
     }
     if !options.is_empty() {
@@ -612,6 +617,7 @@ mod tests {
         let changes = HashMap::from([("renderDistance".to_string(), "8".to_string()), ("particles".to_string(), "1".to_string())]);
         let out = patch_options("version:4000\nrenderDistance:16\nlang:zh_tw\n", &changes);
         assert_eq!(out, "version:4000\nrenderDistance:8\nlang:zh_tw\nparticles:1\n");
-        assert!(valid_option("graphicsMode", "1") && !valid_option("lang", "x") && !valid_option("maxFps", "1\nkey:2"));
+        let keys = perf_keys();
+        assert!(valid_option(&keys, "graphicsMode", "1") && !valid_option(&keys, "lang", "x") && !valid_option(&keys, "maxFps", "1\nkey:2"));
     }
 }
