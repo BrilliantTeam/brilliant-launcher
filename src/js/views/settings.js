@@ -1,5 +1,5 @@
 import { ANDROID, api, fileSrc, listen, openUrl, pickFile, versionLabel } from '../api.js';
-import { $, $$, acceptFiles, autoTokens, clampNumber, clear, confirm, dialog, fail, fmtBytes, h, pickColor, rangeFill, toast, guard } from '../ui.js';
+import { $, $$, acceptFiles, autoKeyboard, autoTokens, clampNumber, clear, confirm, dialog, fail, fmtBytes, h, pickColor, rangeFill, setAutoKeyboard, toast, guard } from '../ui.js';
 import { emit, loadInstances, loadSettings, on, saveSettings, store } from '../store.js';
 import { icon } from '../icons.js';
 import { gpuName, isIntegratedGpu, nextTrack, nowPlaying } from '../services.js';
@@ -1149,6 +1149,9 @@ function initPages(view) {
 
 export function initSettings() {
     on('update-status', renderUpdate);
+    const autoKb = $('#set-auto-keyboard');
+    autoKb.checked = autoKeyboard();
+    autoKb.addEventListener('change', () => setAutoKeyboard(autoKb.checked));
     const syncAlpha = () => { $('#opt-alpha').hidden = !store.settings?.alphaUnlocked && store.settings?.updateChannel !== 'alpha'; };
     on('settings', syncAlpha);
     syncAlpha();
