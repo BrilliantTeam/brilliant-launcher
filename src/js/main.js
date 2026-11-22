@@ -595,10 +595,14 @@ async function applyUpdate() {
     if (result === 'permission') toast('請在剛打開的設定頁允許「輝煌啟動器」安裝應用程式，回到啟動器後再按一次「安裝更新」。', 'warn');
 }
 
+let untouched = true;
+for (const type of ['pointerdown', 'keydown']) addEventListener(type, () => { untouched = false; }, { capture: true, once: true });
+
 async function applyHotfix(hotfix) {
     if (!hotfix?.build || hotfix.build <= await api.hotfix_status().catch(() => 0)) return;
     const build = await api.apply_hotfix({ url: hotfix.url, build: hotfix.build, sha256: hotfix.sha256, signature: hotfix.signature }).catch(() => 0);
     if (build !== hotfix.build) return;
+    if (untouched && !store.running.length && !modalOpen()) return location.reload();
     if (!store.running.length && await confirm('已下載啟動器的介面修正，重新整理畫面後就會套用，不用重新安裝。要現在重新整理嗎？', '重新整理')) location.reload();
     else api.hotfix_ok().catch(() => {});
 }
