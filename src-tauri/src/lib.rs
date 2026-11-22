@@ -29,6 +29,7 @@ pub mod templates;
 pub mod gameopts;
 pub mod gamewin;
 pub mod snapshots;
+pub mod modsolve;
 pub mod diskuse;
 pub mod secret;
 pub mod modpack;
@@ -198,6 +199,7 @@ pub fn run() {
             gamewin::forget_window,
             snapshots::list_mod_snapshots,
             snapshots::restore_mod_snapshot,
+            modsolve::resolve_mods,
             diskuse::disk_usage,
             diskuse::clean_disk,
             extras::import_image,

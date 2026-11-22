@@ -424,25 +424,8 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     }
     if settings.auto_update_mods && !instance.freeze_mods && instance.loader != "vanilla" {
         net::emit_stage(app, "mods", "檢查模組更新");
-        let mods_kind = crate::modrinth::Kind::Mod;
-        match crate::modrinth::installed(&instance.id, mods_kind, &instance.scope(&settings, &instance.mc_version, false)).await {
-            Ok(list) => {
-                let mut updated = 0;
-                let pending: Vec<_> = list.into_iter().filter(|e| !e.pinned && !e.managed && e.update.is_some()).collect();
-                if !pending.is_empty() {
-                    crate::snapshots::take(&instance.id).await;
-                }
-                for entry in pending {
-                    if let Some(update) = entry.update {
-                        if crate::modrinth::replace(app, &instance.id, mods_kind, &entry.file, update).await.is_ok() {
-                            updated += 1;
-                        }
-                    }
-                }
-                if updated > 0 {
-                    early_notes.push(format!("啟動前已自動更新 {updated} 個模組"));
-                }
-            }
+        match crate::modsolve::run(app, &instance, &settings, true).await {
+            Ok(resolved) => early_notes.extend(resolved.notes),
             Err(e) => early_notes.push(format!("檢查模組更新失敗，這次照原本的版本啟動（{:#}）", e.0)),
         }
     }

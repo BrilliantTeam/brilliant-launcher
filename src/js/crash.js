@@ -76,6 +76,12 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
     const add = (fix) => { if (!fixes.some((f) => f.kind === fix.kind && f.target === fix.target)) fixes.push(fix); };
     const disable = (mod, why) => mod && !mod.managed && add({ kind: 'disable', target: mod.file, label: `停用「${mod.name}」${why}` });
     const update = (mod) => mod && !mod.managed && add({ kind: 'update', target: mod.file, label: `更新「${mod.name}」到相容版本（找不到就停用）` });
+    const resolve = (mod) => {
+        if (!mod || mod.managed) return;
+        let fix = fixes.find((f) => f.kind === 'resolve');
+        if (!fix) fixes.push((fix = { kind: 'resolve', target: '', files: [], label: '自動找出能一起啟動的模組版本（必要時改用測試版或舊版）' }));
+        if (!fix.files.includes(mod.file)) fix.files.push(mod.file);
+    };
     const loader = () => add({ kind: 'loader', target: '', label: '把 Fabric Loader 更新到這個 Minecraft 版本的最新穩定版' });
 
     if (/Could not reserve enough space|Invalid maximum heap size|Initial heap size set to a larger value/.test(text) && memoryMb > recommendedMb) {
@@ -92,7 +98,7 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
     }
     const breaks = all.map((line) => /Mod '[^']*' \(([\w-]+)\)[^\n]*? is incompatible with [^\n]*?mod '[^']*' \(([\w-]+)\)/.exec(line) || /模[組组] '[^']*' \(([\w-]+)\)[^\n]*?與[^\n]*?模[組组] '[^']*' \(([\w-]+)\)[^\n]*?不相容/.exec(line)).filter(Boolean);
     const breakers = new Set(breaks.map((m) => m[1]));
-    for (const [, , victim] of breaks) update(byId(victim));
+    for (const [, , victim] of breaks) resolve(byId(victim));
     for (const line of all) {
         const req = /Mod '[^']*' \(([\w-]+)\)[^\n]*? requires (?:.+?) of (?:mod '[^']*' \()?([\w-]+)\)?,? (which is missing|but only the wrong version)/.exec(line);
         if (req) {
@@ -100,7 +106,7 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
             if (dep === 'fabricloader') loader();
             else if (NO_INSTALL.has(dep)) update(byId(owner));
             else if (how.startsWith('which') && !byId(dep)) add({ kind: 'install', target: dep, label: `安裝缺少的前置模組 ${dep}` });
-            else update(byId(dep));
+            else resolve(byId(dep));
         }
         const zh = /模[組组] '[^']*' \(([\w-]+)\)[^\n]*?需要[^\n]*?模[組组] '[^']*' \(([\w-]+)\)(.*)/.exec(line);
         if (zh) {
@@ -108,18 +114,18 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
             if (dep === 'fabricloader') loader();
             else if (NO_INSTALL.has(dep)) update(byId(owner));
             else if (!/錯誤|错误/.test(rest) && !byId(dep)) add({ kind: 'install', target: dep, label: `安裝缺少的前置模組 ${dep}` });
-            else update(byId(dep));
+            else resolve(byId(dep));
         }
         const zhReplace = /^\s*-\s*(?:將|将) 模[組组] '[^']*' \(([\w-]+)\)/.exec(line);
         if (zhReplace) {
             if (zhReplace[1] === 'fabricloader') loader();
-            else if (!breakers.has(zhReplace[1])) update(byId(zhReplace[1]));
+            else if (!breakers.has(zhReplace[1])) resolve(byId(zhReplace[1]));
         }
         const install = /^\s*-\s*Install ([\w-]+),/.exec(line);
         if (install?.[1] === 'fabricloader') loader();
         if (install && !NO_INSTALL.has(install[1]) && !byId(install[1])) add({ kind: 'install', target: install[1], label: `安裝缺少的前置模組 ${install[1]}` });
         const replace = /^\s*-\s*Replace mod '[^']*' \(([\w-]+)\)/.exec(line);
-        if (replace && !breakers.has(replace[1])) update(byId(replace[1]));
+        if (replace && !breakers.has(replace[1])) resolve(byId(replace[1]));
         const remove = /^\s*-\s*Remove mod '[^']*' \(([\w-]+)\)/.exec(line);
         if (remove) disable(byId(remove[1]), '（與其他模組不相容）');
         for (const m of line.matchAll(/Mixin apply for mod ([\w-]+) failed/g)) disable(byId(m[1]), '（與遊戲或其他模組衝突）');
@@ -132,7 +138,7 @@ export function plan({ lines = [], report = '', native = '', mods = [], memoryMb
     if (dupes.length && !findings.some((f) => f.title === '有重複的模組')) {
         findings.push({ title: '有重複的模組', detail: `${dupes.map((g) => g[0].name).join('、')} 同時裝了不只一個版本，Fabric 會拒絕載入。一鍵修復會保留最新版、停用舊的。` });
     }
-    if (report && !fixes.some((f) => ['disable', 'update', 'install'].includes(f.kind))) {
+    if (report && !fixes.some((f) => ['disable', 'update', 'install', 'resolve'].includes(f.kind))) {
         const suspect = enabled.filter((m) => m.blame > 0 && !m.managed).sort((a, b) => b.blame - a.blame)[0];
         if (suspect) {
             findings.push({ title: `當機報告指向「${suspect.name}」`, detail: `當機時的程式呼叫堆疊裡出現這個模組的程式碼，它很可能就是元兇。可以先停用它再試一次，確認沒問題後再到實例頁的「模組與資源」找更新版本。` });

@@ -358,6 +358,13 @@ async function runFix(instance, fix) {
     if (fix.kind === 'loader') return api.update_instance({ updated: { ...instance, loaderVersion: '' } });
     if (fix.kind === 'dgpu') return saveSettings({ preferDgpu: true });
     if (fix.kind === 'repair') return repairInstance(instance);
+    if (fix.kind === 'resolve') {
+        const result = await api.resolve_mods({ id });
+        for (const note of result.notes) toast(note, result.fixed ? '' : 'warn');
+        if (result.fixed) return;
+        for (const file of fix.files) await runFix(instance, { kind: 'update', target: file });
+        return;
+    }
     if (fix.kind === 'update') {
         const entry = (await api.content_list({ id, kind: 'mod', mc: instance.mcVersion })).find((e) => e.file === fix.target);
         if (entry?.update) return api.content_update({ id, kind: 'mod', file: entry.file, update: entry.update });
