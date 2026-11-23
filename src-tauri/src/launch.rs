@@ -467,7 +467,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     crate::gameopts::first_launch_defaults(&instance, &settings.language).await;
     #[cfg(target_os = "android")]
     {
-        let _ = (java_exe, args, started);
+        let _ = (java_exe, args);
         let mut notes = notes;
         crate::gameopts::mobile_defaults(&instance).await;
         if !instance.general && instance.loader == "fabric" {
@@ -481,7 +481,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         } else {
             instance.version_id.clone()
         };
-        crate::mobile::launch(app, &instance, &version_id, &account, &settings.language, settings.quick_join.trim(), &crate::advanced::proxy_props(&settings.proxy)).await?;
+        crate::mobile::launch(app, &instance, &version_id, &account, &settings.language, settings.quick_join.trim(), &crate::advanced::proxy_props(&settings.proxy), started.elapsed().as_millis()).await?;
         let _ = game_dir;
         let begun = now_secs();
         let stop = watch_mobile(app, &instance, begun).await;

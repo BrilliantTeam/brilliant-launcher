@@ -45,7 +45,7 @@ async fn call(app: &AppHandle, command: &'static str, payload: Value) -> anyhow:
     unreachable!()
 }
 
-pub async fn launch(app: &AppHandle, instance: &Instance, version_id: &str, account: &Account, language: &str, join: &str, proxy: &[String]) -> R<()> {
+pub async fn launch(app: &AppHandle, instance: &Instance, version_id: &str, account: &Account, language: &str, join: &str, proxy: &[String], prepared_ms: u128) -> R<()> {
     let msa = account.kind == "msa";
     let jvm_args = std::iter::once(format!("-Dbrilliant.launcher={} -Dbrilliant.android=true", env!("CARGO_PKG_VERSION"))).chain(proxy.iter().cloned()).collect::<Vec<_>>().join(" ");
     call(app, "launch", json!({
@@ -60,6 +60,7 @@ pub async fn launch(app: &AppHandle, instance: &Instance, version_id: &str, acco
         "jvmArgs": jvm_args,
         "controls": crate::hotfix::data_text("controls.json"),
         "mobile": crate::hotfix::data_text("mobile.json"),
+        "preparedMs": prepared_ms as u64,
     }))
     .await
     .context("遊戲執行環境啟動失敗")?;
