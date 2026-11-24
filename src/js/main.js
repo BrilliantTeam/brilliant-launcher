@@ -12,7 +12,7 @@ import { initAlbum } from './views/album.js';
 import { initExplore } from './views/explore.js';
 import { notifyOnce, startServices } from './services.js';
 import { initLog } from './views/logview.js';
-import { initReports } from './report.js';
+import { initReports, myReportsDialog, unread } from './report.js';
 import { initTours } from './tour.js';
 import { playClick } from './sound.js';
 import { setWeather } from './weather.js';
@@ -351,8 +351,9 @@ function initRailMore() {
     link.addEventListener('click', (e) => {
         e.preventDefault();
         if (menu.hidden) menu.replaceChildren();
-        openMenu(e, menu, link, () => RAIL_MORE.map(([view, name, label]) =>
-            h('button', { type: 'button', role: 'menuitem', 'aria-current': location.hash === `#${view}` ? 'true' : null, onclick: () => { closeMenus(); location.hash = `#${view}`; } }, icon(name), label)));
+        openMenu(e, menu, link, () => [...RAIL_MORE.map(([view, name, label]) =>
+            h('button', { type: 'button', role: 'menuitem', 'aria-current': location.hash === `#${view}` ? 'true' : null, onclick: () => { closeMenus(); location.hash = `#${view}`; } }, icon(name), label)),
+            h('button', { type: 'button', role: 'menuitem', onclick: () => { closeMenus(); myReportsDialog().catch(fail); } }, icon('chat'), unread() ? `我的回報（${unread()} 則新回覆）` : '我的回報')]);
         if (menu.hidden) return;
         const rect = link.getBoundingClientRect();
         Object.assign(menu.style, { left: `${document.documentElement.dataset.railside === 'right' ? rect.left - menu.offsetWidth - 6 : rect.right + 6}px`, top: `${Math.max(8, Math.min(rect.top, innerHeight - menu.offsetHeight - 8))}px`, bottom: 'auto' });
