@@ -34,6 +34,7 @@ pub mod diskuse;
 pub mod secret;
 pub mod modpack;
 pub mod hotfix;
+pub mod touchmap;
 #[cfg(target_os = "android")]
 pub mod mobile;
 

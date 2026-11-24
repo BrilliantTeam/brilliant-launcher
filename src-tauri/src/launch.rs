@@ -481,7 +481,9 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
         } else {
             instance.version_id.clone()
         };
-        crate::mobile::launch(app, &instance, &version_id, &account, &settings.language, settings.quick_join.trim(), &crate::advanced::proxy_props(&settings.proxy), started.elapsed().as_millis()).await?;
+        let mut props = crate::advanced::proxy_props(&settings.proxy);
+        props.extend(crate::touchmap::jvm_arg(&instance, settings.use_mirror).await);
+        crate::mobile::launch(app, &instance, &version_id, &account, &settings.language, settings.quick_join.trim(), &props, started.elapsed().as_millis()).await?;
         let _ = game_dir;
         let begun = now_secs();
         let stop = watch_mobile(app, &instance, begun).await;
