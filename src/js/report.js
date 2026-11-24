@@ -1,8 +1,10 @@
-import { api } from './api.js';
+import { ANDROID, api } from './api.js';
 import { clear, dialog, fail, fmtBytes, h, toast } from './ui.js';
 import { accountFor, emit, on, saveSettings, store } from './store.js';
 import { gpuName } from './services.js';
 import { recentLog } from './views/logview.js';
+
+const REPORTS_AT = ANDROID ? '更多 → 我的回報' : '日誌 → 我的回報';
 
 const LEVELS = [
     ['basic', '基本', '錯誤摘要與最後 80 行日誌，通常就夠管理員判斷'],
@@ -88,7 +90,7 @@ export async function reportDialog(kind, instance, extra = {}) {
         title: '回報給管理員',
         wide: true,
         content: h('div', { class: 'report' },
-            h('p', { class: 'hint' }, '選擇要提供多少資料。越詳細越容易找出原因；送出前可以先預覽，所有內容都只有輝煌管理員看得到，處理完 30 天後自動刪除。送出後可以在「日誌 → 我的回報」查看進度與管理員的回覆。'),
+            h('p', { class: 'hint' }, `選擇要提供多少資料。越詳細越容易找出原因；送出前可以先預覽，所有內容都只有輝煌管理員看得到，處理完 30 天後自動刪除。送出後可以在「${REPORTS_AT}」查看進度與管理員的回覆。`),
             h('div', { class: 'report-levels' }, ...levelInputs),
             h('div', { class: 'report-items' }, h('label', { class: 'report-item fixed' }, h('input', { type: 'checkbox', checked: true, disabled: true }), '錯誤摘要與最後 80 行日誌'),
                 ...boxes.map((b) => h('label', { class: 'report-item' }, b.input, b.label))),
@@ -116,7 +118,7 @@ export async function reportDialog(kind, instance, extra = {}) {
             const cause = body.findings[0] || body.message.split('\n')[0] || (kind === 'crash' ? '遊戲異常結束' : '無法啟動遊戲');
             await saveSettings({ myReports: [{ id: result.id, token: result.token, at: Date.now(), cause, alerted: 0, seen: 0 }, ...(store.settings.myReports || [])].slice(0, 20) }).catch(() => {});
         }
-        toast(`已回報給管理員${result?.id ? `（回報編號 ${result.id.slice(0, 8)}）` : ''}，謝謝你。可以在「日誌 → 我的回報」查看處理進度`);
+        toast(`已回報給管理員${result?.id ? `（回報編號 ${result.id.slice(0, 8)}）` : ''}，謝謝你。可以在「${REPORTS_AT}」查看處理進度`);
     } catch (error) {
         fail(error);
     }
@@ -132,7 +134,7 @@ export async function refreshReports() {
     const byId = new Map(reports.map((r) => [r.id, r]));
     const fresh = mine.filter((m) => byId.has(m.id) && replies(byId.get(m.id)) > (m.alerted || 0));
     if (fresh.length) {
-        toast(`管理員回覆了你的錯誤回報，到「日誌 → 我的回報」查看`);
+        toast(`管理員回覆了你的錯誤回報，到「${REPORTS_AT}」查看`);
         if (store.settings?.notifications) api.notify_user({ title: '輝煌管理員回覆了你的回報', body: byId.get(fresh[0].id).messages.filter((m) => m.kind === 'admin').at(-1).text.slice(0, 120) }).catch(() => {});
     }
     const recent = (m) => Date.now() - (m.at || 0) < 35 * 86400000;
@@ -143,7 +145,7 @@ export async function refreshReports() {
     return reports;
 }
 
-function unread() {
+export function unread() {
     const byId = new Map((store.reports || []).map((r) => [r.id, r]));
     return (store.settings?.myReports || []).filter((m) => byId.has(m.id) && replies(byId.get(m.id)) > (m.seen || 0)).length;
 }
