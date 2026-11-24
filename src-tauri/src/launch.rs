@@ -318,6 +318,10 @@ async fn prepare(
     }
     args.extend(crate::advanced::drop_removed_flags(crate::advanced::split_args(&instance.jvm(settings)), java_major));
     args.extend(expand(&resolved.arguments.jvm, &features, &vars));
+    const VANILLA_MAIN: &str = "net.minecraft.client.main.Main";
+    if !args.iter().chain([&resolved.main_class]).any(|a| a.contains(VANILLA_MAIN)) {
+        args.push(format!("-Dbrilliant.mcemu= {VANILLA_MAIN} "));
+    }
     args.push(resolved.main_class.clone());
     let mut game_args = expand(&resolved.arguments.game, &features, &vars);
 
@@ -510,6 +514,7 @@ pub async fn launch(app: &AppHandle, instance_id: &str, join: Option<String>) ->
     }
 
     net::emit_stage(app, "launch", "啟動遊戲");
+    let java_exe = java::game_exe(&java_exe);
     let log_file = paths::logs().join(format!("{instance_id}-{}.log", now_secs()));
     tokio::fs::create_dir_all(paths::logs()).await?;
     let wrapper = instance.wrapper_cmd(&settings);

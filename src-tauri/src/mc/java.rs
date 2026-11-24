@@ -125,6 +125,15 @@ pub fn hide_console(cmd: &mut tokio::process::Command) {
 #[cfg(not(target_os = "windows"))]
 pub fn hide_console(_cmd: &mut tokio::process::Command) {}
 
+pub fn game_exe(java: &Path) -> PathBuf {
+    let gui = java.with_file_name("javaw.exe");
+    if cfg!(target_os = "windows") && java.file_name().is_some_and(|n| n.eq_ignore_ascii_case("java.exe")) && gui.is_file() {
+        gui
+    } else {
+        java.to_path_buf()
+    }
+}
+
 fn candidate_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(home) = std::env::var_os("JAVA_HOME") {
@@ -430,4 +439,22 @@ pub async fn ensure(
         }
     }
     bail!("Java {major} 下載失敗，請確認網路連線正常後再按一次「開始遊戲」。\n（詳細原因：{:#}）", mojang.0)
+}
+
+#[cfg(test)]
+mod game_exe_tests {
+    use super::*;
+
+    #[test]
+    fn windows_launches_games_with_javaw() {
+        let dir = std::env::temp_dir().join(format!("brilliant-javaw-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let java = dir.join("java.exe");
+        assert_eq!(game_exe(&java), java, "沒有 javaw.exe 時照用 java.exe");
+        std::fs::write(dir.join("javaw.exe"), b"").unwrap();
+        let expected = if cfg!(target_os = "windows") { dir.join("javaw.exe") } else { java.clone() };
+        assert_eq!(game_exe(&java), expected);
+        assert_eq!(game_exe(&dir.join("java")), dir.join("java"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
