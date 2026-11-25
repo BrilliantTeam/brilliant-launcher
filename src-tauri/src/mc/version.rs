@@ -144,22 +144,35 @@ pub async fn read_local(id: &str) -> Option<VersionJson> {
 }
 
 pub async fn ensure(id: &str, mirror: bool) -> R<VersionJson> {
-    if let Some(v) = read_local(id).await {
-        return Ok(v);
-    }
-    let manifest = super::manifest::fetch(mirror).await?;
-    let entry = manifest
-        .versions
-        .iter()
-        .find(|v| v.id == id)
-        .with_context(|| format!("版本清單裡沒有 {id}，若是 Fabric 版本請先安裝"))?;
-    let bytes = net::get_bytes(&entry.url, mirror).await?;
-    if let Some(want) = &entry.sha1 {
-        let got = net::sha1_hex(&bytes);
-        if !got.eq_ignore_ascii_case(want) {
-            bail!("{id}.json 校驗失敗：預期 {want}，實得 {got}");
+    let local = tokio::fs::read(paths::version_json(id)).await.ok();
+    let entry = super::manifest::fetch(mirror).await.ok().and_then(|m| m.versions.into_iter().find(|v| v.id == id));
+    let want = entry.as_ref().and_then(|e| e.sha1.clone());
+    let current = |bytes: &[u8]| want.as_deref().is_none_or(|want| net::sha1_hex(bytes).eq_ignore_ascii_case(want));
+    if local.as_deref().is_some_and(current) {
+        if let Some(v) = read_local(id).await {
+            return Ok(v);
         }
     }
+    let Some(entry) = entry else {
+        return read_local(id).await.with_context(|| format!("版本清單裡沒有 {id}，若是 Fabric 版本請先安裝")).map_err(Into::into);
+    };
+    let mut bytes = net::get_bytes(&entry.url, mirror).await;
+    if mirror && bytes.as_ref().is_ok_and(|b| !current(b)) {
+        bytes = net::get_bytes(&entry.url, false).await;
+    }
+    let problem = match &bytes {
+        Ok(b) if current(b) => None,
+        Ok(b) => Some(format!("{id}.json 校驗失敗：預期 {}，實得 {}", entry.sha1.as_deref().unwrap_or_default(), net::sha1_hex(b))),
+        Err(e) => Some(format!("{:#}", e.0)),
+    };
+    if let Some(problem) = problem {
+        if let Some(v) = read_local(id).await {
+            eprintln!("[version] {id}.json 有新版但沒有更新成功，先用本機的版本：{problem}");
+            return Ok(v);
+        }
+        bail!("{problem}");
+    }
+    let bytes = bytes?;
     net::write_file(&paths::version_json(id), &bytes, false).await?;
     Ok(serde_json::from_slice(&bytes).with_context(|| format!("解析 {id}.json 失敗"))?)
 }
